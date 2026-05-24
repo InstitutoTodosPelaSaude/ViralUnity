@@ -1,11 +1,27 @@
 """Click CLI for viralunity meta command."""
 
+import os
+from pathlib import Path
 from typing import Any
 
 import click
 
 from viralunity.constants import ResourceDefaults
 from viralunity.viralunity_meta import main as meta_main
+
+
+def _default_conda_prefix() -> str:
+    """Resolve the default conda-prefix at CLI invocation time.
+
+    Reads ``$VIRALUNITY_CONDA_PREFIX`` first, then falls back to
+    ``~/.cache/viralunity/conda-envs``. Defined as a module-level helper
+    (rather than a lambda) so tests can monkey-patch it.
+    """
+    return os.environ.get(
+        "VIRALUNITY_CONDA_PREFIX",
+        str(Path.home() / ".cache" / "viralunity" / "conda-envs"),
+    )
+
 
 # Common options (applied to both illumina and nanopore subcommands)
 _COMMON_META_OPTIONS = [
@@ -170,6 +186,13 @@ _COMMON_META_OPTIONS = [
         is_flag=True,
         default=False,
         help="Only create the config file; do not run the workflow.",
+    ),
+    click.option(
+        "--conda-prefix",
+        default=_default_conda_prefix,
+        show_default="$VIRALUNITY_CONDA_PREFIX or ~/.cache/viralunity/conda-envs",
+        help="Directory where per-rule conda envs are cached. Reused across runs. "
+        "Pre-warm with 'viralunity setup' to avoid env creation during pipeline runs.",
     ),
     click.option(
         "--run-reference-assembly/--no-run-reference-assembly",

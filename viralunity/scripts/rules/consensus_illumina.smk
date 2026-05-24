@@ -6,7 +6,7 @@
 
 rule detect_isnv:
     conda:
-        "../envs/alignment.yaml"
+        "../envs/consensus.yaml"
     input:
         reference = REFERENCE,
         bam = rules.trim_primer_sequences.output.bam,

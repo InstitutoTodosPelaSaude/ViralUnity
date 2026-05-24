@@ -8,6 +8,7 @@ from viralunity.viralunity_consensus_cli import consensus
 from viralunity.viralunity_create_samplesheet import create_samplesheet
 from viralunity.viralunity_get_databases_cli import get_databases
 from viralunity.viralunity_meta_cli import meta
+from viralunity.viralunity_setup_cli import setup
 
 
 @click.group()
@@ -19,6 +20,7 @@ def cli() -> None:
     Subcommands:
     * consensus           reference-guided consensus assembly (illumina/nanopore)
     * meta                metagenomic classification and de novo assembly
+    * setup               pre-build per-rule conda envs into a shared cache
     * create-samplesheet  generate a sample sheet from a sequencing directory
     * get-databases       download/build reference databases
     * build-deacon-index  build a Deacon index for host depletion
@@ -29,6 +31,7 @@ def cli() -> None:
 
 cli.add_command(consensus)
 cli.add_command(meta)
+cli.add_command(setup)
 cli.add_command(create_samplesheet)
 cli.add_command(get_databases)
 cli.add_command(build_deacon_index)

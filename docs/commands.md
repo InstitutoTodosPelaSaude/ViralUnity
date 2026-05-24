@@ -1,5 +1,53 @@
 # Commands Reference
 
+## `viralunity setup`
+
+Pre-builds the per-rule conda environments declared in the Snakemake workflows into a shared cache directory. Run once after installing ViralUnity (or after upgrading); subsequent `viralunity consensus` / `viralunity meta` runs reuse the cached envs and skip env creation.
+
+```bash
+viralunity setup --pipelines all
+```
+
+### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--conda-prefix` | `$VIRALUNITY_CONDA_PREFIX` or `~/.cache/viralunity/conda-envs` | Directory where per-rule envs are cached. Reused by every later pipeline run that points at the same prefix. |
+| `--pipelines` | `all` | Repeatable. Pick from `consensus-illumina`, `consensus-nanopore`, `meta-illumina`, `meta-nanopore`, or `all`. Segmented variants share envs with their non-segmented counterparts. |
+| `--threads` | `4` | Cores given to Snakemake while materializing envs. |
+| `--dry-run` | off | Print the envs that would be created and exit without invoking conda. |
+
+### Examples
+
+**Build everything once after install:**
+
+```bash
+viralunity setup --pipelines all
+```
+
+**Build only what you need:**
+
+```bash
+viralunity setup --pipelines consensus-illumina --pipelines meta-illumina
+```
+
+**Inspect first:**
+
+```bash
+viralunity setup --pipelines consensus-illumina --dry-run
+```
+
+**Use a shared cache on a cluster:**
+
+```bash
+export VIRALUNITY_CONDA_PREFIX=/shared/viralunity-envs
+viralunity setup --pipelines all
+```
+
+Every subsequent `viralunity consensus` / `viralunity meta` invocation will pick up `$VIRALUNITY_CONDA_PREFIX` automatically; no per-run flag needed.
+
+---
+
 ## `viralunity create-samplesheet`
 
 Before running any pipeline you need a CSV sample sheet. The `create-samplesheet` command generates it automatically from a sequencing run directory.
@@ -84,6 +132,7 @@ The consensus pipeline takes raw reads to processed consensus genome sequences w
 | `--threads` | `1` | Threads per individual task. |
 | `--threads-total` | `1` | Total threads for the workflow. |
 | `--create-config-only` | off | Only generate the config file; do not run the workflow. |
+| `--conda-prefix` | `~/.cache/viralunity/conda-envs` | Cache directory for per-rule conda envs. Picked up from `$VIRALUNITY_CONDA_PREFIX` if set. Pre-warm with `viralunity setup`. |
 
 ### Options — Illumina only
 
@@ -232,6 +281,7 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--threads` | `1` | Threads per task. |
 | `--threads-total` | `1` | Total threads for the workflow. |
 | `--create-config-only` | off | Only generate the config; do not run the workflow. |
+| `--conda-prefix` | `~/.cache/viralunity/conda-envs` | Cache directory for per-rule conda envs. Picked up from `$VIRALUNITY_CONDA_PREFIX` if set. Pre-warm with `viralunity setup`. |
 
 ### Options — Illumina only (fastp QC)
 

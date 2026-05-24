@@ -357,6 +357,129 @@ class ConfigGenerator:
             self._set(cpus_key, args.get(cpus_key, ResourceDefaults.DEFAULT_CPUS), R)
             self._set(ram_key, args.get(ram_key, ResourceDefaults.DEFAULT_RAM), R)
 
+    @classmethod
+    def write_skeleton(
+        cls,
+        pipeline: str,
+        data_type: str,
+        config_path: str,
+        placeholder_dir: str,
+    ) -> str:
+        """Write a placeholder YAML config that lets Snakemake parse a workflow.
+
+        Used by ``viralunity setup`` to materialize per-rule conda envs via
+        ``snakemake(..., conda_create_envs_only=True)``. Even in
+        envs-only mode Snakemake walks the DAG and verifies that rule
+        inputs exist, so the caller is expected to populate
+        ``placeholder_dir`` with empty files for the FASTQs, references,
+        and database paths emitted here. ``viralunity_setup_cli`` does
+        this for the package; tests use the same convention.
+
+        Args:
+            pipeline: ``"consensus"`` or ``"metagenomics"``.
+            data_type: ``"illumina"`` or ``"nanopore"``.
+            config_path: Where to write the YAML.
+            placeholder_dir: Directory that contains the placeholder input
+                files referenced by the generated config.
+
+        Returns:
+            ``config_path``.
+        """
+        gen = cls(config_path)
+        root = placeholder_dir.rstrip("/")
+
+        if data_type == DataType.ILLUMINA:
+            placeholder_samples = {
+                "skel": [
+                    f"{root}/reads/skel_R1.fastq.gz",
+                    f"{root}/reads/skel_R2.fastq.gz",
+                ],
+            }
+        else:
+            placeholder_samples = {"skel": [f"{root}/reads/skel.fastq.gz"]}
+
+        gen.add_samples(placeholder_samples, data_type)
+        gen.add_output(f"{root}/output", "skeleton_run")
+        gen.add_threads(1)
+
+        if pipeline == "consensus":
+            gen.add_consensus_settings(
+                reference=f"{root}/references/skel.reference.fasta",
+                primer_scheme="NA",
+                minimum_coverage=20,
+            )
+            if data_type == DataType.ILLUMINA:
+                gen.add_illumina_settings(adapters="NA", minimum_read_length=50)
+            else:
+                gen.add_consensus_nanopore_settings(
+                    minimum_read_length=50,
+                    af_threshold=0.51,
+                    chunk_size=10000,
+                    clair3_model="r1041_e82_400bps_sup_v500",
+                    variant_quality=20,
+                    variant_depth=10,
+                    minimum_map_quality=30,
+                )
+            gen.add_workflow_path(".")
+        elif pipeline == "metagenomics":
+            if data_type == DataType.ILLUMINA:
+                gen.add_illumina_settings(adapters="NA", minimum_read_length=50)
+            gen.add_metagenomics_settings(
+                kraken2_database=f"{root}/kraken2/",
+                krona_database=f"{root}/krona/taxonomy/",
+                remove_human_reads=False,
+                remove_unclassified_reads=False,
+                taxdump=f"{root}/taxdump/",
+                diamond_database=f"{root}/diamond/nr.dmnd",
+            )
+            gen.add_reference_assembly_settings(run_reference_assembly=False)
+            if data_type == DataType.NANOPORE:
+                gen.add_nanopore_settings()
+        else:
+            raise ValueError(
+                f"Unknown pipeline: {pipeline!r} (expected 'consensus' or 'metagenomics')"
+            )
+
+        gen.save()
+        return config_path
+
+    # Empty files (relative to ``placeholder_dir``) that
+    # ``ConfigGenerator.write_skeleton`` expects to exist on disk for
+    # ``snakemake --conda-create-envs-only`` to succeed. Kept here so
+    # the skeleton and its placeholder-file expectations stay in lock-step.
+    SKELETON_PLACEHOLDERS: Dict[str, Dict[str, List[str]]] = {
+        "consensus": {
+            "illumina": [
+                "reads/skel_R1.fastq.gz",
+                "reads/skel_R2.fastq.gz",
+                "references/skel.reference.fasta",
+            ],
+            "nanopore": [
+                "reads/skel.fastq.gz",
+                "references/skel.reference.fasta",
+            ],
+        },
+        "metagenomics": {
+            "illumina": [
+                "reads/skel_R1.fastq.gz",
+                "reads/skel_R2.fastq.gz",
+                "kraken2/hash.k2d",
+                "krona/taxonomy/taxonomy.tab",
+                "taxdump/nodes.dmp",
+                "taxdump/names.dmp",
+                "diamond/nr.dmnd",
+            ],
+            "nanopore": [
+                "reads/skel.fastq.gz",
+                "kraken2/hash.k2d",
+                "krona/taxonomy/taxonomy.tab",
+                "taxdump/nodes.dmp",
+                "taxdump/names.dmp",
+                "diamond/nr.dmnd",
+            ],
+        },
+    }
+
     def save(self) -> None:
         """Save configuration to YAML file with section comment headers.
 

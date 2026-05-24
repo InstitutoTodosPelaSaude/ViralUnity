@@ -1,11 +1,26 @@
 """Click CLI for viralunity consensus command."""
 
+import os
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import click
 
 from viralunity.constants import ResourceDefaults
 from viralunity.viralunity_consensus import main as consensus_main
+
+
+def _default_conda_prefix() -> str:
+    """Resolve the default conda-prefix at CLI invocation time.
+
+    Reads ``$VIRALUNITY_CONDA_PREFIX`` first, then falls back to
+    ``~/.cache/viralunity/conda-envs``. Defined as a module-level helper
+    (rather than a lambda) so tests can monkey-patch it.
+    """
+    return os.environ.get(
+        "VIRALUNITY_CONDA_PREFIX",
+        str(Path.home() / ".cache" / "viralunity" / "conda-envs"),
+    )
 
 
 def _parse_segmented_reference(segmented_reference: Tuple[str, ...]) -> Optional[dict]:
@@ -108,6 +123,13 @@ _COMMON_OPTIONS = [
         is_flag=True,
         default=False,
         help="Only create the config file; do not run the workflow.",
+    ),
+    click.option(
+        "--conda-prefix",
+        default=_default_conda_prefix,
+        show_default="$VIRALUNITY_CONDA_PREFIX or ~/.cache/viralunity/conda-envs",
+        help="Directory where per-rule conda envs are cached. Reused across runs. "
+        "Pre-warm with 'viralunity setup' to avoid env creation during pipeline runs.",
     ),
 ]
 
@@ -248,6 +270,7 @@ def consensus_illumina(
     threads: int,
     threads_total: int,
     create_config_only: bool,
+    conda_prefix: str,
     adapters: Optional[str],
     trim_head: int,
     trim_tail: int,
@@ -283,6 +306,7 @@ def consensus_illumina(
         threads=threads,
         threads_total=threads_total,
         create_config_only=create_config_only,
+        conda_prefix=conda_prefix,
         adapters=adapters,
         trim_head=trim_head,
         trim_tail=trim_tail,
@@ -355,6 +379,7 @@ def consensus_nanopore(
     threads: int,
     threads_total: int,
     create_config_only: bool,
+    conda_prefix: str,
     af_threshold: float,
     chunk_size: int,
     clair3_model: str,
@@ -386,6 +411,7 @@ def consensus_nanopore(
         threads=threads,
         threads_total=threads_total,
         create_config_only=create_config_only,
+        conda_prefix=conda_prefix,
         af_threshold=af_threshold,
         chunk_size=chunk_size,
         clair3_model=clair3_model,
