@@ -14,7 +14,13 @@ dependencies:
   - biopython>=1.81
   - deacon=0.15
   - python>=3.8.0,<3.12.0
-  - conda
+  # Pinned to <26 because conda-libmamba-solver 26.x queries
+  # `repodata_shards.msgpack.zst` from bioconda, which is not published,
+  # and conda mis-handles the resulting 404 (raises JSONDecodeError).
+  # Lift the ceiling once bioconda publishes shards OR conda's shards
+  # path tolerates 404s gracefully. See CONDA_ENV_CREATION_FIX.md.
+  - conda>=24,<26
+  - conda-libmamba-solver>=24,<26
   - pip
   - pip:
     - .

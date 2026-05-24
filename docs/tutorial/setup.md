@@ -21,7 +21,7 @@ viralunity --version
 viralunity --help
 ```
 
-See [Installation](../installation.md) for the macOS Apple Silicon caveat (the `clair3` environment can be sensitive there) and for development installs (`pip install -e ".[dev]"`).
+See [Installation](../installation.md) for the macOS Apple Silicon caveat (the `clair3` environment can be sensitive there), for development installs (`pip install -e ".[dev]"`), and for the [Troubleshooting](../installation.md#troubleshooting) note if the first pipeline run fails on conda env creation.
 
 ## 2. Generate sample sheets
 
