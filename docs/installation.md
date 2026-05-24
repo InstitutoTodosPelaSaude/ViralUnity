@@ -51,6 +51,18 @@ viralunity --version
 viralunity --help
 ```
 
+## First-time environment setup
+
+After installing ViralUnity, build the per-rule conda environments once with:
+
+```bash
+viralunity setup --pipelines all
+```
+
+This downloads and resolves every sub-pipeline dependency into `~/.cache/viralunity/conda-envs/` (override with `--conda-prefix PATH`, or set `$VIRALUNITY_CONDA_PREFIX`). Future `viralunity consensus` / `viralunity meta` runs reuse the cached envs and do not need to re-create them per working directory, which both speeds up first runs and isolates env-creation failures from real pipeline runs.
+
+Run `viralunity setup --pipelines consensus-illumina --dry-run` first to inspect what would be built.
+
 ## Development install
 
 To work on ViralUnity itself, install the optional `dev` extras (linters and tests):

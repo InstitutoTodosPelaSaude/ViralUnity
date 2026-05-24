@@ -23,6 +23,18 @@ viralunity --help
 
 See [Installation](../installation.md) for the macOS Apple Silicon caveat (the `clair3` environment can be sensitive there), for development installs (`pip install -e ".[dev]"`), and for the [Troubleshooting](../installation.md#troubleshooting) note if the first pipeline run fails on conda env creation.
 
+## 1b. Build per-rule environments
+
+Each pipeline rule runs in its own conda environment. ViralUnity caches these envs across runs so they only need to be built once; pre-warm the cache now:
+
+```bash
+viralunity setup --pipelines all
+```
+
+This materializes every per-rule env into `~/.cache/viralunity/conda-envs/` (override with `--conda-prefix PATH`). The subsequent pipeline runs in this tutorial — and every future run on this machine — reuse the cache and skip env creation. Restricting to a single pipeline (e.g. `--pipelines consensus-illumina`) is faster if you only plan to run one flavor; add the others later.
+
+If `setup` fails with `CreateCondaEnvironmentException`, see [Troubleshooting](../installation.md#troubleshooting).
+
 ## 2. Generate sample sheets
 
 A *sample sheet* is a no-header CSV that tells ViralUnity which FASTQ files belong to which sample:
