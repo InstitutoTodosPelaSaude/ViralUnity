@@ -7,6 +7,80 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]  - 2026-05-24
+
+### Added
+
+- New `viralunity setup` subcommand that pre-builds every per-rule conda
+  environment into a shared cache at install time, so `viralunity
+  consensus` / `viralunity meta` runs never have to materialize envs on
+  the hot path. Options: `--conda-prefix PATH`, `--pipelines
+  [consensus-illumina|consensus-nanopore|meta-illumina|meta-nanopore|all]`
+  (repeatable, default `all`), `--threads INT`, `--dry-run`. Segmented
+  workflow variants intentionally share envs with their non-segmented
+  counterparts and are not separate selections.
+- New `--conda-prefix` option on both `viralunity consensus`
+  (illumina + nanopore) and `viralunity meta` (illumina + nanopore) so
+  pipeline runs reuse the cache produced by `viralunity setup`. Picks up
+  `$VIRALUNITY_CONDA_PREFIX` if set; otherwise defaults to
+  `~/.cache/viralunity/conda-envs/`.
+- `ConfigGenerator.write_skeleton(pipeline, data_type, config_path,
+  placeholder_dir)` classmethod + `SKELETON_PLACEHOLDERS` map: emits a
+  minimal YAML config sufficient for Snakemake to parse a workflow with
+  `conda_create_envs_only=True`, paired with the set of empty input
+  files the DAG build needs to touch.
+- `docs/installation.md`: new "Troubleshooting" subsection covering the
+  conda 26.x / bioconda shards 404 symptom + escape hatch, and a new
+  "First-time environment setup" subsection calling out
+  `viralunity setup --pipelines all`.
+- `docs/tutorial/setup.md`: new step 1b "Build per-rule environments"
+  between Install and Generate sample sheets.
+- `docs/commands.md`: new `viralunity setup` section with the four
+  options plus four worked examples (install-time, partial,
+  `--dry-run`, shared-cache via `$VIRALUNITY_CONDA_PREFIX`); the
+  `--conda-prefix` flag is documented on both the consensus and meta
+  shared-options tables.
+- Tests: `--conda-prefix` wiring on both CLIs
+  (`test/viralunity_consensus_cli_test.py`,
+  `test/viralunity_meta_cli_test.py`), orchestrator forwarding
+  (`test/viralunity_orchestrator_test.py`), and skeleton + setup CLI
+  coverage (`test/viralunity_setup_cli_test.py`). +13 tests total.
+
+### Changed
+
+- `environment.yml`: pinned `conda` and `conda-libmamba-solver` to
+  `>=24,<26` with an inline comment naming the lift condition (bioconda
+  publishes shards OR conda's shards path tolerates 404s gracefully).
+  This is the immediate workaround for the
+  `CreateCondaEnvironmentException` (see "Fixed" below).
+- Default conda env cache path for `viralunity consensus` /
+  `viralunity meta` is now `~/.cache/viralunity/conda-envs/`
+  (override with `--conda-prefix` or `$VIRALUNITY_CONDA_PREFIX`).
+  Snakemake previously materialized envs into `<workdir>/.snakemake/conda/`
+  per working directory, so existing users' per-workdir caches become
+  orphaned on first post-upgrade run and rebuild once into the shared
+  cache. Subsequent runs are faster and survive across workdirs.
+- `viralunity/_orchestrator.py:run_workflow` now forwards
+  `args.get("conda_prefix")` to the `snakemake(...)` call. Absent key
+  resolves to `None`, preserving the previous per-workdir behaviour
+  for direct callers and tests that do not set the key.
+
+### Fixed
+
+- **Critical:** first pipeline run on a fresh install with the current
+  conda stack (conda 26.x + conda-libmamba-solver 26.x) aborts on
+  `Creating conda environment .../qc.yaml` with a
+  `CreateCondaEnvironmentException`. Root cause is upstream:
+  conda-libmamba-solver's "repodata shards" optimization queries
+  `repodata_shards.msgpack.zst` from bioconda, which does not publish
+  one; the resulting HTTP 404 trips conda's `RepodataIsEmpty`
+  constructor, which calls `response.json()` on the non-JSON 404 body
+  and crashes inside conda's own error path. Fixed by the
+  `environment.yml` toolchain pin (see "Changed") and structurally
+  neutralized by `viralunity setup` (see "Added"): containerless
+  pipeline runs no longer touch the host solver after the cache is
+  pre-warmed.
+
 ## [1.1.0] - 2026-05-21
 
 ### Added
