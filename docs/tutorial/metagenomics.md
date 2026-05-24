@@ -57,7 +57,8 @@ viralunity meta illumina \
     --kraken2-database databases/kraken2 \
     --krona-database   databases/krona/taxonomy \
     --taxdump          databases/taxdump \
-    --threads 2 --threads-total 4
+    --threads 2 --threads-total 4 \
+    --no-kraken2-contigs
 ```
 
 This is the smallest useful invocation: trim with fastp, run Kraken2 on the trimmed reads, build a Krona plot per sample, and write the cross-sample summary tables. No dehosting, no assembly, no DIAMOND, no reference assembly.
@@ -101,7 +102,8 @@ viralunity meta illumina \
     --krona-database   databases/krona/taxonomy \
     --taxdump          databases/taxdump \
     --deacon-index     databases/deacon_indexes/panhuman-1.idx \
-    --threads 2 --threads-total 4
+    --threads 2 --threads-total 4 \
+    --no-kraken2-contigs
 ```
 
 What changed:

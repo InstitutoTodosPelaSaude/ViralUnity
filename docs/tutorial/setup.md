@@ -90,12 +90,14 @@ For your own data, the same command works with `--level 1` (one subdirectory per
 
 Different pipelines need different reference data:
 
-| Pipeline                                              | Required                                                           | Optional (enable extra features)                                                  |
-|-------------------------------------------------------|--------------------------------------------------------------------|------------------------------------------------------------------------------------|
-| `consensus`                                           | reference FASTA                                                    | primer-scheme BED (amplicon data), adapter FASTA (custom adapters)                |
-| `meta` (minimum)                                      | Kraken2 index, Krona taxonomy                                      | NCBI taxdump (filters), host FASTA or Deacon index (dehosting)                    |
-| `meta` + DIAMOND                                      | Kraken2, Krona, taxdump, **DIAMOND DB**, **DIAMOND taxids**         | (same as above)                                                                    |
-| `meta` + `--run-reference-assembly`                   | the above, **viral genomes FASTA + `genome2taxid.tsv`**, taxdump   | BLAST index (built automatically) — for the `similarity` selection strategy        |
+
+| Pipeline                            | Required                                                         | Optional (enable extra features)                                            |
+| ----------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `consensus`                         | reference FASTA                                                  | primer-scheme BED (amplicon data), adapter FASTA (custom adapters)          |
+| `meta` (minimum)                    | Kraken2 index, Krona taxonomy                                    | NCBI taxdump (filters), host FASTA or Deacon index (dehosting)              |
+| `meta` + DIAMOND                    | Kraken2, Krona, taxdump, **DIAMOND DB**, **DIAMOND taxids**      | (same as above)                                                             |
+| `meta` + `--run-reference-assembly` | the above, **viral genomes FASTA + `genome2taxid.tsv`**, taxdump | BLAST index (built automatically) — for the `similarity` selection strategy |
+
 
 The consensus pipeline does not need any database downloads — only a reference FASTA you already have. The rest of this section sets you up for the metagenomic walkthrough.
 
@@ -110,14 +112,16 @@ viralunity get-databases all --path databases/ --threads 4
 
 Plan for the download. Approximate sizes on disk after extraction:
 
-| Database       | Path created                              | Approx. size | Used by                                                          |
-|----------------|-------------------------------------------|--------------|------------------------------------------------------------------|
-| Kraken2 viral  | `databases/kraken2/`                      | ~1.1 GB      | `--kraken2-database`                                             |
-| Krona taxonomy | `databases/krona/taxonomy/`               | ~150 MB      | `--krona-database`                                               |
-| NCBI taxdump   | `databases/taxdump/`                      | ~600 MB      | `--taxdump` (filters, reference assembly)                        |
-| DIAMOND viral  | `databases/diamond/`                      | ~400 MB      | `--diamond-database`, `--taxids`                                 |
 
-If you only plan to use Kraken2 on reads, you can skip `get-databases diamond` and only run the first three. Each subcommand is also available standalone — see [`viralunity get-databases --help`](../commands.md#viralunity-get-databases).
+| Database       | Path created                | Approx. size | Used by                                   |
+| -------------- | --------------------------- | ------------ | ----------------------------------------- |
+| Kraken2 viral  | `databases/kraken2/`        | ~1.1 GB      | `--kraken2-database`                      |
+| Krona taxonomy | `databases/krona/taxonomy/` | ~150 MB      | `--krona-database`                        |
+| NCBI taxdump   | `databases/taxdump/`        | ~600 MB      | `--taxdump` (filters, reference assembly) |
+| DIAMOND viral  | `databases/diamond/`        | ~400 MB      | `--diamond-database`, `--taxids`          |
+
+
+If you only plan to use Kraken2 on reads, you can skip `get-databases diamond` and only run the first three. Each subcommand is also available standalone — see `[viralunity get-databases --help](../commands.md#viralunity-get-databases)`.
 
 ### Two more databases for the full meta walkthrough
 
@@ -162,3 +166,4 @@ You are now ready to:
 
 - [Run the consensus pipeline](consensus.md), or
 - [Run the metagenomics pipeline](metagenomics.md).
+

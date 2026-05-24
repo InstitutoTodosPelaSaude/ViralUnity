@@ -55,7 +55,6 @@ viralunity consensus illumina \
     --run-name      sarscov2 \
     --reference     databases/refs/nCoV-2019.reference.fasta \
     --primer-scheme databases/refs/nCoV-2019.bed \
-    --adapters      databases/refs/adapters.fa \
     --minimum-coverage 20 \
     --threads 2 \
     --threads-total 4
@@ -69,7 +68,6 @@ What each flag does:
 - `--run-name` — appended to `--output`; everything lands under `results/consensus_illumina/sarscov2/`.
 - `--reference` — single-segment reference FASTA. For segmented genomes, use `--segmented-reference` instead (see below).
 - `--primer-scheme` — BED file of primer coordinates. Omit it for shotgun data; the primer-clipping step then becomes a pass-through.
-- `--adapters` — adapter FASTA passed to fastp. Omit to let fastp auto-detect.
 - `--minimum-coverage 20` — positions with fewer than 20 reads after primer clipping become `N` in the consensus.
 - `--threads 2 --threads-total 4` — 2 threads per task, 4 cores total across the workflow.
 
@@ -174,7 +172,7 @@ viralunity consensus nanopore \
 
 The interesting differences from the Illumina invocation:
 
-- No `--adapters` and no `fastp` step — the workflow skips QC entirely for Nanopore. The variant caller is expected to absorb noisy bases.
+- No `fastp` step — the workflow skips QC entirely for Nanopore. The variant caller is expected to absorb noisy bases.
 - `--clair3-model` picks the appropriate Clair3 model for your basecaller. The default `r1041_e82_400bps_sup_v500` matches recent (R10.4.1) SUP-basecalled reads; pick a different one if your data was basecalled differently. The list of model names is in the [Clair3 model zoo](https://github.com/HKU-BAL/Clair3#pre-trained-models).
 - `--minimum-map-quality 30` filters reads with MAPQ below 30 before variant calling. Tighten this for very noisy runs.
 - The pipeline silently sanitizes the reference's FASTA headers (replacing `/`, `|`, `,`, `~`, and spaces with `_`) before use — clair3 turns the seq ID into a directory name, so the sanitization avoids cryptic filesystem errors. The sanitized copy lands at `results/consensus_nanopore/sarscov2/reference/reference.sanitized.fasta`.
