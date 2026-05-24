@@ -57,6 +57,7 @@ def run_workflow(workflow_path: str, args: Dict[str, Any]) -> bool:
         configfiles=[args["config_file"]],
         cores=args["threads_total"],
         use_conda=True,
+        conda_prefix=args.get("conda_prefix"),
         targets=["all"],
     )
 

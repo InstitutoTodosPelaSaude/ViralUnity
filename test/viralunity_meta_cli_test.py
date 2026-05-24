@@ -1,6 +1,8 @@
 """Tests for viralunity meta CLI (click-based)."""
 
+import os
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -112,6 +114,69 @@ class Test_MetaNanoporeCommand(unittest.TestCase):
             )
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertFalse(mock_main.call_args[0][0]["run_kraken2_reads"])
+
+
+class Test_MetaCondaPrefix(unittest.TestCase):
+    """``--conda-prefix`` (and the ``$VIRALUNITY_CONDA_PREFIX`` env var) must
+    land in the args dict passed to ``meta_main``."""
+
+    def setUp(self):
+        self.runner = CliRunner()
+        self._required_illumina = [
+            "illumina",
+            "--sample-sheet",
+            "sample_sheet.csv",
+            "--config-file",
+            "config_file.yaml",
+            "--output",
+            "output_dir",
+            "--kraken2-database",
+            "kraken2_db",
+            "--krona-database",
+            "krona_db",
+        ]
+        self._required_nanopore = [
+            "nanopore",
+            "--sample-sheet",
+            "sample_sheet.csv",
+            "--config-file",
+            "config_file.yaml",
+            "--output",
+            "output_dir",
+            "--kraken2-database",
+            "kraken2_db",
+            "--krona-database",
+            "krona_db",
+        ]
+
+    def _invoke(self, cli_args):
+        with patch("viralunity.viralunity_meta_cli.meta_main", return_value=0) as mock_main:
+            result = self.runner.invoke(meta, cli_args, catch_exceptions=False)
+        return result, mock_main
+
+    def test_explicit_conda_prefix_illumina(self):
+        result, mock_main = self._invoke(self._required_illumina + ["--conda-prefix", "/tmp/foo"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_main.call_args[0][0]["conda_prefix"], "/tmp/foo")
+
+    def test_explicit_conda_prefix_nanopore(self):
+        result, mock_main = self._invoke(self._required_nanopore + ["--conda-prefix", "/tmp/foo"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_main.call_args[0][0]["conda_prefix"], "/tmp/foo")
+
+    def test_default_conda_prefix(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("VIRALUNITY_CONDA_PREFIX", None)
+            result, mock_main = self._invoke(self._required_illumina)
+        self.assertEqual(result.exit_code, 0, result.output)
+        expected = str(Path.home() / ".cache" / "viralunity" / "conda-envs")
+        self.assertEqual(mock_main.call_args[0][0]["conda_prefix"], expected)
+
+    def test_env_var_conda_prefix(self):
+        with patch.dict(os.environ, {"VIRALUNITY_CONDA_PREFIX": "/srv/shared/envs"}):
+            result, mock_main = self._invoke(self._required_illumina)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_main.call_args[0][0]["conda_prefix"], "/srv/shared/envs")
 
 
 if __name__ == "__main__":
