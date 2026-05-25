@@ -67,6 +67,20 @@ The release process is documented in [RELEASING.md](RELEASING.md).
 
 ### Fixed
 
+- `viralunity setup` now pre-builds the conda envs gated by every
+  optional pipeline flag — previously the skeleton config used by
+  `setup` left `run_isnv`, `run_denovo_assembly`, `run_diamond_*`,
+  `run_reference_assembly`, and the meta-nanopore polish flags off, so
+  Snakemake's DAG walk pruned the matching rules and their envs were
+  never materialized. A user who pre-warmed with `setup` and then ran
+  e.g. `viralunity consensus illumina --run-isnv` still hit dynamic env
+  creation for `envs/consensus.yaml` at runtime — exactly the failure
+  mode `setup` exists to avoid. `setup --pipelines consensus-illumina`
+  now builds 4 envs instead of 3 (adds `consensus.yaml`); the meta
+  variants pick up `assembly.yaml`, `genome_selection.yaml`, and
+  (nanopore) `medaka.yaml`. `SKELETON_PLACEHOLDERS` grew the
+  reference-assembly placeholders (`virus_genomes/*.fasta`, `*.tsv`,
+  `diamond/protein2taxid.tsv`) needed for the expanded DAG.
 - **Critical:** first pipeline run on a fresh install with the current
   conda stack (conda 26.x + conda-libmamba-solver 26.x) aborts on
   `Creating conda environment .../qc.yaml` with a

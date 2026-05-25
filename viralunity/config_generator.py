@@ -402,6 +402,13 @@ class ConfigGenerator:
         gen.add_output(f"{root}/output", "skeleton_run")
         gen.add_threads(1)
 
+        # Every optional feature flag is enabled below so Snakemake's DAG
+        # walk reaches every rule and ``conda_create_envs_only=True``
+        # materializes every per-rule env that pipeline could possibly need.
+        # If a flag is left off here, its env is silently skipped by
+        # ``viralunity setup`` and falls back to dynamic env creation at
+        # the user's first real run — exactly the failure mode setup
+        # exists to prevent.
         if pipeline == "consensus":
             gen.add_consensus_settings(
                 reference=f"{root}/references/skel.reference.fasta",
@@ -409,7 +416,13 @@ class ConfigGenerator:
                 minimum_coverage=20,
             )
             if data_type == DataType.ILLUMINA:
-                gen.add_illumina_settings(adapters="NA", minimum_read_length=50)
+                # run_isnv=True pulls the detect_isnv (LoFreq) rule into
+                # the DAG, which uses envs/consensus.yaml.
+                gen.add_illumina_settings(
+                    adapters="NA",
+                    minimum_read_length=50,
+                    run_isnv=True,
+                )
             else:
                 gen.add_consensus_nanopore_settings(
                     minimum_read_length=50,
@@ -430,11 +443,31 @@ class ConfigGenerator:
                 remove_human_reads=False,
                 remove_unclassified_reads=False,
                 taxdump=f"{root}/taxdump/",
+                taxids=f"{root}/diamond/protein2taxid.tsv",
                 diamond_database=f"{root}/diamond/nr.dmnd",
+                # All four classifier toggles on => kraken2 + diamond
+                # rules on reads *and* contigs are in the DAG; pulls
+                # taxonomy.yaml.
+                run_denovo_assembly=True,
+                run_kraken2_reads=True,
+                run_kraken2_contigs=True,
+                run_diamond_reads=True,
+                run_diamond_contigs=True,
             )
-            gen.add_reference_assembly_settings(run_reference_assembly=False)
+            # Reference-assembly checkpoint pulls genome_selection.yaml.
+            gen.add_reference_assembly_settings(
+                run_reference_assembly=True,
+                method="kraken2",
+                source="reads",
+                viral_genomes=f"{root}/virus_genomes/viral.genomes.fasta",
+                viral_taxids=f"{root}/virus_genomes/genome2taxid.tsv",
+            )
             if data_type == DataType.NANOPORE:
-                gen.add_nanopore_settings()
+                # Polish flags pull racon (consensus.yaml) and medaka.yaml.
+                gen.add_nanopore_settings(
+                    run_polish_racon=True,
+                    run_polish_medaka=True,
+                )
         else:
             raise ValueError(
                 f"Unknown pipeline: {pipeline!r} (expected 'consensus' or 'metagenomics')"
@@ -468,6 +501,9 @@ class ConfigGenerator:
                 "taxdump/nodes.dmp",
                 "taxdump/names.dmp",
                 "diamond/nr.dmnd",
+                "diamond/protein2taxid.tsv",
+                "virus_genomes/viral.genomes.fasta",
+                "virus_genomes/genome2taxid.tsv",
             ],
             "nanopore": [
                 "reads/skel.fastq.gz",
@@ -476,6 +512,9 @@ class ConfigGenerator:
                 "taxdump/nodes.dmp",
                 "taxdump/names.dmp",
                 "diamond/nr.dmnd",
+                "diamond/protein2taxid.tsv",
+                "virus_genomes/viral.genomes.fasta",
+                "virus_genomes/genome2taxid.tsv",
             ],
         },
     }
