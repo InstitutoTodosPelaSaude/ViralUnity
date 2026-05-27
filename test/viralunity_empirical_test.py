@@ -16,9 +16,12 @@ tutorial only shows the full meta nanopore command. We test the minimal variant
 to keep runtime and database needs aligned with ``meta_illumina_minimal``.
 
 Prerequisite: ``viralunity`` is on ``PATH`` and the per-rule conda envs have
-been materialized once via:
+been materialized once via::
 
-    viralunity setup --pipelines consensus-illumina,consensus-nanopore,meta-illumina,meta-nanopore
+    viralunity setup --pipelines all
+
+(or repeat ``--pipelines <name>`` for each of consensus-illumina,
+consensus-nanopore, meta-illumina, meta-nanopore.)
 
 Otherwise the first invocation pays ~10 min building envs and may hit the
 ``CreateCondaEnvironmentException`` referenced in ``CONDA_ENV_CREATION_FIX.md``.
