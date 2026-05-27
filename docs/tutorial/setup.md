@@ -59,8 +59,8 @@ viralunity create-samplesheet \
 This writes:
 
 ```text
-4117,my_test_data/illumina_data/4117_S80_L001_R1_001.fastq.gz,my_test_data/illumina_data/4117_S80_L001_R2_001.fastq.gz
-61382,my_test_data/illumina_data/61382_S1_L001_R1_001.fastq.gz,my_test_data/illumina_data/61382_S1_L001_R2_001.fastq.gz
+itps-0001,my_test_data/illumina_data/itps-0001_R1.fastq.gz,my_test_data/illumina_data/itps-0001_R2.fastq.gz
+itps-0002,my_test_data/illumina_data/itps-0002_R1.fastq.gz,my_test_data/illumina_data/itps-0002_R2.fastq.gz
 ```
 
 ```bash
@@ -76,8 +76,8 @@ viralunity create-samplesheet \
 Which writes:
 
 ```text
-barcode05,my_test_data/nanopore_data/barcode05.fastq
-barcode09,my_test_data/nanopore_data/barcode09.fastq
+barcode05,my_test_data/nanopore_data/barcode05.itps-0003.fastq.gz
+barcode09,my_test_data/nanopore_data/barcode09.itps-0004.fastq.gz
 ```
 
 ```{tip}

@@ -44,7 +44,7 @@ The output of every classifier — reads or contigs — flows through the same c
 
 ## Worked example — Illumina, built up incrementally
 
-We will use the same `samples_illumina.csv` from [Setup](setup.md) — the two SARS-CoV-2 amplicon samples `4117` and `61382`. Each step below adds one slice of the pipeline. You can stop at any step that gives you what you need.
+We will use the same `samples_illumina.csv` from [Setup](setup.md) — the two SARS-CoV-2 amplicon samples `itps-0001` and `itps-0002`. Each step below adds one slice of the pipeline. You can stop at any step that gives you what you need.
 
 ### Step A — minimal: Kraken2 on reads
 

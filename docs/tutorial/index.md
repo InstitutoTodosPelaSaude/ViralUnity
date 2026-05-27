@@ -37,8 +37,8 @@ metagenomics
 
 The worked examples use a small SARS-CoV-2 dataset that ships in this checkout under `my_test_data/`:
 
-- `my_test_data/illumina_data/` — two paired-end Illumina amplicon samples: `4117_S80_L001_R{1,2}_001.fastq.gz` and `61382_S1_L001_R{1,2}_001.fastq.gz`.
-- `my_test_data/nanopore_data/` — two Nanopore samples: `barcode05.fastq` and `barcode09.fastq`.
+- `my_test_data/illumina_data/` — two paired-end Illumina amplicon samples: `itps-0001_R{1,2}.fastq.gz` and `itps-0002_R{1,2}.fastq.gz`.
+- `my_test_data/nanopore_data/` — two Nanopore samples: `barcode05.itps-0003.fastq.gz` and `barcode09.itps-0004.fastq.gz`.
 
 ```{note}
 `my_test_data/` is gitignored and only present in checkouts where you have placed it yourself. If you do not have it, substitute your own SARS-CoV-2 FASTQs in the commands below — the paths and sample IDs are the only things that change. A suitable reference genome is NCBI [`MN908947.3`](https://www.ncbi.nlm.nih.gov/nuccore/MN908947.3), available as `nCoV-2019.reference.fasta` in any of the public [ARTIC](https://github.com/artic-network/primer-schemes) primer-scheme repositories.

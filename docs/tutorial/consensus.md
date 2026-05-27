@@ -41,8 +41,8 @@ We will assemble the two paired-end samples in `my_test_data/illumina_data/`. Th
 Already generated in [Setup](setup.md):
 
 ```text
-4117,my_test_data/illumina_data/4117_S80_L001_R1_001.fastq.gz,my_test_data/illumina_data/4117_S80_L001_R2_001.fastq.gz
-61382,my_test_data/illumina_data/61382_S1_L001_R1_001.fastq.gz,my_test_data/illumina_data/61382_S1_L001_R2_001.fastq.gz
+itps-0001,my_test_data/illumina_data/itps-0001_R1.fastq.gz,my_test_data/illumina_data/itps-0001_R2.fastq.gz
+itps-0002,my_test_data/illumina_data/itps-0002_R1.fastq.gz,my_test_data/illumina_data/itps-0002_R2.fastq.gz
 ```
 
 ### Run
@@ -105,13 +105,13 @@ How to read each one:
 **`samples/<sample>/consensus.vcf.gz`** — the differences between your sample and the reference, called from the consensus FASTA via GSAlign. Inspect with:
 
 ```bash
-bcftools view results/consensus_illumina/sarscov2/samples/4117/consensus.vcf.gz | head -30
+bcftools view results/consensus_illumina/sarscov2/samples/itps-0001/consensus.vcf.gz | head -30
 ```
 
 **`assembly/coverage_stats/<sample>.table_cov_basewise.txt`** — three columns: `RNAME`, `POS`, `DEPTH`. Useful for spotting drop-outs:
 
 ```bash
-awk '$3 < 20' results/consensus_illumina/sarscov2/assembly/coverage_stats/4117.table_cov_basewise.txt | head
+awk '$3 < 20' results/consensus_illumina/sarscov2/assembly/coverage_stats/itps-0001.table_cov_basewise.txt | head
 ```
 
 **`samples/<sample>/{raw,trimmed}_mapped_reads.bam`** — both exist deliberately. `raw_mapped_reads.bam` is what minimap2 produced; `trimmed_mapped_reads.bam` is the same BAM after `samtools ampliconclip` removed primer sequences (only different when you passed `--primer-scheme`). The consensus is called from the trimmed BAM.
@@ -151,8 +151,8 @@ Same virus, different chemistry. The reads are in `my_test_data/nanopore_data/`.
 ### Sample sheet (2 columns)
 
 ```text
-barcode05,my_test_data/nanopore_data/barcode05.fastq
-barcode09,my_test_data/nanopore_data/barcode09.fastq
+barcode05,my_test_data/nanopore_data/barcode05.itps-0003.fastq.gz
+barcode09,my_test_data/nanopore_data/barcode09.itps-0004.fastq.gz
 ```
 
 ### Run
