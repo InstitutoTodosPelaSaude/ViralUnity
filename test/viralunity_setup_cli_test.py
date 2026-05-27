@@ -64,6 +64,35 @@ class Test_ConfigGeneratorSkeleton(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ConfigGenerator.write_skeleton("bogus", "illumina", str(path), str(placeholder))
 
+    def test_optional_features_enabled_consensus_illumina(self):
+        """``--run-isnv`` must be on so the LoFreq branch is in the DAG and
+        ``viralunity setup`` materializes ``envs/consensus.yaml``."""
+        cfg = self._write_and_load("consensus", "illumina")
+        self.assertTrue(cfg["run_isnv"])
+
+    def test_optional_features_enabled_metagenomics(self):
+        """Every optional toggle must be on so ``viralunity setup`` covers
+        every per-rule conda env any pipeline branch could need."""
+        for data_type in ("illumina", "nanopore"):
+            with self.subTest(data_type=data_type):
+                cfg = self._write_and_load("metagenomics", data_type)
+                for key in (
+                    "run_denovo_assembly",
+                    "run_kraken2_reads",
+                    "run_kraken2_contigs",
+                    "run_diamond_reads",
+                    "run_diamond_contigs",
+                    "run_reference_assembly",
+                ):
+                    self.assertTrue(cfg[key], f"{key} must be enabled in skeleton")
+
+    def test_optional_features_enabled_metagenomics_nanopore(self):
+        """Polishing must be on so racon (consensus.yaml) and medaka envs are
+        in the DAG."""
+        cfg = self._write_and_load("metagenomics", "nanopore")
+        self.assertTrue(cfg["run_polish_racon"])
+        self.assertTrue(cfg["run_polish_medaka"])
+
 
 class Test_CollectEnvYamls(unittest.TestCase):
     """``_collect_env_yamls`` enumerates the conda envs declared in a
@@ -103,6 +132,12 @@ class Test_SetupCli(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         self.assertIn("consensus-illumina", result.output)
         self.assertIn("qc.yaml", result.output)
+        # Regression: consensus.yaml (LoFreq) must appear for consensus-illumina.
+        # Previously the skeleton config left run_isnv=False, so the
+        # detect_isnv rule was pruned out of the DAG and consensus.yaml was
+        # never materialized by `viralunity setup`. Users who later passed
+        # --run-isnv hit dynamic env creation on the hot path.
+        self.assertIn("consensus.yaml", result.output)
 
     def test_dry_run_all_pipelines(self):
         result = self.runner.invoke(setup, ["--dry-run"], catch_exceptions=False)
