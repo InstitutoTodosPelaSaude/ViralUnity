@@ -1,0 +1,118 @@
+name: sars_cov_2
+description: |
+  SARS-CoV-2 ARTIC V3 — itps-0001/0002 Illumina + barcode05/09 Nanopore.
+  First empirical-test scenario. Exercises the four tutorial pipelines:
+  consensus illumina, consensus nanopore, and a minimal Kraken2-reads-only
+  meta run for each platform (no DIAMOND, no denovo, no dehosting, no
+  reference-assembly).
+
+data:
+  tarball:
+    url: https://itps-nimbus.nyc3.cdn.digitaloceanspaces.com/my_test_data.tar.gz
+    extract_to: my_test_data
+    expected_files:
+      - my_test_data/illumina_data/itps-0001_R1.fastq.gz
+      - my_test_data/illumina_data/itps-0001_R2.fastq.gz
+      - my_test_data/illumina_data/itps-0002_R1.fastq.gz
+      - my_test_data/illumina_data/itps-0002_R2.fastq.gz
+      - my_test_data/nanopore_data/barcode05.itps-0003.fastq.gz
+      - my_test_data/nanopore_data/barcode09.itps-0004.fastq.gz
+
+references:
+  - url: https://raw.githubusercontent.com/artic-network/primer-schemes/master/nCoV-2019/V3/nCoV-2019.reference.fasta
+    dest: references/nCoV-2019.reference.fasta
+  - url: https://raw.githubusercontent.com/artic-network/primer-schemes/master/nCoV-2019/V3/nCoV-2019.scheme.bed
+    dest: references/nCoV-2019.bed
+
+sample_sheets:
+  illumina:
+    path: samples_illumina.csv
+    rows:
+      - [itps-0001, my_test_data/illumina_data/itps-0001_R1.fastq.gz, my_test_data/illumina_data/itps-0001_R2.fastq.gz]
+      - [itps-0002, my_test_data/illumina_data/itps-0002_R1.fastq.gz, my_test_data/illumina_data/itps-0002_R2.fastq.gz]
+  nanopore:
+    path: samples_nanopore.csv
+    rows:
+      - [barcode05, my_test_data/nanopore_data/barcode05.itps-0003.fastq.gz]
+      - [barcode09, my_test_data/nanopore_data/barcode09.itps-0004.fastq.gz]
+
+databases:
+  kraken2: { path: databases/kraken2,        sentinel: hash.k2d }
+  krona:   { path: databases/krona/taxonomy, sentinel: taxonomy.tab }
+  taxdump: { path: databases/taxdump,        sentinel: nodes.dmp }
+
+pipelines:
+  - id: consensus_illumina
+    cli: [viralunity, consensus, illumina]
+    samples_ref: illumina
+    run_name: sarscov2
+    extra_args:
+      --reference:         references/nCoV-2019.reference.fasta
+      --primer-scheme:     references/nCoV-2019.bed
+      --minimum-coverage:  "20"
+      --threads:           "2"
+      --threads-total:     "4"
+    expected_outputs:
+      - samples/itps-0001/consensus.fasta
+      - samples/itps-0002/consensus.fasta
+      - samples/itps-0001/trimmed_mapped_reads.bam
+      - assembly/assembly_stats_summary.csv
+      - assembly/consensus/final_consensus/samples_alignment.fasta
+      - qc/reports/multiqc_report.html
+      - benchmark.tsv
+
+  - id: consensus_nanopore
+    cli: [viralunity, consensus, nanopore]
+    samples_ref: nanopore
+    run_name: sarscov2
+    extra_args:
+      --reference:            references/nCoV-2019.reference.fasta
+      --clair3-model:         r1041_e82_400bps_sup_v500
+      --minimum-coverage:     "20"
+      --minimum-map-quality:  "30"
+      --threads:              "4"
+      --threads-total:        "4"
+    expected_outputs:
+      - samples/barcode05/consensus.fasta
+      - samples/barcode09/consensus.fasta
+      - assembly/consensus/final_consensus/samples_alignment.fasta
+      - benchmark.tsv
+
+  - id: meta_illumina_minimal
+    cli: [viralunity, meta, illumina]
+    samples_ref: illumina
+    run_name: sarscov2
+    needs_databases: [kraken2, krona, taxdump]
+    extra_args:
+      --kraken2-database:  databases/kraken2
+      --krona-database:    databases/krona/taxonomy
+      --taxdump:           databases/taxdump
+      --threads:           "2"
+      --threads-total:     "4"
+    extra_flags: [--no-kraken2-contigs]
+    expected_outputs:
+      - samples/itps-0001/kraken2_reads.report.txt
+      - samples/itps-0001/kraken2_reads.krona.html
+      - samples/itps-0001/kraken2_reads.filtered.krona.html
+      - metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv
+      - qc/reports/multiqc_report.html
+      - benchmark.tsv
+
+  - id: meta_nanopore_minimal
+    cli: [viralunity, meta, nanopore]
+    samples_ref: nanopore
+    run_name: sarscov2
+    needs_databases: [kraken2, krona, taxdump]
+    extra_args:
+      --kraken2-database:  databases/kraken2
+      --krona-database:    databases/krona/taxonomy
+      --taxdump:           databases/taxdump
+      --threads:           "4"
+      --threads-total:     "4"
+    extra_flags: [--no-kraken2-contigs]
+    expected_outputs:
+      - samples/barcode05/kraken2_reads.report.txt
+      - samples/barcode05/kraken2_reads.krona.html
+      - samples/barcode05/kraken2_reads.filtered.krona.html
+      - metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv
+      - benchmark.tsv

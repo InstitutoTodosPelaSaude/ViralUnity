@@ -1,10 +1,16 @@
-.PHONY: test test-dryrun lint format run-meta run-consensus install install-dev build-docker run-docker
+.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker
 
 test: install-dev
 	python3 -m unittest discover ./test -p *test.py
 
 test-dryrun: install-dev
 	pytest test/viralunity_dryrun_test.py -v
+
+# Opt-in end-to-end suite: downloads real data, runs full pipelines.
+# Prerequisite: viralunity on PATH + `viralunity setup --pipelines all` once.
+# Override cache location with VIRALUNITY_TEST_CACHE=/some/path.
+test-empirical: install-dev
+	pytest test/viralunity_empirical_test.py -v -m empirical
 
 lint: install-dev
 	black --check viralunity/ test/
