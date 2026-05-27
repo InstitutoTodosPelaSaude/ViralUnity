@@ -124,48 +124,48 @@ rule organize_files:
         done
         for _file in {input.fastp_reports}; do
             sample=$(basename $_file _fastp.html | sed 's/^trim.//');
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/fastp.html;
+            ln -sf $_file {params.outdir}samples/$sample/fastp.html;
         done
         for _file in {input.vcf_files}; do
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .consensus.vcf.gz);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/consensus.vcf.gz;
-            ln -sf $PWD/$_file.tbi {params.outdir}samples/$sample/$segment/consensus.vcf.gz.tbi;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/consensus.vcf.gz;
+            ln -sf $_file.tbi {params.outdir}samples/$sample/$segment/consensus.vcf.gz.tbi;
         done
         for _file in {input.isn_vcf_files} ""; do
             if [ -z "$_file" ]; then continue; fi
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .isnvs.vcf.gz);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/isnvs.vcf.gz;
-            ln -sf $PWD/$_file.tbi {params.outdir}samples/$sample/$segment/isnvs.vcf.gz.tbi;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/isnvs.vcf.gz;
+            ln -sf $_file.tbi {params.outdir}samples/$sample/$segment/isnvs.vcf.gz.tbi;
         done
         for _file in {input.stats_summary}; do
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .stats_summary.csv);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/stats_summary.csv;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/stats_summary.csv;
         done
         for _file in {input.consensus_files}; do
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .consensus.fasta);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/consensus.fasta;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/consensus.fasta;
         done
         for _file in {input.raw_mapped_reads}; do
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .sorted.bam);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/raw_mapped_reads.bam;
-            ln -sf $PWD/$_file.bai {params.outdir}samples/$sample/$segment/raw_mapped_reads.bam.bai;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/raw_mapped_reads.bam;
+            ln -sf $_file.bai {params.outdir}samples/$sample/$segment/raw_mapped_reads.bam.bai;
         done
         for _file in {input.trimmed_mapped_reads}; do
             outdir="{params.outdir}"; rel=${{_file#$outdir}}; rel=${{rel#assembly/}};
             segment=$(echo \"$rel\" | cut -d'/' -f1);
             sample=$(basename $_file .sorted.bam);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/$segment/trimmed_mapped_reads.bam;
-            ln -sf $PWD/$_file.bai {params.outdir}samples/$sample/$segment/trimmed_mapped_reads.bam.bai;
+            ln -sf $_file {params.outdir}samples/$sample/$segment/trimmed_mapped_reads.bam;
+            ln -sf $_file.bai {params.outdir}samples/$sample/$segment/trimmed_mapped_reads.bam.bai;
         done
 
         # Benchmark aggregation
