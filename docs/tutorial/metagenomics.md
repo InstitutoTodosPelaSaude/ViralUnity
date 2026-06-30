@@ -142,7 +142,9 @@ If you want the protein-level signal but only on contigs (and not on reads), dro
 
 ### Step D — turn on reference assembly
 
-This is the headline feature that makes the meta pipeline more than a classifier. When `--run-reference-assembly` is on, a Snakemake checkpoint reads the filtered taxa tables, picks one or more reference genomes per sample, and runs reference-guided consensus assembly automatically — the same alignment/consensus rules used by `viralunity consensus`.
+This is the headline feature that makes the meta pipeline more than a classifier. When `--run-reference-assembly` is on, a Snakemake checkpoint reads the post-filter taxa tables, picks one or more reference genomes per sample, and runs reference-guided consensus assembly automatically — the same alignment/consensus rules used by `viralunity consensus`.
+
+The checkpoint reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when you declare `--negative-controls`, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`); taxa that explicitly fail `bleed_pass` or `neg_pass` are dropped before selection (NA is kept). So contaminants suppressed by the cross-sample filters do **not** trigger reference assembly. (Older outputs that lack these tables fall back to the raw counts table.)
 
 ```bash
 viralunity meta illumina \
@@ -295,7 +297,7 @@ Every classifier produces two Krona HTMLs per sample — `*.krona.html` (built d
 
 ## Reference assembly under the hood
 
-When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the bleed-filtered TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. Two strategies are available:
+When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the post-filter TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. It reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when `--negative-controls` is set, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`), and only considers taxa that did not explicitly fail `bleed_pass`/`neg_pass`. Two strategies are available:
 
 - **`taxid` (default)** — for each passing taxon assigned to a target family, look up the taxid directly in `viral_taxids` (`genome2taxid.tsv`). If the exact taxid is not present (often the classifier picked a strain that is below species in the NCBI taxonomy), resolve to the species-level ancestor via `taxdump` and retry. Fast and deterministic; assumes your classifier database and your `viral_genomes` database came from compatible RefSeq releases.
 

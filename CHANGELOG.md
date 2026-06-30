@@ -55,6 +55,26 @@ The release process is documented in [RELEASING.md](RELEASING.md).
 - `viralunity/scripts/python/apply_negative_background_filter.py` — the Poisson-based
   negative-control filter script. Replaced by `add_negative_control_enrichment.py`.
 
+### Fixed
+
+- **Reference assembly now selects from the post-filter taxa tables.** The
+  `select_references_meta` checkpoint previously read the *raw* counts table
+  (`*_taxa_summary.tsv`), so contaminants suppressed by the cross-sample filters could
+  still trigger reference-guided consensus runs. It now reads the
+  negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when `--negative-controls` is
+  set, else the bleed-filtered table (`*_RPM.bleed.tsv`), dropping taxa that explicitly
+  fail `bleed_pass`/`neg_pass` (NA is kept; older outputs fall back to raw counts).
+  New `--summary-suffix` arg on `select_reference_genomes.py`; 13 unit tests.
+- **Shared-module imports work inside per-rule conda envs.** The taxonomy refactor made
+  four `script:` scripts import `from viralunity.scripts.python...`, which is not importable
+  in the per-rule conda envs and crashed the metagenomics rules at runtime. Added a
+  sibling-module import fallback (`summarize_krona_taxa`, `filter_krona_by_pass_taxids`,
+  `add_negative_control_enrichment`, `build_genome_length_table`).
+- **Negative-control IDs are matched after `sample-` prefixing.** `--negative-controls`
+  takes raw sample IDs, but the summary `sample` column is prefixed; the enrichment step
+  matched the raw IDs and aborted with "None of the provided negative controls appear...".
+  IDs are now prefixed to match, with fast-fail validation that each names a real sample.
+
 ## [Unreleased]  - 2026-05-24
 
 ### Added

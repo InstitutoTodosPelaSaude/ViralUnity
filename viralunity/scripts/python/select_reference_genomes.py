@@ -16,6 +16,15 @@ def parse_args():
     parser.add_argument(
         "--summary-dir", required=True, help="Directory containing TSV summary files."
     )
+    parser.add_argument(
+        "--summary-suffix",
+        default="",
+        help="Suffix of the per-classifier summary table to read: '' for the raw "
+        "counts table, '_RPM.bleed' for the bleed-filtered table, or "
+        "'_RPM.bleed.neg' for the negative-control-filtered table. Rows that "
+        "explicitly fail bleed_pass/neg_pass are dropped before selection; "
+        "missing files fall back through bleed-only to raw counts.",
+    )
     parser.add_argument("--method", required=True, choices=["kraken2", "diamond", "both"])
     parser.add_argument("--source", required=True, choices=["reads", "contigs", "both"])
     parser.add_argument("--reads-count", type=int, default=100)
@@ -110,6 +119,67 @@ def clean_accession(sseqid):
     return sseqid
 
 
+# Classifier subdirectories keyed by (method, source). The basename of each
+# summary table is "<classifier>_taxa_summary<suffix>.tsv".
+_CLASSIFIERS = (
+    ("kraken2", "reads", "kraken2_reads"),
+    ("kraken2", "contigs", "kraken2_contigs"),
+    ("diamond", "reads", "diamond_reads"),
+    ("diamond", "contigs", "diamond_contigs"),
+)
+
+
+# Summary tables from most- to least-filtered. Reference selection prefers the
+# requested level, then degrades gracefully to less-filtered tables so it still
+# works on older outputs that predate the bleed / negative-control steps.
+_SUFFIX_HIERARCHY = ("_RPM.bleed.neg", "_RPM.bleed", "")
+
+
+def _fallback_suffixes(suffix):
+    """Ordered suffixes to try: the requested level then progressively less-filtered ones."""
+    suffix = suffix or ""
+    if suffix in _SUFFIX_HIERARCHY:
+        return list(_SUFFIX_HIERARCHY[_SUFFIX_HIERARCHY.index(suffix) :])
+    # Unknown/custom suffix: try it, then the standard fallbacks.
+    return [suffix, "_RPM.bleed", ""]
+
+
+def resolve_summary_file(summary_dir, classifier, suffix):
+    """Return the most-filtered existing summary file for a classifier, or None."""
+    for suf in _fallback_suffixes(suffix):
+        path = os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary{suf}.tsv")
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def collect_summary_files(summary_dir, method, source, suffix):
+    """Resolve one summary file per enabled (method, source) classifier."""
+    files = []
+    for m, s, classifier in _CLASSIFIERS:
+        if method in (m, "both") and source in (s, "both"):
+            path = resolve_summary_file(summary_dir, classifier, suffix)
+            if path is not None:
+                files.append(path)
+    return files
+
+
+def apply_pass_column_filters(df):
+    """Drop taxa that explicitly failed the bleed or negative-control filters.
+
+    A row is removed only when ``bleed_pass`` or ``neg_pass`` is explicitly
+    False; NA / missing values are kept, matching the conservative
+    "NA == keep" contract used by the lineage-aware Krona filter. Tables that
+    lack these columns (e.g. the raw counts fallback) pass through unchanged.
+    """
+    out = df
+    for col in ("bleed_pass", "neg_pass"):
+        if col in out.columns:
+            is_false = out[col].astype(str).str.strip().str.lower() == "false"
+            out = out[~is_false]
+    return out
+
+
 def main(args=None):
     if args is None:
         args = parse_args()
@@ -148,43 +218,13 @@ def main(args=None):
             "Family-level filtering will be skipped and ref_key may be inaccurate."
         )
 
-    # Parse summary TSVs
-    summary_files = []
-    if args.method in ["kraken2", "both"]:
-        if args.source in ["reads", "both"]:
-            summary_files.extend(
-                glob.glob(
-                    os.path.join(
-                        args.summary_dir, "kraken2_reads", "kraken2_reads_taxa_summary.tsv"
-                    )
-                )
-            )
-        if args.source in ["contigs", "both"]:
-            summary_files.extend(
-                glob.glob(
-                    os.path.join(
-                        args.summary_dir, "kraken2_contigs", "kraken2_contigs_taxa_summary.tsv"
-                    )
-                )
-            )
-
-    if args.method in ["diamond", "both"]:
-        if args.source in ["reads", "both"]:
-            summary_files.extend(
-                glob.glob(
-                    os.path.join(
-                        args.summary_dir, "diamond_reads", "diamond_reads_taxa_summary.tsv"
-                    )
-                )
-            )
-        if args.source in ["contigs", "both"]:
-            summary_files.extend(
-                glob.glob(
-                    os.path.join(
-                        args.summary_dir, "diamond_contigs", "diamond_contigs_taxa_summary.tsv"
-                    )
-                )
-            )
+    # Parse summary TSVs. Prefer the negative-control / bleed-filtered tables
+    # (per --summary-suffix) so reference assembly is not triggered by taxa that
+    # the cross-sample filters flagged as contamination.
+    summary_suffix = getattr(args, "summary_suffix", "") or ""
+    summary_files = collect_summary_files(
+        args.summary_dir, args.method, args.source, summary_suffix
+    )
 
     if not summary_files:
         print("Warning: No summary TSVs found for the given method and source.")
@@ -205,6 +245,10 @@ def main(args=None):
         return
 
     df = pd.concat(frames, ignore_index=True)
+
+    # Drop taxa that explicitly failed the bleed / negative-control filters
+    # before any count-threshold or family logic runs.
+    df = apply_pass_column_filters(df)
 
     # Filter by count threshold
     df_reads = df[df["mode"] == "reads"]
@@ -406,6 +450,7 @@ if "snakemake" in globals():
 
     args = SnakemakeArgs()
     args.summary_dir = snakemake.params.summary_dir
+    args.summary_suffix = getattr(snakemake.params, "summary_suffix", "")
     args.method = snakemake.params.method
     args.source = snakemake.params.source
     args.reads_count = snakemake.params.reads_count
