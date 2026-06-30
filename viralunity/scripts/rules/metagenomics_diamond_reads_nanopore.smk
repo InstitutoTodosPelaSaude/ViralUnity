@@ -138,8 +138,22 @@ if run_diamond_reads:
         script:
             "../python/add_RPM_to_summary.py"
 
+    if compute_rpkm:
+        rule add_rpkm_to_diamond_reads_summary:
+            input:
+                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv",
+                genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
+            output:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv",
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_rpkm_to_summary.py"
+
     rule apply_bleed_filter_diamond_reads:
         input:
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv"
+            if compute_rpkm else
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"

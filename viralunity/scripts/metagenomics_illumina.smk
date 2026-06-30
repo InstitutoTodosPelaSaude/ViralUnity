@@ -30,6 +30,7 @@ run_k2_contigs = config.get("run_kraken2_contigs", True)
 run_diamond_reads = config.get("run_diamond_reads", False)
 run_diamond_contigs = config.get("run_diamond_contigs", False)
 has_negative_controls = bool(config.get("negative_controls", []))
+compute_rpkm = bool(config.get("compute_rpkm", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -108,6 +109,7 @@ if (run_diamond_reads or run_diamond_contigs) and not diamond_db_is_ready and di
             diamond makedb --in {input} --db {output} 2> {log}
             """
 
+include: "rules/metagenomics_genome_lengths.smk"
 include: "rules/qc_illumina.smk"
 include: "rules/metagenomics_dehost_illumina.smk"
 include: "rules/metagenomics_kraken2_reads_illumina.smk"

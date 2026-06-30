@@ -105,10 +105,13 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         evalue=args.get("evalue", 0.001),
         bleed_fraction=args.get("bleed_fraction", 0.005),
         negative_controls=negative,
-        negative_p_threshold=args.get("negative_p_threshold", 0.01),
         minimum_hit_group=args.get("minimum_hit_group", 4),
         diamond_max_target_seqs=args.get("diamond_max_target_seqs", 1),
         kraken2_extra_flags=args.get("kraken2_extra_flags", "--report-minimizer-data"),
+        compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
+        enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
+        z_score_threshold=args.get("z_score_threshold", 3.0),
+        log2_ratio_threshold=args.get("log2_ratio_threshold", 1.0),
     )
 
     generator.add_reference_assembly_settings(

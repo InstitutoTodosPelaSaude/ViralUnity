@@ -125,8 +125,22 @@ if run_k2_reads:
         script:
             "../python/add_RPM_to_summary.py"
 
+    if compute_rpkm:
+        rule add_rpkm_to_kraken2_reads_summary:
+            input:
+                summary = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv",
+                genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
+            output:
+                config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv",
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_rpkm_to_summary.py"
+
     rule apply_bleed_filter_kraken2_reads:
         input:
+            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv"
+            if compute_rpkm else
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv"
