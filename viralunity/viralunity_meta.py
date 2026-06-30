@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from viralunity import _orchestrator
 from viralunity.constants import DataType, ResourceDefaults
+from viralunity.exceptions import ValidationError
 from viralunity.validators import (
     META_PATH_ARG_KEYS,
     get_samples_from_args,
@@ -78,6 +79,23 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         negative = [x.strip() for x in negative.split(",") if x.strip()]
     elif negative is None:
         negative = []
+
+    # Negative-control IDs are user-facing raw sample IDs, but samples are stored
+    # in the config (and referenced throughout the .smk rules and the summary
+    # 'sample' column) with a 'sample-' prefix applied by ConfigGenerator.add_samples.
+    # Prefix the negatives to match, validating that each names a real sample so a
+    # typo fails fast here instead of silently disabling the negative-control filter.
+    known_samples = set(samples or {})
+    prefixed_negatives = []
+    for nc in negative:
+        raw = nc[len("sample-") :] if nc.startswith("sample-") else nc
+        if known_samples and raw not in known_samples:
+            raise ValidationError(
+                f"Negative control '{nc}' does not match any sample in the sample sheet. "
+                f"Known samples: {sorted(known_samples)}"
+            )
+        prefixed_negatives.append(f"sample-{raw}")
+    negative = prefixed_negatives
 
     # Normalize Krona database path: if it points to a dir containing 'taxonomy', append it.
     krona_db = args.get("krona_database", "NA")
