@@ -42,10 +42,10 @@ import pandas as pd
 
 from viralunity.scripts.python.apply_max_rpm_bleed_filter import infer_group_cols
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Core enrichment functions (unit-testable, no Snakemake dependencies)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def calculate_fold_enrichment(
     sample_metric: float,
@@ -62,8 +62,8 @@ def calculate_log2_ratio(
     pseudocount: float = 1.0,
 ) -> float:
     """Return log2((sample + pc) / (control_mean + pc))."""
-    numerator   = sample_metric + pseudocount
-    denominator = control_mean  + pseudocount
+    numerator = sample_metric + pseudocount
+    denominator = control_mean + pseudocount
     return math.log2(numerator / denominator)
 
 
@@ -81,7 +81,7 @@ def calculate_z_score(
     if len(control_metrics) < min_controls:
         return None
     mean = statistics.mean(control_metrics)
-    sd   = statistics.stdev(control_metrics)  # sample stdev (n-1)
+    sd = statistics.stdev(control_metrics)  # sample stdev (n-1)
     if sd == 0:
         return None
     return (sample_metric - mean) / sd
@@ -90,6 +90,7 @@ def calculate_z_score(
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _build_ctrl_stats(
     control_rows: pd.DataFrame,
@@ -111,19 +112,19 @@ def _build_ctrl_stats(
     for key, vals in metric_lists.items():
         if vals:
             stats[key] = {
-                "control_mean":   statistics.mean(vals),
-                "control_sd":     statistics.stdev(vals) if len(vals) >= 2 else None,
+                "control_mean": statistics.mean(vals),
+                "control_sd": statistics.stdev(vals) if len(vals) >= 2 else None,
                 "control_median": statistics.median(vals),
-                "control_max":    max(vals),
-                "_ctrl_vals":     vals,
+                "control_max": max(vals),
+                "_ctrl_vals": vals,
             }
         else:
             stats[key] = {
-                "control_mean":   0.0,
-                "control_sd":     None,
+                "control_mean": 0.0,
+                "control_sd": None,
                 "control_median": 0.0,
-                "control_max":    0.0,
-                "_ctrl_vals":     [],
+                "control_max": 0.0,
+                "_ctrl_vals": [],
             }
     return stats
 
@@ -135,25 +136,26 @@ def _add_na_enrichment_cols(
     l2r_thresh: float,
 ) -> None:
     """In-place: add all output columns as NA for the zero-control case."""
-    out["is_negative_control"]       = False
-    out["n_negative_controls"]       = 0
-    out["control_mean"]              = pd.NA
-    out["control_sd"]                = pd.NA
-    out["control_median"]            = pd.NA
-    out["control_max"]               = pd.NA
-    out["fold_enrichment"]           = pd.NA
-    out["log2_ratio"]                = pd.NA
-    out["z_score"]                   = pd.NA
-    out["enrichment_pseudocount"]    = pseudocount
-    out["z_score_threshold_used"]    = z_thresh
+    out["is_negative_control"] = False
+    out["n_negative_controls"] = 0
+    out["control_mean"] = pd.NA
+    out["control_sd"] = pd.NA
+    out["control_median"] = pd.NA
+    out["control_max"] = pd.NA
+    out["fold_enrichment"] = pd.NA
+    out["log2_ratio"] = pd.NA
+    out["z_score"] = pd.NA
+    out["enrichment_pseudocount"] = pseudocount
+    out["z_score_threshold_used"] = z_thresh
     out["log2_ratio_threshold_used"] = l2r_thresh
-    out["neg_decision"]              = "none"
-    out["neg_pass"]                  = pd.NA
+    out["neg_decision"] = "none"
+    out["neg_pass"] = pd.NA
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main enrichment logic
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def apply_negative_control_enrichment(
     df: pd.DataFrame,
@@ -229,8 +231,7 @@ def apply_negative_control_enrichment(
     neg_samples_present = sorted(out.loc[out["is_negative_control"], "sample"].unique())
     if not neg_samples_present:
         raise ValueError(
-            "None of the provided negative controls appear in the input table's "
-            "'sample' column."
+            "None of the provided negative controls appear in the input table's " "'sample' column."
         )
 
     n_controls = len(neg_samples_present)
@@ -241,25 +242,25 @@ def apply_negative_control_enrichment(
     ctrl_stats = _build_ctrl_stats(control_rows, group_cols)
 
     # Attach control statistics to each row via explicit lookup
-    out["control_mean"]   = 0.0    # default for taxa absent from controls
-    out["control_sd"]     = pd.NA
+    out["control_mean"] = 0.0  # default for taxa absent from controls
+    out["control_sd"] = pd.NA
     out["control_median"] = 0.0
-    out["control_max"]    = 0.0
-    out["_ctrl_vals"]     = pd.NA
+    out["control_max"] = 0.0
+    out["_ctrl_vals"] = pd.NA
 
     for idx, row in out.iterrows():
         key = tuple(row[c] for c in group_cols)
         if key in ctrl_stats:
             s = ctrl_stats[key]
-            out.at[idx, "control_mean"]   = s["control_mean"]
-            out.at[idx, "control_sd"]     = s["control_sd"]
+            out.at[idx, "control_mean"] = s["control_mean"]
+            out.at[idx, "control_sd"] = s["control_sd"]
             out.at[idx, "control_median"] = s["control_median"]
-            out.at[idx, "control_max"]    = s["control_max"]
-            out.at[idx, "_ctrl_vals"]     = s["_ctrl_vals"]
+            out.at[idx, "control_max"] = s["control_max"]
+            out.at[idx, "_ctrl_vals"] = s["_ctrl_vals"]
 
     # ── Enrichment metrics ────────────────────────────────────────────────────
-    out["enrichment_pseudocount"]    = pseudocount
-    out["z_score_threshold_used"]    = z_score_threshold
+    out["enrichment_pseudocount"] = pseudocount
+    out["z_score_threshold_used"] = z_score_threshold
     out["log2_ratio_threshold_used"] = log2_ratio_threshold
 
     out["fold_enrichment"] = out.apply(
@@ -285,25 +286,25 @@ def apply_negative_control_enrichment(
 
     # ── neg_pass decision ─────────────────────────────────────────────────────
     out["neg_decision"] = pd.NA
-    out["neg_pass"]     = pd.NA
+    out["neg_pass"] = pd.NA
 
     if n_controls >= 2:
         for idx in out[non_ctrl_mask].index:
             z = out.at[idx, "z_score"]
             if pd.notna(z):
                 out.at[idx, "neg_decision"] = "z_score"
-                out.at[idx, "neg_pass"]     = bool(float(z) >= z_score_threshold)
+                out.at[idx, "neg_pass"] = bool(float(z) >= z_score_threshold)
             else:
                 # z undefined (control SD == 0 or taxon absent from controls)
                 l2r = out.at[idx, "log2_ratio"]
                 out.at[idx, "neg_decision"] = "log2_ratio_fallback"
-                out.at[idx, "neg_pass"]     = bool(float(l2r) >= log2_ratio_threshold)
+                out.at[idx, "neg_pass"] = bool(float(l2r) >= log2_ratio_threshold)
     else:
         # n_controls == 1: log2-ratio gate
         for idx in out[non_ctrl_mask].index:
             l2r = out.at[idx, "log2_ratio"]
             out.at[idx, "neg_decision"] = "log2_ratio"
-            out.at[idx, "neg_pass"]     = bool(float(l2r) >= log2_ratio_threshold)
+            out.at[idx, "neg_pass"] = bool(float(l2r) >= log2_ratio_threshold)
 
     # Tidy up internal columns
     out = out.drop(columns=["_metric", "_ctrl_vals"], errors="ignore")
@@ -315,6 +316,7 @@ def apply_negative_control_enrichment(
 # CLI / Snakemake entry points
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def run_cli() -> None:
     ap = argparse.ArgumentParser(
         description=(
@@ -322,19 +324,38 @@ def run_cli() -> None:
             "and a neg_pass gate to a ViralUnity taxa summary TSV."
         )
     )
-    ap.add_argument("--in", dest="inp", required=True,
-                    help="Input TSV (must contain sample, taxid, rpm).")
+    ap.add_argument(
+        "--in", dest="inp", required=True, help="Input TSV (must contain sample, taxid, rpm)."
+    )
     ap.add_argument("--out", required=True, help="Output TSV.")
-    ap.add_argument("--negatives", default="",
-                    help="Comma-separated negative-control sample IDs (empty = no filter).")
-    ap.add_argument("--pseudocount", type=float, default=1.0,
-                    help="Pseudocount for fold-enrichment/log2-ratio (default: 1.0).")
-    ap.add_argument("--z-score-threshold", type=float, default=3.0,
-                    help="Min z-score for neg_pass when n_controls >= 2 (default: 3.0).")
-    ap.add_argument("--log2-ratio-threshold", type=float, default=1.0,
-                    help="Min log2-ratio for neg_pass when n_controls == 1 (default: 1.0).")
-    ap.add_argument("--group-cols", default=None,
-                    help="Comma-separated grouping columns (default: infer from data).")
+    ap.add_argument(
+        "--negatives",
+        default="",
+        help="Comma-separated negative-control sample IDs (empty = no filter).",
+    )
+    ap.add_argument(
+        "--pseudocount",
+        type=float,
+        default=1.0,
+        help="Pseudocount for fold-enrichment/log2-ratio (default: 1.0).",
+    )
+    ap.add_argument(
+        "--z-score-threshold",
+        type=float,
+        default=3.0,
+        help="Min z-score for neg_pass when n_controls >= 2 (default: 3.0).",
+    )
+    ap.add_argument(
+        "--log2-ratio-threshold",
+        type=float,
+        default=1.0,
+        help="Min log2-ratio for neg_pass when n_controls == 1 (default: 1.0).",
+    )
+    ap.add_argument(
+        "--group-cols",
+        default=None,
+        help="Comma-separated grouping columns (default: infer from data).",
+    )
     args = ap.parse_args()
 
     negatives = [x.strip() for x in args.negatives.split(",") if x.strip()]
@@ -352,13 +373,11 @@ def run_cli() -> None:
         group_cols=group_cols,
     )
     out.to_csv(args.out, sep="\t", index=False, na_rep="NA")
-    sys.stderr.write(
-        f"[add_negative_control_enrichment] wrote {len(out)} rows to {args.out}\n"
-    )
+    sys.stderr.write(f"[add_negative_control_enrichment] wrote {len(out)} rows to {args.out}\n")
 
 
 def run_snakemake() -> None:
-    inp  = str(snakemake.input[0])
+    inp = str(snakemake.input[0])
     outp = str(snakemake.output[0])
 
     negatives = getattr(snakemake.params, "negatives", None) or []
@@ -367,8 +386,8 @@ def run_snakemake() -> None:
     if not isinstance(negatives, list):
         raise ValueError("snakemake.params.negatives must be a list or comma-separated string.")
 
-    pseudocount          = float(getattr(snakemake.params, "pseudocount", 1.0))
-    z_score_threshold    = float(getattr(snakemake.params, "z_score_threshold", 3.0))
+    pseudocount = float(getattr(snakemake.params, "pseudocount", 1.0))
+    z_score_threshold = float(getattr(snakemake.params, "z_score_threshold", 3.0))
     log2_ratio_threshold = float(getattr(snakemake.params, "log2_ratio_threshold", 1.0))
 
     group_cols = getattr(snakemake.params, "group_cols", None)

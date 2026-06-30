@@ -300,9 +300,7 @@ def main(args=None):
             sys.exit(1)
 
         # Load genome2taxid for family lookup of BLAST hits (taxdump not required)
-        g2t = pd.read_csv(
-            args.genome2taxid, sep="\t", header=None, names=["accession", "taxid"]
-        )
+        g2t = pd.read_csv(args.genome2taxid, sep="\t", header=None, names=["accession", "taxid"])
         g2t_dict = dict(zip(g2t["accession"].astype(str), g2t["taxid"].astype(str)))
 
         for sample in valid_samples:

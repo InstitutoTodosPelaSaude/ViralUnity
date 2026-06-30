@@ -22,10 +22,10 @@ from viralunity.scripts.python.add_negative_control_enrichment import (
     calculate_z_score,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper factories
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _row(
     sample: str,
@@ -60,6 +60,7 @@ def _df(*rows) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────────────────────
 # Unit tests for the three helper functions
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCalculateFoldEnrichment(unittest.TestCase):
     def test_double_sample_gives_close_to_2(self):
@@ -100,7 +101,7 @@ class TestCalculateLog2Ratio(unittest.TestCase):
     def test_log2_relationship_to_fold_enrichment(self):
         pc = 1.0
         sample, ctrl = 10.0, 3.0
-        fe  = calculate_fold_enrichment(sample, ctrl, pc)
+        fe = calculate_fold_enrichment(sample, ctrl, pc)
         l2r = calculate_log2_ratio(sample, ctrl, pc)
         self.assertAlmostEqual(l2r, math.log2(fe), places=10)
 
@@ -109,7 +110,7 @@ class TestCalculateZScore(unittest.TestCase):
     def test_basic_z_score(self):
         # controls: [2, 4] → mean=3, sd=√2 ≈ 1.414
         z = calculate_z_score(6.0, [2.0, 4.0])
-        self.assertAlmostEqual(z, (6.0 - 3.0) / ((4.0 - 2.0) / (2 ** 0.5)), places=5)
+        self.assertAlmostEqual(z, (6.0 - 3.0) / ((4.0 - 2.0) / (2**0.5)), places=5)
 
     def test_returns_none_with_one_control(self):
         z = calculate_z_score(6.0, [3.0], min_controls=2)
@@ -136,6 +137,7 @@ class TestCalculateZScore(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 # Integration tests for apply_negative_control_enrichment
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestZeroControls(unittest.TestCase):
     """n_controls == 0 → all enrichment cols are NA, neg_pass is NA."""
@@ -169,9 +171,9 @@ class TestSingleControl(unittest.TestCase):
 
     def setUp(self):
         self.df = _df(
-            _row("CTRL", "3001", rpm=10.0),   # negative control
-            _row("S1",   "3001", rpm=80.0),   # high enrichment
-            _row("S2",   "3001", rpm=12.0),   # close to control
+            _row("CTRL", "3001", rpm=10.0),  # negative control
+            _row("S1", "3001", rpm=80.0),  # high enrichment
+            _row("S2", "3001", rpm=12.0),  # close to control
         )
 
     def test_neg_decision_is_log2_ratio(self):
@@ -198,12 +200,8 @@ class TestSingleControl(unittest.TestCase):
         self.assertFalse(s2["neg_pass"])
 
     def test_z_score_is_na_for_single_control(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"]
-        )
-        self.assertTrue(
-            out[out["sample"] != "CTRL"]["z_score"].isna().all()
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL"])
+        self.assertTrue(out[out["sample"] != "CTRL"]["z_score"].isna().all())
 
     def test_control_row_neg_pass_is_na(self):
         out = apply_negative_control_enrichment(
@@ -222,8 +220,8 @@ class TestMultipleControls(unittest.TestCase):
             _row("CTRL1", "3001", rpm=4.0),
             _row("CTRL2", "3001", rpm=5.0),
             _row("CTRL3", "3001", rpm=6.0),
-            _row("S_high", "3001", rpm=200.0),   # clearly above background
-            _row("S_low",  "3001", rpm=5.5),     # within background
+            _row("S_high", "3001", rpm=200.0),  # clearly above background
+            _row("S_low", "3001", rpm=5.5),  # within background
         )
 
     def test_neg_decision_is_z_score(self):
@@ -248,15 +246,11 @@ class TestMultipleControls(unittest.TestCase):
         self.assertFalse(s_low["neg_pass"])
 
     def test_n_negative_controls_correct(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2", "CTRL3"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2", "CTRL3"])
         self.assertTrue((out["n_negative_controls"] == 3).all())
 
     def test_control_stats_populated(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2", "CTRL3"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2", "CTRL3"])
         row = out.iloc[0]  # any row (stats are per taxon group)
         # Mean of [4, 5, 6] = 5
         self.assertAlmostEqual(row["control_mean"], 5.0, places=5)
@@ -270,13 +264,11 @@ class TestZeroControlSD(unittest.TestCase):
         self.df = _df(
             _row("CTRL1", "3001", rpm=10.0),
             _row("CTRL2", "3001", rpm=10.0),
-            _row("S1",    "3001", rpm=50.0),
+            _row("S1", "3001", rpm=50.0),
         )
 
     def test_z_score_is_none_when_sd_zero(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
         s1 = out[out["sample"] == "S1"].iloc[0]
         self.assertTrue(pd.isna(s1["z_score"]))
 
@@ -308,30 +300,25 @@ class TestAbsentFromControls(unittest.TestCase):
             _row("CTRL2", "3001", rpm=5.0),
             _row("CTRL1", "9999", rpm=0.0),  # absent in controls (zero reads)
             _row("CTRL2", "9999", rpm=0.0),
-            _row("S1",    "3001", rpm=100.0),
-            _row("S1",    "9999", rpm=50.0),
+            _row("S1", "3001", rpm=100.0),
+            _row("S1", "9999", rpm=50.0),
         )
 
     def test_absent_taxon_uses_zero_background(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
         s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
         # control_mean for 9999 is 0 (zero rpm in controls)
         self.assertAlmostEqual(s1_9999["control_mean"], 0.0, places=5)
 
     def test_absent_taxon_still_gets_enrichment_metrics(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
         s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
         self.assertFalse(pd.isna(s1_9999["fold_enrichment"]))
         self.assertFalse(pd.isna(s1_9999["log2_ratio"]))
 
     def test_absent_taxon_with_high_sample_passes(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"],
-            z_score_threshold=3.0, log2_ratio_threshold=1.0
+            self.df, negatives=["CTRL1", "CTRL2"], z_score_threshold=3.0, log2_ratio_threshold=1.0
         )
         s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
         # z is undefined (sd for 9999 in controls is 0), falls back to log2-ratio
@@ -347,19 +334,15 @@ class TestDecisionMetricSelection(unittest.TestCase):
         # rpm values would give different log2-ratios
         self.df = _df(
             _row("CTRL", "3001", rpm=20.0, rpkm=2.0),
-            _row("S1",   "3001", rpm=200.0, rpkm=100.0),
+            _row("S1", "3001", rpm=200.0, rpkm=100.0),
         )
 
     def test_neg_metric_is_rpkm_when_rpkm_column_present(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"]
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL"])
         self.assertTrue((out["neg_metric"] == "rpkm").all())
 
     def test_log2_ratio_uses_rpkm_values(self):
-        out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"], pseudocount=1.0
-        )
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL"], pseudocount=1.0)
         s1 = out[out["sample"] == "S1"].iloc[0]
         expected_l2r = math.log2((100.0 + 1.0) / (2.0 + 1.0))
         self.assertAlmostEqual(s1["log2_ratio"], expected_l2r, places=5)
@@ -367,7 +350,7 @@ class TestDecisionMetricSelection(unittest.TestCase):
     def test_neg_metric_falls_back_to_rpm_when_rpkm_all_na(self):
         df = _df(
             _row("CTRL", "3001", rpm=20.0, rpkm=float("nan")),
-            _row("S1",   "3001", rpm=200.0, rpkm=float("nan")),
+            _row("S1", "3001", rpm=200.0, rpkm=float("nan")),
         )
         out = apply_negative_control_enrichment(df, negatives=["CTRL"])
         self.assertTrue((out["neg_metric"] == "rpm").all())
@@ -375,7 +358,7 @@ class TestDecisionMetricSelection(unittest.TestCase):
     def test_neg_metric_is_rpm_when_no_rpkm_column(self):
         df = _df(
             _row("CTRL", "3001", rpm=20.0),  # no rpkm key
-            _row("S1",   "3001", rpm=200.0),
+            _row("S1", "3001", rpm=200.0),
         )
         out = apply_negative_control_enrichment(df, negatives=["CTRL"])
         self.assertTrue((out["neg_metric"] == "rpm").all())
@@ -421,11 +404,9 @@ class TestOutputSchema(unittest.TestCase):
     def _out(self, negatives=None):
         df = _df(
             _row("CTRL", "3001", rpm=10.0),
-            _row("S1",   "3001", rpm=50.0),
+            _row("S1", "3001", rpm=50.0),
         )
-        return apply_negative_control_enrichment(
-            df, negatives=negatives or []
-        )
+        return apply_negative_control_enrichment(df, negatives=negatives or [])
 
     def test_all_columns_present_zero_controls(self):
         out = self._out(negatives=[])
@@ -446,8 +427,8 @@ class TestOutputSchema(unittest.TestCase):
     def test_row_count_unchanged(self):
         df = _df(
             _row("CTRL", "3001", rpm=10.0),
-            _row("S1",   "3001", rpm=50.0),
-            _row("S2",   "3001", rpm=60.0),
+            _row("S1", "3001", rpm=50.0),
+            _row("S2", "3001", rpm=60.0),
         )
         out = apply_negative_control_enrichment(df, negatives=["CTRL"])
         self.assertEqual(len(out), len(df))
@@ -475,11 +456,11 @@ class TestPseudocountEffect(unittest.TestCase):
         """With a larger pseudocount both metrics get pulled towards 1."""
         df = _df(
             _row("CTRL", "3001", rpm=0.0),
-            _row("S1",   "3001", rpm=100.0),
+            _row("S1", "3001", rpm=100.0),
         )
         out_pc1 = apply_negative_control_enrichment(df, negatives=["CTRL"], pseudocount=1.0)
         out_pc10 = apply_negative_control_enrichment(df, negatives=["CTRL"], pseudocount=10.0)
-        fe1  = out_pc1[out_pc1["sample"] == "S1"].iloc[0]["fold_enrichment"]
+        fe1 = out_pc1[out_pc1["sample"] == "S1"].iloc[0]["fold_enrichment"]
         fe10 = out_pc10[out_pc10["sample"] == "S1"].iloc[0]["fold_enrichment"]
         # Larger pseudocount → smaller fold-enrichment (shrunk towards 1)
         self.assertGreater(fe1, fe10)

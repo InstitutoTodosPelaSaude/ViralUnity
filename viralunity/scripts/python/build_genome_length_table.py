@@ -53,7 +53,9 @@ def _parse_genome2taxid(path: str) -> Dict[str, str]:
                 continue
             parts = line.rstrip("\n").split("\t")
             if len(parts) < 2:
-                sys.stderr.write(f"WARNING: skipping malformed genome2taxid line: {line.rstrip()}\n")
+                sys.stderr.write(
+                    f"WARNING: skipping malformed genome2taxid line: {line.rstrip()}\n"
+                )
                 continue
             accession, taxid = parts[0].strip(), parts[1].strip()
             mapping[accession] = taxid
@@ -136,9 +138,7 @@ def write_table(rows: List[Tuple[str, str, str, int, int]], out_path: str) -> No
         fh.write("rank\ttaxid\tname\tgenome_length_bp\tn_genomes\n")
         for rank, taxid, name, length, n in rows:
             fh.write(f"{rank}\t{taxid}\t{name}\t{length}\t{n}\n")
-    sys.stderr.write(
-        f"[build_genome_length_table] wrote {len(rows)} rows to {out_path}\n"
-    )
+    sys.stderr.write(f"[build_genome_length_table] wrote {len(rows)} rows to {out_path}\n")
 
 
 def run_cli() -> None:

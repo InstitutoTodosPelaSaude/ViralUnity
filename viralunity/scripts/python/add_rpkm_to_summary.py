@@ -21,7 +21,6 @@ Output : *_taxa_summary_RPKM.tsv  (adds genome_length_bp, n_genomes, rpkm column
 """
 
 import argparse
-import os
 import sys
 
 import pandas as pd
@@ -56,9 +55,7 @@ def add_rpkm(
     if "rank" not in df.columns or "taxid" not in df.columns:
         raise ValueError("Input must contain 'rank' and 'taxid' columns.")
     if rpm_col not in df.columns:
-        raise ValueError(
-            f"Input missing RPM column '{rpm_col}'. Run add_RPM_to_summary.py first."
-        )
+        raise ValueError(f"Input missing RPM column '{rpm_col}'. Run add_RPM_to_summary.py first.")
 
     gl = genome_lengths[["rank", "taxid", "genome_length_bp", "n_genomes"]].copy()
     gl["taxid"] = gl["taxid"].astype(str)
@@ -72,7 +69,8 @@ def add_rpkm(
     out[rpkm_col] = pd.NA
     valid = out["genome_length_bp"].notna() & (out["genome_length_bp"].astype(float) > 0)
     out.loc[valid, rpkm_col] = (
-        out.loc[valid, rpm_col].astype(float) * 1000.0
+        out.loc[valid, rpm_col].astype(float)
+        * 1000.0
         / out.loc[valid, "genome_length_bp"].astype(float)
     )
 
@@ -98,7 +96,9 @@ def run_cli() -> None:
     )
     ap.add_argument("--out", required=True, help="Output *_RPKM.tsv path.")
     ap.add_argument("--rpm-col", default="rpm", help="Name of RPM column (default: rpm).")
-    ap.add_argument("--rpkm-col", default="rpkm", help="Name of RPKM column to create (default: rpkm).")
+    ap.add_argument(
+        "--rpkm-col", default="rpkm", help="Name of RPKM column to create (default: rpkm)."
+    )
     args = ap.parse_args()
 
     df = pd.read_csv(args.summary, sep="\t", dtype={"taxid": str})

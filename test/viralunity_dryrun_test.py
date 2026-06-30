@@ -32,9 +32,14 @@ def get_dryrun_configs():
 
 
 def get_workflow_file(config_name):
-    """Maps a configuration file name to its corresponding Snakemake workflow file."""
+    """Maps a configuration file name to its corresponding Snakemake workflow file.
+
+    A ``__variant`` suffix lets several configs target the same workflow, e.g.
+    both ``metagenomics_illumina.yaml`` and ``metagenomics_illumina__rpkm.yaml``
+    resolve to ``metagenomics_illumina.smk``.
+    """
     # Example: consensus_illumina.yaml -> viralunity/scripts/consensus_illumina.smk
-    base_name = os.path.splitext(config_name)[0]
+    base_name = os.path.splitext(config_name)[0].split("__")[0]
     workflow_file = os.path.join(SCRIPTS_DIR, f"{base_name}.smk")
     return workflow_file
 

@@ -165,7 +165,7 @@ class TestBuildGenomeLengthTable(unittest.TestCase):
 
     def _as_dict(self, rows):
         """Convert rows to {(rank,taxid): (length, n)} for easy assertion."""
-        return {(r, t): (l, n) for r, t, _name, l, n in rows}
+        return {(r, t): (length, n) for r, t, _name, length, n in rows}
 
     def test_single_species_genome(self):
         rows = self._run(

@@ -45,32 +45,40 @@ class TestAddRpkm(unittest.TestCase):
 
     def test_rpkm_varies_with_genome_length(self):
         """Longer genome → lower RPKM for same RPM."""
-        df = _summary([
-            self._row("species", "3001", rpm=1000.0),
-            self._row("species", "3002", rpm=1000.0),
-        ])
-        gl = _genome_lengths([
-            self._gl("species", "3001", length=1_000),   # short
-            self._gl("species", "3002", length=10_000),  # long
-        ])
+        df = _summary(
+            [
+                self._row("species", "3001", rpm=1000.0),
+                self._row("species", "3002", rpm=1000.0),
+            ]
+        )
+        gl = _genome_lengths(
+            [
+                self._gl("species", "3001", length=1_000),  # short
+                self._gl("species", "3002", length=10_000),  # long
+            ]
+        )
         out = add_rpkm(df, gl)
         rpkm_short = out.loc[out["taxid"] == "3001", "rpkm"].iloc[0]
-        rpkm_long  = out.loc[out["taxid"] == "3002", "rpkm"].iloc[0]
+        rpkm_long = out.loc[out["taxid"] == "3002", "rpkm"].iloc[0]
         self.assertGreater(rpkm_short, rpkm_long)
 
     # ---- rank merging -------------------------------------------------------
 
     def test_genus_and_family_rows_get_lengths_too(self):
-        df = _summary([
-            self._row("family", "1000", rpm=50.0),
-            self._row("genus",  "2000", rpm=80.0),
-            self._row("species","3001", rpm=100.0),
-        ])
-        gl = _genome_lengths([
-            self._gl("family",  "1000", length=10_000),
-            self._gl("genus",   "2000", length=9_000),
-            self._gl("species", "3001", length=8_000),
-        ])
+        df = _summary(
+            [
+                self._row("family", "1000", rpm=50.0),
+                self._row("genus", "2000", rpm=80.0),
+                self._row("species", "3001", rpm=100.0),
+            ]
+        )
+        gl = _genome_lengths(
+            [
+                self._gl("family", "1000", length=10_000),
+                self._gl("genus", "2000", length=9_000),
+                self._gl("species", "3001", length=8_000),
+            ]
+        )
         out = add_rpkm(df, gl)
         # All three should have non-NA rpkm
         self.assertFalse(out["rpkm"].isna().any())
@@ -78,10 +86,12 @@ class TestAddRpkm(unittest.TestCase):
     # ---- NA handling --------------------------------------------------------
 
     def test_missing_genome_length_gives_na_rpkm(self):
-        df = _summary([
-            self._row("species", "3001", rpm=100.0),
-            self._row("species", "9999", rpm=200.0),  # no entry in genome_lengths
-        ])
+        df = _summary(
+            [
+                self._row("species", "3001", rpm=100.0),
+                self._row("species", "9999", rpm=200.0),  # no entry in genome_lengths
+            ]
+        )
         gl = _genome_lengths([self._gl("species", "3001", length=10_000)])
         out = add_rpkm(df, gl)
         rpkm_3001 = out.loc[out["taxid"] == "3001", "rpkm"].iloc[0]
@@ -123,10 +133,12 @@ class TestAddRpkm(unittest.TestCase):
             self.assertIn(col, out.columns)
 
     def test_row_count_unchanged(self):
-        df = _summary([
-            self._row("species", "3001", rpm=100.0),
-            self._row("species", "3002", rpm=50.0),
-        ])
+        df = _summary(
+            [
+                self._row("species", "3001", rpm=100.0),
+                self._row("species", "3002", rpm=50.0),
+            ]
+        )
         gl = _genome_lengths([self._gl("species", "3001", length=10_000)])
         out = add_rpkm(df, gl)
         self.assertEqual(len(out), len(df))
@@ -157,10 +169,12 @@ class TestAddRpkm(unittest.TestCase):
         """RPKM should be independent of total_reads when computed via RPM."""
         # Sample A has 1M total reads, RPM 100 → RPM already encodes the depth.
         # RPKM = RPM * 1000 / genome_length, so RPKM doesn't change with total_reads.
-        df = _summary([
-            self._row("species", "3001", rpm=100.0, sample="A", total_reads=1_000_000),
-            self._row("species", "3001", rpm=100.0, sample="B", total_reads=2_000_000),
-        ])
+        df = _summary(
+            [
+                self._row("species", "3001", rpm=100.0, sample="A", total_reads=1_000_000),
+                self._row("species", "3001", rpm=100.0, sample="B", total_reads=2_000_000),
+            ]
+        )
         gl = _genome_lengths([self._gl("species", "3001", length=10_000)])
         out = add_rpkm(df, gl)
         rpkm_A = out.loc[out["sample"] == "A", "rpkm"].iloc[0]
@@ -169,13 +183,17 @@ class TestAddRpkm(unittest.TestCase):
 
     def test_taxid_as_integer_in_summary_still_merges(self):
         """genome_lengths has str taxid; summary taxids cast to str on merge."""
-        df = pd.DataFrame([{
-            "sample": "S1",
-            "rank": "species",
-            "taxid": 3001,  # integer
-            "rpm": 100.0,
-            "total_reads": 1_000_000,
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "sample": "S1",
+                    "rank": "species",
+                    "taxid": 3001,  # integer
+                    "rpm": 100.0,
+                    "total_reads": 1_000_000,
+                }
+            ]
+        )
         gl = _genome_lengths([self._gl("species", "3001", length=10_000)])
         out = add_rpkm(df, gl)
         self.assertAlmostEqual(out.loc[0, "rpkm"], 10.0, places=6)
