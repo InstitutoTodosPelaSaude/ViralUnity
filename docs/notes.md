@@ -1,5 +1,24 @@
 # Notes
 
+## Negative-control enrichment filter
+
+ViralUnity uses interpretable enrichment statistics to filter taxa that could represent contamination bleed-in from negative controls. The filter compares each sample's metric (RPKM when `--viral-genomes` is configured, otherwise RPM) to the distribution observed across negative-control samples.
+
+**Decision tiers:**
+
+| `n_negative_controls` | `neg_decision` | Gate |
+|---|---|---|
+| 0 | `none` | No filter; `neg_pass = NA` (treated as *keep*) |
+| 1 | `log2_ratio` | `log2((sample + pc) / (control + pc)) ≥ --log2-ratio-threshold` |
+| ≥ 2 | `z_score` | `(sample − control_mean) / control_sd ≥ --z-score-threshold` |
+| ≥ 2, SD = 0 | `log2_ratio_fallback` | Same as single-control gate |
+
+All metrics are recorded in `*_RPM.bleed.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `control_median`, `control_max`, `neg_metric`, `neg_decision`, `neg_pass`, plus the thresholds and pseudocount used.
+
+Taxa absent from the negative-control rows are treated as having a zero background (control_mean = 0) — they pass the enrichment gate easily, which is the conservative choice. The lineage-aware Krona filter (`filter_krona_by_pass_taxids.py`) also treats NA `neg_pass` as *keep*, so increasing the number of controls can only make the filter stricter, never accidentally drop a taxon.
+
+**RPKM and genome length:** when `--viral-genomes` points to a RefSeq FASTA (with a corresponding `--viral-taxids` genome2taxid mapping), ViralUnity builds a per-taxon genome-length table at all ranks (family, genus, species) using the median length across all accessions under each node. RPKM at higher ranks (genus, family) is an approximation based on this median.
+
 ## Segmented viruses
 
 ViralUnity natively supports the assembly of segmented viral genomes. Instead of running the pipeline multiple times, pass multiple segment references with `--segmented-reference`:

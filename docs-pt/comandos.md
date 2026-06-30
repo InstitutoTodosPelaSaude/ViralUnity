@@ -181,7 +181,9 @@ O pipeline de metagenômica tem como objetivo gerar classificações taxonômica
 | `--evalue` | `0.001` | Limiar de E-value do Diamond. |
 | `--bleed-fraction` | `0.005` | Fração do filtro de bleed (max-RPM). |
 | `--negative-controls` | (vazio) | IDs de amostras separados por vírgula usados como controles negativos. |
-| `--negative-p-threshold` | `0.01` | Limiar de p-valor para filtro de controle negativo. |
+| `--enrichment-pseudocount` | `1.0` | Pseudocontagem para fold-enrichment e log2-ratio em relação aos controles negativos. |
+| `--z-score-threshold` | `3.0` | Limiar de z-score para `neg_pass` (quando há ≥2 controles negativos). |
+| `--log2-ratio-threshold` | `1.0` | Limiar de log2-ratio para `neg_pass` (quando há 1 controle negativo, ou z-score indefinido por variância nula). |
 | `--minimum-hit-group` | `4` | Parâmetro minimum-hit-group do Kraken2. |
 | `--run-reference-assembly`/`--no-run-reference-assembly` | off | Habilitar montagem de genoma baseada em referência ("dynamic reference assembly"). |
 | `--method` | `kraken2` | Método alvo para classificar a família viral (`kraken2`, `diamond`, `both`). Obrigatório quando `--run-reference-assembly` está ativo. |
