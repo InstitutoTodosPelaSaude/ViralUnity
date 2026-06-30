@@ -87,7 +87,17 @@ rule extract_reference_fasta:
         """
 
 def get_meta_reference(wildcards):
-    return config["output"] + f"assembly/{wildcards.ref_key}/references/{wildcards.sample}.fasta"
+    # NB: do not use f-strings in .smk files. Snakemake's parser mangles f-string
+    # literals, inserting spaces around every {} token (e.g. f"a{x}b" -> " a <x> b "),
+    # which silently corrupts these paths and breaks the DAG. Use concatenation.
+    return (
+        config["output"]
+        + "assembly/"
+        + wildcards.ref_key
+        + "/references/"
+        + wildcards.sample
+        + ".fasta"
+    )
 
 REFERENCE = get_meta_reference
 SEGMENT_WILDCARD = "{ref_key}/"
@@ -115,9 +125,14 @@ def get_all_reference_assemblies(wildcards):
     for _, row in df.iterrows():
         sample = row["sample"]
         ref_key = row["ref_key"]
+        # NB: concatenation, not an f-string — see note in get_meta_reference.
         targets.append(
             config["output"]
-            + f"assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta"
+            + "assembly/"
+            + ref_key
+            + "/consensus/final_consensus/"
+            + sample
+            + ".consensus.fasta"
         )
     return list(set(targets))
 
