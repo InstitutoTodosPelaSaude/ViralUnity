@@ -278,19 +278,20 @@ if run_denovo and run_diamond_contigs:
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule apply_negative_background_diamond_contigs:
+    rule add_negative_control_enrichment_diamond_contigs:
         input:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv"
         params:
             negatives = config.get("negative_controls", []),
-            count_col = "mapped_reads",
-            p_threshold = config.get("negative_p_threshold", 0.01)
+            pseudocount = config.get("enrichment_pseudocount", 1.0),
+            z_score_threshold = config.get("z_score_threshold", 3.0),
+            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
         conda:
             "../envs/utils.yaml"
         script:
-            "../python/apply_negative_background_filter.py"
+            "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_diamond_contigs:
         input:

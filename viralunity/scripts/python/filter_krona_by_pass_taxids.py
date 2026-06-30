@@ -71,6 +71,9 @@ def build_pass_taxids(
 
     if "neg_pass" in df.columns:
         # True → keep, False → drop, NA → keep (conservative).
+        # neg_pass is set by add_negative_control_enrichment.py (fold-enrichment /
+        # log2-ratio / z-score gate) — it replaced the old Poisson-based filter.
+        # NA means zero negative controls were configured, so no filtering is applied.
         mask &= df["neg_pass"].where(df["neg_pass"].notna(), True).astype(bool)
 
     return set(df.loc[mask, "taxid"].astype(str))
