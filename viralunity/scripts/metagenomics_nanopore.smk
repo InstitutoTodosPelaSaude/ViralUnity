@@ -177,15 +177,15 @@ rule organize_files:
         if [ "{params.run_k2_reads}" = "True" ]; then
             for _file in {input.kraken2_reads_reports}; do
                 sample=$(basename $_file .report.txt);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.report.txt;
+                ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.report.txt;
             done
             for _file in {input.kraken2_reads_krona}; do
                 sample=$(basename $_file .output.krona.html);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.krona.html;
+                ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.krona.html;
             done
             for _file in {input.kraken2_reads_filtered_krona}; do
                 sample=$(basename $_file .output.filtered.krona.html);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.filtered.krona.html;
+                ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.filtered.krona.html;
             done
         fi
 
@@ -193,15 +193,15 @@ rule organize_files:
         if [ "{params.run_diamond_reads}" = "True" ]; then
             for _file in {input.diamond_reads_tsv}; do
                 sample=$(basename $_file .diamond.tsv);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.tsv;
+                ln -sf $_file {params.outdir}samples/$sample/diamond_reads.tsv;
             done
             for _file in {input.diamond_reads_krona}; do
                 sample=$(basename $_file .diamond.krona.html);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.krona.html;
+                ln -sf $_file {params.outdir}samples/$sample/diamond_reads.krona.html;
             done
             for _file in {input.diamond_reads_filtered_krona}; do
                 sample=$(basename $_file .diamond.filtered.krona.html);
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.filtered.krona.html;
+                ln -sf $_file {params.outdir}samples/$sample/diamond_reads.filtered.krona.html;
             done
         fi
 
@@ -209,7 +209,7 @@ rule organize_files:
         if [ "{params.run_denovo}" = "True" ]; then
             for _file in {input.megahit_contigs}; do
                 sample=$(basename $(dirname $_file));
-                ln -sf $PWD/$_file {params.outdir}samples/$sample/contigs.fa;
+                ln -sf $_file {params.outdir}samples/$sample/contigs.fa;
             done
         fi
 
@@ -218,29 +218,29 @@ rule organize_files:
             if [ "{params.run_k2_contigs}" = "True" ]; then
                 for _file in {input.kraken2_contigs_reports}; do
                     sample=$(basename $_file .report.txt);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.report.txt;
+                    ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.report.txt;
                 done
                 for _file in {input.kraken2_contigs_krona}; do
                     sample=$(basename $_file .output.krona.html);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.krona.html;
+                    ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.krona.html;
                 done
                 for _file in {input.kraken2_contigs_filtered_krona}; do
                     sample=$(basename $_file .output.filtered.krona.html);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.filtered.krona.html;
+                    ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.filtered.krona.html;
                 done
             fi
             if [ "{params.run_diamond_contigs}" = "True" ]; then
                 for _file in {input.diamond_contigs_tsv}; do
                     sample=$(basename $_file .diamond.tsv);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs.tsv;
+                    ln -sf $_file {params.outdir}samples/$sample/diamond_contigs.tsv;
                 done
                 for _file in {input.diamond_contigs_krona}; do
                     sample=$(basename $_file .diamond.supported.krona.html);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs.krona.html;
+                    ln -sf $_file {params.outdir}samples/$sample/diamond_contigs.krona.html;
                 done
                 for _file in {input.diamond_contigs_filtered_krona}; do
                     sample=$(basename $_file .diamond.supported.filtered.krona.html);
-                    ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs.filtered.krona.html;
+                    ln -sf $_file {params.outdir}samples/$sample/diamond_contigs.filtered.krona.html;
                 done
             fi
         fi
@@ -248,7 +248,7 @@ rule organize_files:
         # Host filtered reads (Nanopore)
         for _file in {input.host_filtered}; do
             sample=$(basename $_file .filtered.fastq.gz);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/host_filtered_reads.fastq.gz;
+            ln -sf $_file {params.outdir}samples/$sample/host_filtered_reads.fastq.gz;
         done
 
         # Benchmark aggregation

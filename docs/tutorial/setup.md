@@ -35,6 +35,32 @@ This materializes every per-rule env into `~/.cache/viralunity/conda-envs/` (ove
 
 If `setup` fails with `CreateCondaEnvironmentException`, see [Troubleshooting](../installation.md#troubleshooting).
 
+## 1c. Download the example data
+
+The example dataset used throughout this tutorial is hosted as a single tarball. Download it once at the repo root:
+
+```bash
+curl -L -o my_test_data.tar.gz https://itps-nimbus.nyc3.cdn.digitaloceanspaces.com/my_test_data.tar.gz
+tar -xzf my_test_data.tar.gz
+rm my_test_data.tar.gz
+```
+
+You should now have:
+
+```text
+my_test_data/
+├── illumina_data/
+│   ├── itps-0001_R1.fastq.gz
+│   ├── itps-0001_R2.fastq.gz
+│   ├── itps-0002_R1.fastq.gz
+│   └── itps-0002_R2.fastq.gz
+└── nanopore_data/
+    ├── barcode05.itps-0003.fastq.gz
+    └── barcode09.itps-0004.fastq.gz
+```
+
+`my_test_data/` is gitignored, so the download stays out of version control. The consensus tutorial additionally needs the ARTIC nCoV-2019 V3 reference FASTA and primer BED — grab them from the [ARTIC primer-schemes repo](https://github.com/artic-network/primer-schemes/tree/master/nCoV-2019/V3) (raw URLs: `nCoV-2019.reference.fasta`, `nCoV-2019.scheme.bed`) and place them somewhere you can point `--reference` / `--primer-scheme` at (the rest of this tutorial uses `databases/refs/`).
+
 ## 2. Generate sample sheets
 
 A *sample sheet* is a no-header CSV that tells ViralUnity which FASTQ files belong to which sample:

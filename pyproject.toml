@@ -95,3 +95,7 @@ testpaths = ["test"]
 python_files = ["*_test.py"]
 python_classes = ["Test_*", "Test*"]
 python_functions = ["test_*"]
+addopts = "-m 'not empirical'"
+markers = [
+    "empirical: end-to-end tests that download real data and run full pipelines (slow, opt-in)",
+]

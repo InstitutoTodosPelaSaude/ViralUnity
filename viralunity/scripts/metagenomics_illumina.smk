@@ -156,49 +156,49 @@ rule organize_files:
         # QC
         for _file in {input.fastp_reports}; do
             sample=$(basename $_file _fastp.html | sed 's/^trim.//');
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/fastp.html;
+            ln -sf $_file {params.outdir}samples/$sample/fastp.html;
         done
 
         # Host filtering
         for _file in {input.host_filtered_R1}; do
             sample=$(basename $_file .R1.filtered.fastq.gz);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/host_filtered_R1.fastq.gz;
+            ln -sf $_file {params.outdir}samples/$sample/host_filtered_R1.fastq.gz;
         done
         for _file in {input.host_filtered_R2}; do
             sample=$(basename $_file .R2.filtered.fastq.gz);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/host_filtered_R2.fastq.gz;
+            ln -sf $_file {params.outdir}samples/$sample/host_filtered_R2.fastq.gz;
         done
 
         # Taxonomy (Reads)
         for _file in {input.kraken2_reads_reports} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .report.txt);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.report.txt;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.report.txt;
         done
         for _file in {input.kraken2_reads_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .output.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.krona.html;
         done
         for _file in {input.kraken2_reads_filtered_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .output.filtered.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_reads.filtered.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_reads.filtered.krona.html;
         done
         for _file in {input.diamond_reads_tsv} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.tsv);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.tsv;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_reads.tsv;
         done
         for _file in {input.diamond_reads_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_reads.krona.html;
         done
         for _file in {input.diamond_reads_filtered_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.filtered.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_reads.filtered.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_reads.filtered.krona.html;
         done
 
         # Assembly
@@ -206,47 +206,47 @@ rule organize_files:
             [ -z "$_file" ] && continue
             # path is denovo_assembly/megahit/{{sample}}/final.contigs.fa
             sample=$(basename $(dirname $_file));
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/denovo_contigs.fasta;
+            ln -sf $_file {params.outdir}samples/$sample/denovo_contigs.fasta;
         done
 
         # Taxonomy (Contigs)
         for _file in {input.kraken2_contigs_reports} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .report.txt);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.report.txt;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.report.txt;
         done
         for _file in {input.kraken2_contigs_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .output.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.krona.html;
         done
         for _file in {input.kraken2_contigs_filtered_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .output.filtered.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/kraken2_contigs.filtered.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/kraken2_contigs.filtered.krona.html;
         done
         for _file in {input.diamond_contigs_tsv} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.supported.tsv);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs_supported.tsv;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_contigs_supported.tsv;
         done
         for _file in {input.diamond_contigs_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.supported.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_contigs.krona.html;
         done
         for _file in {input.diamond_contigs_filtered_krona} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .diamond.supported.filtered.krona.html);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/diamond_contigs.filtered.krona.html;
+            ln -sf $_file {params.outdir}samples/$sample/diamond_contigs.filtered.krona.html;
         done
 
         # Viral Mapping
         for _file in {input.viral_bams} ""; do
             [ -z "$_file" ] && continue
             sample=$(basename $_file .viral.bam);
-            ln -sf $PWD/$_file {params.outdir}samples/$sample/viral_mapped_reads.bam;
-            ln -sf $PWD/$_file.bai {params.outdir}samples/$sample/viral_mapped_reads.bam.bai;
+            ln -sf $_file {params.outdir}samples/$sample/viral_mapped_reads.bam;
+            ln -sf $_file.bai {params.outdir}samples/$sample/viral_mapped_reads.bam.bai;
         done
 
         # Benchmark aggregation
