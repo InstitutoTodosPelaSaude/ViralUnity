@@ -18,7 +18,12 @@ import sys
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-from viralunity.scripts.python.taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
+try:
+    from viralunity.scripts.python.taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
+except ImportError:
+    # Running inside Snakemake's `script:` directive (per-rule conda env without
+    # the viralunity package installed); the script's own dir is on sys.path.
+    from taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
 
 
 def _parse_fai(fai_path: str) -> Dict[str, int]:

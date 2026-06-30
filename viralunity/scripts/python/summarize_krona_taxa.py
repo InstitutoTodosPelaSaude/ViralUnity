@@ -3,7 +3,12 @@
 import os
 from collections import defaultdict
 
-from viralunity.scripts.python.taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
+try:
+    from viralunity.scripts.python.taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
+except ImportError:
+    # Running inside Snakemake's `script:` directive (per-rule conda env without
+    # the viralunity package installed); the script's own dir is on sys.path.
+    from taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
 
 
 def load_diamond_reads(diamond_tax_file):

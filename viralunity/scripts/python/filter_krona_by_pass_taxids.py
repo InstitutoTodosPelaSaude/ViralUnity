@@ -18,11 +18,20 @@ from typing import Dict, Optional, Set, Tuple
 
 import pandas as pd
 
-from viralunity.scripts.python.taxonomy import (  # noqa: F401 (re-exported)
-    RANKS_OF_INTEREST,
-    get_lineage,
-)
-from viralunity.scripts.python.taxonomy import load_taxdump as _load_taxdump_full
+try:
+    from viralunity.scripts.python.taxonomy import (  # noqa: F401 (re-exported)
+        RANKS_OF_INTEREST,
+        get_lineage,
+    )
+    from viralunity.scripts.python.taxonomy import load_taxdump as _load_taxdump_full
+except ImportError:
+    # Running inside Snakemake's `script:` directive (per-rule conda env without
+    # the viralunity package installed); the script's own dir is on sys.path.
+    from taxonomy import (  # noqa: F401 (re-exported)
+        RANKS_OF_INTEREST,
+        get_lineage,
+    )
+    from taxonomy import load_taxdump as _load_taxdump_full
 
 
 def load_taxdump(

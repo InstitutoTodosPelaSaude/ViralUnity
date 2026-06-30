@@ -40,7 +40,12 @@ from typing import Dict, List, Optional, Sequence
 
 import pandas as pd
 
-from viralunity.scripts.python.apply_max_rpm_bleed_filter import infer_group_cols
+try:
+    from viralunity.scripts.python.apply_max_rpm_bleed_filter import infer_group_cols
+except ImportError:
+    # Running inside Snakemake's `script:` directive (per-rule conda env without
+    # the viralunity package installed); the script's own dir is on sys.path.
+    from apply_max_rpm_bleed_filter import infer_group_cols
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Core enrichment functions (unit-testable, no Snakemake dependencies)
