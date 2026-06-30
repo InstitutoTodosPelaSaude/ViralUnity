@@ -312,7 +312,9 @@ See [Notes — Reference selection strategies](../notes.md#reference-selection-s
 Sensitivity / specificity of detection:
 
 - **`--bleed-fraction`** (`0.005`) — lower = stricter cross-sample bleed filter.
-- **`--negative-p-threshold`** (`0.01`) — lower = stricter blank-background filter.
+- **`--z-score-threshold`** (`3.0`) — negative-control gate with ≥ 2 controls; higher = stricter (see [Negative-control enrichment filter](#negative-control-enrichment-filter)).
+- **`--log2-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
+- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log2-ratio.
 - **`--minimum-hit-group`** (`4`) — Kraken2's hit-group threshold; raising it makes Kraken2 more conservative.
 
 DIAMOND tuning:
