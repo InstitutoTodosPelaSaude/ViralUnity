@@ -3,41 +3,7 @@
 import os
 from collections import defaultdict
 
-RANKS_OF_INTEREST = ("family", "genus", "species")
-
-
-def load_taxdump(nodes_dmp, names_dmp):
-    parent = {}
-    rank = {}
-    name = {}
-
-    with open(nodes_dmp) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            parts = [p.strip() for p in line.split("|")]
-
-            taxid = parts[0]
-            parent_taxid = parts[1]
-            rank_name = parts[2]
-
-            parent[taxid] = parent_taxid
-            rank[taxid] = rank_name
-
-    with open(names_dmp) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            parts = [p.strip() for p in line.split("|")]
-
-            taxid = parts[0]
-            taxname = parts[1]
-            name_class = parts[3]
-
-            if name_class == "scientific name":
-                name[taxid] = taxname
-
-    return parent, rank, name
+from viralunity.scripts.python.taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
 
 
 def load_diamond_reads(diamond_tax_file):
@@ -54,15 +20,6 @@ def load_diamond_reads(diamond_tax_file):
                 continue  # skip header or malformed lines
             reads[contig_id] = mapped_reads
     return reads
-
-
-def get_lineage(taxid, parent_map):
-    lineage = []
-    while taxid != "1" and taxid in parent_map:
-        lineage.append(taxid)
-        taxid = parent_map[taxid]
-    lineage.append("1")
-    return lineage
 
 
 def summarize_krona(krona_file, parent_map, rank_map, diamond_reads=None):
