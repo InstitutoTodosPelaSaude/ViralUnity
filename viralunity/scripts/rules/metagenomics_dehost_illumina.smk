@@ -69,13 +69,16 @@ elif host_filtering_enabled:
             mkdir -p $(dirname {output.filtered_R1}) $(dirname {log})
             tmp_bam=$(mktemp --suffix .unmapped.bam)
             minimap2 -t {threads} -ax sr {input.index} {input.paired_R1} {input.paired_R2} \
-            | samtools view -@ {threads} -b -f 4 - > "$tmp_bam"
+            | samtools view -@ {threads} -b -f 12 -F 256 - > "$tmp_bam"
             unmapped=$(samtools view -c "$tmp_bam")
             if [ "$unmapped" -eq 0 ]; then
                 touch {output.filtered_R1} {output.filtered_R2}
-                echo "All reads mapped to host; empty FASTQs written." >> {log}
+                echo "No host-unmapped read pairs; empty FASTQs written." >> {log}
             else
-                samtools fastq -@ {threads} -1 {output.filtered_R1} -2 {output.filtered_R2} "$tmp_bam" >> {log} 2>&1
+                samtools collate -O -u -@ {threads} "$tmp_bam" \
+                | samtools fastq -@ {threads} \
+                    -1 {output.filtered_R1} -2 {output.filtered_R2} \
+                    -0 /dev/null -s /dev/null -n - >> {log} 2>&1
             fi
             rm -f "$tmp_bam"
             """
