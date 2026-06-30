@@ -59,6 +59,7 @@ After a successful run, the output directory is organised as follows:
 │       │   ├── results/{sample}.output.krona.html
 │       │   ├── kraken2_reads_taxa_summary.tsv
 │       │   ├── kraken2_reads_taxa_summary_RPM.tsv
+│       │   ├── kraken2_reads_taxa_summary_RPKM.tsv  # when --viral-genomes is set
 │       │   └── kraken2_reads_taxa_summary_RPM.bleed.tsv
 │       ├── kraken2_contigs/                    # when --run-denovo-assembly + --run-kraken2-contigs
 │       │   ├── results/{sample}.report.txt
@@ -69,6 +70,7 @@ After a successful run, the output directory is organised as follows:
 │       │   ├── results/{sample}.diamond.krona.html
 │       │   ├── diamond_reads_taxa_summary.tsv
 │       │   ├── diamond_reads_taxa_summary_RPM.tsv
+│       │   ├── diamond_reads_taxa_summary_RPKM.tsv  # when --viral-genomes is set
 │       │   └── diamond_reads_taxa_summary_RPM.bleed.tsv
 │       └── diamond_contigs/                    # when --run-denovo-assembly + --run-diamond-contigs
 │           ├── results/{sample}.diamond.supported.tsv
@@ -109,7 +111,10 @@ After a successful run, the output directory is organised as follows:
 
 | File | Description |
 |------|-------------|
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv` | Kraken2 (reads) taxa table with RPM normalisation and bleed filter |
+| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv` | Kraken2 (reads) taxa table with RPM normalisation |
+| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv` | Kraken2 (reads) taxa table with RPKM (when `--viral-genomes` is set) |
+| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv` | After max-RPM bleed filter (`bleed_pass` column) |
+| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.neg.tsv` | After negative-control enrichment filter (`neg_pass`, `log2_ratio`, `z_score`, etc.) |
 | `metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv` | DIAMOND (reads) taxa table with RPM normalisation and bleed filter |
 | `reference_targets.tsv` | Maps each sample × ref_key to the selected reference accession |
 | `assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta` | Reference-guided consensus sequence per sample and ref_key |

@@ -154,11 +154,35 @@ _COMMON_META_OPTIONS = [
         help="Comma-separated sample IDs to use as negative controls.",
     ),
     click.option(
-        "--negative-p-threshold",
-        default=0.01,
+        "--enrichment-pseudocount",
+        default=1.0,
         show_default=True,
         type=float,
-        help="p-value threshold for negative-control filter.",
+        help=(
+            "Pseudocount added to both numerator and denominator when computing "
+            "fold-enrichment and log2-ratio vs negative controls."
+        ),
+    ),
+    click.option(
+        "--z-score-threshold",
+        default=3.0,
+        show_default=True,
+        type=float,
+        help=(
+            "Z-score threshold for the negative-control gate "
+            "(used when ≥2 negative controls are present)."
+        ),
+    ),
+    click.option(
+        "--log2-ratio-threshold",
+        default=1.0,
+        show_default=True,
+        type=float,
+        help=(
+            "Log2-ratio threshold for the negative-control gate "
+            "(used when exactly 1 negative control is present, or when z-score "
+            "is undefined due to zero control variance)."
+        ),
     ),
     click.option(
         "--minimum-hit-group",

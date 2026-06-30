@@ -18,43 +18,33 @@ from typing import Dict, Optional, Set, Tuple
 
 import pandas as pd
 
-RANKS_OF_INTEREST = ("family", "genus", "species")
+try:
+    from viralunity.scripts.python.taxonomy import (  # noqa: F401 (re-exported)
+        RANKS_OF_INTEREST,
+        get_lineage,
+    )
+    from viralunity.scripts.python.taxonomy import load_taxdump as _load_taxdump_full
+except ImportError:
+    # Running inside Snakemake's `script:` directive (per-rule conda env without
+    # the viralunity package installed); the script's own dir is on sys.path.
+    from taxonomy import (  # noqa: F401 (re-exported)
+        RANKS_OF_INTEREST,
+        get_lineage,
+    )
+    from taxonomy import load_taxdump as _load_taxdump_full
 
 
 def load_taxdump(
     nodes_dmp: str, names_dmp: Optional[str] = None
 ) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Read nodes.dmp and return (parent_map, rank_map).
+
+    The names_dmp argument is accepted for API parity; the lineage walk itself
+    does not need taxon names. Delegates to
+    :func:`viralunity.scripts.python.taxonomy.load_taxdump`.
     """
-    Read nodes.dmp (and optionally names.dmp) and return parent + rank maps.
-
-    We only need names.dmp to keep the on-disk format consistent with the
-    summarizer; the lineage walk itself never uses it. The names.dmp argument
-    is accepted purely for parity with `summarize_krona_taxa.load_taxdump`.
-    """
-    parent: Dict[str, str] = {}
-    rank: Dict[str, str] = {}
-
-    with open(nodes_dmp) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            parts = [p.strip() for p in line.split("|")]
-            taxid = parts[0]
-            parent_taxid = parts[1]
-            rank_name = parts[2]
-            parent[taxid] = parent_taxid
-            rank[taxid] = rank_name
-
+    parent, rank, _name = _load_taxdump_full(nodes_dmp, names_dmp)
     return parent, rank
-
-
-def get_lineage(taxid: str, parent_map: Dict[str, str]):
-    lineage = []
-    while taxid != "1" and taxid in parent_map:
-        lineage.append(taxid)
-        taxid = parent_map[taxid]
-    lineage.append("1")
-    return lineage
 
 
 def build_pass_taxids(
@@ -90,6 +80,9 @@ def build_pass_taxids(
 
     if "neg_pass" in df.columns:
         # True → keep, False → drop, NA → keep (conservative).
+        # neg_pass is set by add_negative_control_enrichment.py (fold-enrichment /
+        # log2-ratio / z-score gate) — it replaced the old Poisson-based filter.
+        # NA means zero negative controls were configured, so no filtering is applied.
         mask &= df["neg_pass"].where(df["neg_pass"].notna(), True).astype(bool)
 
     return set(df.loc[mask, "taxid"].astype(str))

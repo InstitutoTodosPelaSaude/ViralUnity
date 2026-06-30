@@ -9,7 +9,6 @@ from viralunity.constants import DataType
 from viralunity.exceptions import (
     AdaptersNotFoundError,
     DiamondDatabaseNotFoundError,
-    ViralUnityFileNotFoundError,
     Kraken2DatabaseNotFoundError,
     KronaDatabaseNotFoundError,
     PrimerSchemeNotFoundError,
@@ -18,6 +17,7 @@ from viralunity.exceptions import (
     SampleSheetError,
     TaxdumpNotFoundError,
     ValidationError,
+    ViralUnityFileNotFoundError,
 )
 
 
@@ -302,6 +302,24 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
             validate_file_exists(deacon_idx, "Deacon index file")
         except ViralUnityFileNotFoundError as e:
             raise ViralUnityFileNotFoundError(f"Deacon index file does not exist: {e}") from e
+
+    # RPKM normalisation (compute_rpkm) is enabled whenever a viral genomes FASTA
+    # is provided, independent of reference assembly. The genome-length table it
+    # needs requires both the FASTA and the genome2taxid (--viral-taxids) mapping,
+    # so validate them up-front rather than failing deep inside Snakemake.
+    viral_genomes = args.get("viral_genomes", "NA")
+    if viral_genomes and str(viral_genomes).strip() not in ("", "NA"):
+        if not os.path.isfile(viral_genomes):
+            raise ViralUnityFileNotFoundError(f"Viral genomes file does not exist: {viral_genomes}")
+        viral_taxids = args.get("viral_taxids", "NA")
+        if not viral_taxids or str(viral_taxids).strip() in ("", "NA"):
+            raise ValidationError(
+                "--viral-genomes enables RPKM normalisation, which requires a "
+                "genome2taxid mapping. Provide --viral-taxids, or omit "
+                "--viral-genomes to skip RPKM."
+            )
+        if not os.path.isfile(viral_taxids):
+            raise ViralUnityFileNotFoundError(f"Viral taxids file does not exist: {viral_taxids}")
 
     validate_reference_assembly_requirements(args)
 

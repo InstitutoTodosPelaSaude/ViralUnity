@@ -15,7 +15,7 @@ from typing import Dict, List
 import click
 
 from viralunity.constants import SampleSheetPattern, SampleSheetSeparator
-from viralunity.exceptions import ViralUnityFileNotFoundError, ValidationError
+from viralunity.exceptions import ValidationError, ViralUnityFileNotFoundError
 
 logger = logging.getLogger(__name__)
 

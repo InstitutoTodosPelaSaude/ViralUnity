@@ -1,9 +1,13 @@
-# Config for Illumina Metagenomics Dry-run
+# Config for Nanopore Metagenomics Dry-run — RPKM + negative-control variant.
+# Exercises compute_rpkm=true (genome-length table + per-track RPKM rules) and
+# negative_controls (enrichment/z-score gate + *.bleed.neg.tsv targets), which
+# the baseline metagenomics_nanopore.yaml leaves disabled.
 samples:
-  META1: data/reads/META1_R1.fastq.gz data/reads/META1_R2.fastq.gz
+  META_NP: data/reads/META_NP.fastq.gz
+  NEG_NP: data/reads/SAMPLE_NP.fastq.gz
 
-data: illumina
-output: test/dryrun_output/metagenomics_illumina/
+data: nanopore
+output: test/dryrun_output/metagenomics_nanopore_rpkm/
 threads: 2
 
 # Databases and paths
@@ -19,6 +23,8 @@ host_reference: NA
 deacon_index: NA
 
 run_denovo_assembly: true
+run_polish_racon: false
+run_polish_medaka: false
 run_kraken2_reads: true
 run_kraken2_contigs: true
 run_diamond_reads: false
@@ -42,24 +48,10 @@ taxids: NA
 diamond_sensitivity: sensitive
 evalue: 0.001
 bleed_fraction: 0.005
-negative_controls: []
-compute_rpkm: false
+negative_controls:
+  - NEG_NP
+compute_rpkm: true
 enrichment_pseudocount: 1.0
 z_score_threshold: 3.0
 log2_ratio_threshold: 1.0
 minimum_hit_group: 4
-
-# QC parameters
-adapters: NA 
-minimum_length: 50
-trim_head: 0
-trim_tail: 0
-cut_front_mean_quality: 20
-cut_tail_mean_quality: 20
-cut_right_window_size: 4
-cut_right_mean_quality: 20
-
-# Alignment parameters
-af_threshold: 0.5
-af_isnv_threshold: 0.05
-run_isnv: false

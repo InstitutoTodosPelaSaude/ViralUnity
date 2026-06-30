@@ -7,6 +7,74 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [Unreleased]  - 2026-06-30
+
+### Added
+
+- **RPKM normalisation** — when `--viral-genomes` (RefSeq FASTA) and `--viral-taxids`
+  (genome2taxid TSV) are provided, a per-taxon genome-length table is computed (median
+  genome length at family, genus, and species level across all accessions under each node).
+  RPKM is then emitted alongside RPM in a new `*_taxa_summary_RPKM.tsv` intermediate file
+  for every classifier × mode track (kraken2/diamond × reads/contigs). RPKM is `NA` for
+  taxa with no matching genome length.
+- **Negative-control enrichment filter** — replaces the previous Poisson-based filter
+  (`apply_negative_background_filter.py`) with interpretable statistics:
+  - `fold_enrichment` and `log2_ratio` (always computed, configurable `--enrichment-pseudocount`).
+  - `z_score` (when n_controls ≥ 2 and control SD > 0).
+  - `neg_metric`: `rpkm` when available for that taxon, else `rpm`.
+  - Tiered `neg_pass` gate: z-score (≥2 controls), log2-ratio (1 control or SD = 0 fallback),
+    or NA (0 controls; treated as *keep* by the lineage-aware Krona filter).
+  - All metrics and thresholds recorded in `*_RPM.bleed.neg.tsv` for full reproducibility.
+- Three new `viralunity meta` CLI options: `--enrichment-pseudocount` (default `1.0`),
+  `--z-score-threshold` (default `3.0`), `--log2-ratio-threshold` (default `1.0`).
+- `viralunity/scripts/python/taxonomy.py` — shared NCBI taxonomy utilities
+  (`load_taxdump`, `get_lineage`, `RANKS_OF_INTEREST`) extracted from
+  `summarize_krona_taxa.py` and `filter_krona_by_pass_taxids.py` to eliminate code
+  duplication; 16 unit tests added.
+- `viralunity/scripts/python/build_genome_length_table.py` — builds the per-taxon median
+  genome-length table from `.fai` + genome2taxid + taxdump; 18 unit tests.
+- `viralunity/scripts/python/add_rpkm_to_summary.py` — merges genome lengths and computes
+  RPKM; 17 unit tests.
+- `viralunity/scripts/python/add_negative_control_enrichment.py` — new enrichment filter;
+  49 unit tests covering all decision tiers, RPKM/RPM metric selection, SD = 0 fallback,
+  absent-from-controls zero-background assumption, and the NA-as-keep contract.
+
+### Changed
+
+- `--negative-p-threshold` CLI option **removed** (previously set the Poisson p-value
+  threshold for negative-control filtering). Replace workflow calls with the three new
+  enrichment options above. Existing YAML configs that contain `negative_p_threshold` will
+  have the key silently ignored by Snakemake (it is no longer read by any rule).
+- The RPM denominator (and therefore RPKM) always reflects the read count *after* the
+  dehosting step: dehosted reads (when dehosting is on), post-QC reads (Illumina, dehosting
+  off), or raw reads (Nanopore, dehosting off). This is the correct normalisation base and
+  was already the implicit behaviour — it is now documented and tested explicitly.
+
+### Removed
+
+- `viralunity/scripts/python/apply_negative_background_filter.py` — the Poisson-based
+  negative-control filter script. Replaced by `add_negative_control_enrichment.py`.
+
+### Fixed
+
+- **Reference assembly now selects from the post-filter taxa tables.** The
+  `select_references_meta` checkpoint previously read the *raw* counts table
+  (`*_taxa_summary.tsv`), so contaminants suppressed by the cross-sample filters could
+  still trigger reference-guided consensus runs. It now reads the
+  negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when `--negative-controls` is
+  set, else the bleed-filtered table (`*_RPM.bleed.tsv`), dropping taxa that explicitly
+  fail `bleed_pass`/`neg_pass` (NA is kept; older outputs fall back to raw counts).
+  New `--summary-suffix` arg on `select_reference_genomes.py`; 13 unit tests.
+- **Shared-module imports work inside per-rule conda envs.** The taxonomy refactor made
+  four `script:` scripts import `from viralunity.scripts.python...`, which is not importable
+  in the per-rule conda envs and crashed the metagenomics rules at runtime. Added a
+  sibling-module import fallback (`summarize_krona_taxa`, `filter_krona_by_pass_taxids`,
+  `add_negative_control_enrichment`, `build_genome_length_table`).
+- **Negative-control IDs are matched after `sample-` prefixing.** `--negative-controls`
+  takes raw sample IDs, but the summary `sample` column is prefixed; the enrichment step
+  matched the raw IDs and aborted with "None of the provided negative controls appear...".
+  IDs are now prefixed to match, with fast-fail validation that each names a real sample.
+
 ## [Unreleased]  - 2026-05-24
 
 ### Added

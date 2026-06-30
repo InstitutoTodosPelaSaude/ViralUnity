@@ -210,10 +210,13 @@ class ConfigGenerator:
         evalue: float = 0.001,
         bleed_fraction: float = 0.005,
         negative_controls: Optional[List[str]] = None,
-        negative_p_threshold: float = 0.01,
         minimum_hit_group: int = 4,
         diamond_max_target_seqs: int = 1,
         kraken2_extra_flags: str = "--report-minimizer-data",
+        compute_rpkm: bool = False,
+        enrichment_pseudocount: float = 1.0,
+        z_score_threshold: float = 3.0,
+        log2_ratio_threshold: float = 1.0,
     ) -> None:
         """Add metagenomics-specific settings to configuration.
 
@@ -236,12 +239,21 @@ class ConfigGenerator:
             evalue: E-value threshold for Diamond
             bleed_fraction: Max-RPM bleed filter fraction
             negative_controls: Sample IDs to use as negative controls
-            negative_p_threshold: p-value threshold for negative filter
             minimum_hit_group: Kraken2 --minimum-hit-group (default: 4)
             diamond_max_target_seqs: DIAMOND --max-target-seqs value (default 1).
             kraken2_extra_flags: Extra flags appended to every kraken2
                 invocation alongside ``--threads`` and ``--minimum-hit-group``.
                 Defaults to ``--report-minimizer-data``; set to ``""`` to drop it.
+            compute_rpkm: Whether to compute RPKM (requires viral_genomes and
+                viral_taxids to be set).  Derived automatically from
+                ``viral_genomes != "NA"`` in the CLI layer.
+            enrichment_pseudocount: Pseudocount added to both numerator and
+                denominator when computing fold-enrichment and log2-ratio.
+            z_score_threshold: Minimum z-score to consider a hit above
+                background (used when ≥2 negative controls are present).
+            log2_ratio_threshold: Minimum log2-ratio to consider a hit above
+                background (used when exactly 1 negative control is present, or
+                when z-score is undefined due to zero control variance).
         """
         P = self.SECTION_PARAMETERS
         D = self.SECTION_DATABASES
@@ -265,10 +277,13 @@ class ConfigGenerator:
         self._set(ConfigKeys.EVALUE, evalue, P)
         self._set(ConfigKeys.BLEED_FRACTION, bleed_fraction, P)
         self._set(ConfigKeys.NEGATIVE_CONTROLS, negative_controls or [], P)
-        self._set(ConfigKeys.NEGATIVE_P_THRESHOLD, negative_p_threshold, P)
         self._set(ConfigKeys.MINIMUM_HIT_GROUP, minimum_hit_group, P)
         self._set(ConfigKeys.DIAMOND_MAX_TARGET_SEQS, diamond_max_target_seqs, P)
         self._set(ConfigKeys.KRAKEN2_EXTRA_FLAGS, kraken2_extra_flags, P)
+        self._set(ConfigKeys.COMPUTE_RPKM, compute_rpkm, P)
+        self._set(ConfigKeys.ENRICHMENT_PSEUDOCOUNT, enrichment_pseudocount, P)
+        self._set(ConfigKeys.Z_SCORE_THRESHOLD, z_score_threshold, P)
+        self._set(ConfigKeys.LOG2_RATIO_THRESHOLD, log2_ratio_threshold, P)
 
     def add_reference_assembly_settings(
         self,

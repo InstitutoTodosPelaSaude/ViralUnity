@@ -138,8 +138,22 @@ if run_diamond_reads:
         script:
             "../python/add_RPM_to_summary.py"
 
+    if compute_rpkm:
+        rule add_rpkm_to_diamond_reads_summary:
+            input:
+                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv",
+                genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
+            output:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv",
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_rpkm_to_summary.py"
+
     rule apply_bleed_filter_diamond_reads:
         input:
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv"
+            if compute_rpkm else
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
@@ -152,19 +166,20 @@ if run_diamond_reads:
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule apply_negative_background_diamond_reads:
+    rule add_negative_control_enrichment_diamond_reads:
         input:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.neg.tsv"
         params:
             negatives = config.get("negative_controls", []),
-            count_col = "count",
-            p_threshold = config.get("negative_p_threshold", 0.01)
+            pseudocount = config.get("enrichment_pseudocount", 1.0),
+            z_score_threshold = config.get("z_score_threshold", 3.0),
+            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
         conda:
             "../envs/utils.yaml"
         script:
-            "../python/apply_negative_background_filter.py"
+            "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_diamond_reads:
         input:

@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from viralunity import _orchestrator
 from viralunity.constants import DataType, ResourceDefaults
+from viralunity.exceptions import ValidationError
 from viralunity.validators import (
     META_PATH_ARG_KEYS,
     get_samples_from_args,
@@ -79,6 +80,23 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
     elif negative is None:
         negative = []
 
+    # Negative-control IDs are user-facing raw sample IDs, but samples are stored
+    # in the config (and referenced throughout the .smk rules and the summary
+    # 'sample' column) with a 'sample-' prefix applied by ConfigGenerator.add_samples.
+    # Prefix the negatives to match, validating that each names a real sample so a
+    # typo fails fast here instead of silently disabling the negative-control filter.
+    known_samples = set(samples or {})
+    prefixed_negatives = []
+    for nc in negative:
+        raw = nc[len("sample-") :] if nc.startswith("sample-") else nc
+        if known_samples and raw not in known_samples:
+            raise ValidationError(
+                f"Negative control '{nc}' does not match any sample in the sample sheet. "
+                f"Known samples: {sorted(known_samples)}"
+            )
+        prefixed_negatives.append(f"sample-{raw}")
+    negative = prefixed_negatives
+
     # Normalize Krona database path: if it points to a dir containing 'taxonomy', append it.
     krona_db = args.get("krona_database", "NA")
     if krona_db and krona_db != "NA":
@@ -105,10 +123,13 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         evalue=args.get("evalue", 0.001),
         bleed_fraction=args.get("bleed_fraction", 0.005),
         negative_controls=negative,
-        negative_p_threshold=args.get("negative_p_threshold", 0.01),
         minimum_hit_group=args.get("minimum_hit_group", 4),
         diamond_max_target_seqs=args.get("diamond_max_target_seqs", 1),
         kraken2_extra_flags=args.get("kraken2_extra_flags", "--report-minimizer-data"),
+        compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
+        enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
+        z_score_threshold=args.get("z_score_threshold", 3.0),
+        log2_ratio_threshold=args.get("log2_ratio_threshold", 1.0),
     )
 
     generator.add_reference_assembly_settings(

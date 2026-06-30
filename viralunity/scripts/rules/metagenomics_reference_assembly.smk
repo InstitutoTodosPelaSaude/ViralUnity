@@ -1,16 +1,27 @@
 import pandas as pd
 import os
 
+# Reference selection reads the post-filter summary tables so it is not
+# triggered by taxa the cross-sample filters flagged as contamination: the
+# negative-control-filtered table when negative controls are declared, else the
+# bleed-filtered table. Mirrors the make_filtered_krona_input_* rules.
+def _ref_summary_suffix():
+    return "_RPM.bleed.neg" if config.get("negative_controls") else "_RPM.bleed"
+
 def get_checkpoint_inputs(wildcards):
+    suffix = _ref_summary_suffix()
+    def _summary(classifier):
+        return (config["output"] + "metagenomics/taxonomic_assignments/"
+                + classifier + "/" + classifier + "_taxa_summary" + suffix + ".tsv")
     targets = []
     if config.get("run_kraken2_reads", True):
-        targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv")
+        targets.append(_summary("kraken2_reads"))
     if config.get("run_denovo_assembly", False) and config.get("run_kraken2_contigs", True):
-        targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary.tsv")
+        targets.append(_summary("kraken2_contigs"))
     if config.get("run_diamond_reads", False):
-        targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary.tsv")
+        targets.append(_summary("diamond_reads"))
     if config.get("run_denovo_assembly", False) and config.get("run_diamond_contigs", False):
-        targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary.tsv")
+        targets.append(_summary("diamond_contigs"))
     return targets
 
 checkpoint select_references_meta:
@@ -22,6 +33,7 @@ checkpoint select_references_meta:
         "../envs/genome_selection.yaml"
     params:
         summary_dir = config["output"] + "metagenomics/taxonomic_assignments/",
+        summary_suffix = _ref_summary_suffix(),
         method = config.get("ref_assembly_method", "kraken2"),
         source = config.get("ref_assembly_source", "reads"),
         reads_count = config.get("ref_assembly_reads_count", 100),
@@ -75,7 +87,17 @@ rule extract_reference_fasta:
         """
 
 def get_meta_reference(wildcards):
-    return config["output"] + f"assembly/{wildcards.ref_key}/references/{wildcards.sample}.fasta"
+    # NB: do not use f-strings in .smk files. Snakemake's parser mangles f-string
+    # literals, inserting spaces around every {} token (e.g. f"a{x}b" -> " a <x> b "),
+    # which silently corrupts these paths and breaks the DAG. Use concatenation.
+    return (
+        config["output"]
+        + "assembly/"
+        + wildcards.ref_key
+        + "/references/"
+        + wildcards.sample
+        + ".fasta"
+    )
 
 REFERENCE = get_meta_reference
 SEGMENT_WILDCARD = "{ref_key}/"
@@ -103,9 +125,14 @@ def get_all_reference_assemblies(wildcards):
     for _, row in df.iterrows():
         sample = row["sample"]
         ref_key = row["ref_key"]
+        # NB: concatenation, not an f-string — see note in get_meta_reference.
         targets.append(
             config["output"]
-            + f"assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta"
+            + "assembly/"
+            + ref_key
+            + "/consensus/final_consensus/"
+            + sample
+            + ".consensus.fasta"
         )
     return list(set(targets))
 

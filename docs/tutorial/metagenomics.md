@@ -28,7 +28,7 @@ raw FASTQ
   └─► MultiQC report (Illumina only)
 ```
 
-The output of every classifier — reads or contigs — flows through the same cross-sample summary stack: a raw count table, an RPM-normalised table, a bleed-filtered table, and (if you declare negative controls) a Poisson-filtered table. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the cross-sample filters.
+The output of every classifier — reads or contigs — flows through the same cross-sample summary stack: a raw count table, an RPM-normalised table (and optionally RPKM), a bleed-filtered table, and (if you declare negative controls) an enrichment-filtered table with fold-enrichment, log2-ratio, and z-scores. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the cross-sample filters.
 
 ## Decision matrix — what to turn on
 
@@ -142,7 +142,9 @@ If you want the protein-level signal but only on contigs (and not on reads), dro
 
 ### Step D — turn on reference assembly
 
-This is the headline feature that makes the meta pipeline more than a classifier. When `--run-reference-assembly` is on, a Snakemake checkpoint reads the filtered taxa tables, picks one or more reference genomes per sample, and runs reference-guided consensus assembly automatically — the same alignment/consensus rules used by `viralunity consensus`.
+This is the headline feature that makes the meta pipeline more than a classifier. When `--run-reference-assembly` is on, a Snakemake checkpoint reads the post-filter taxa tables, picks one or more reference genomes per sample, and runs reference-guided consensus assembly automatically — the same alignment/consensus rules used by `viralunity consensus`.
+
+The checkpoint reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when you declare `--negative-controls`, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`); taxa that explicitly fail `bleed_pass` or `neg_pass` are dropped before selection (NA is kept). So contaminants suppressed by the cross-sample filters do **not** trigger reference assembly. (Older outputs that lack these tables fall back to the raw counts table.)
 
 ```bash
 viralunity meta illumina \
@@ -228,12 +230,25 @@ Each `*_taxa_summary*.tsv` file is one step in the chain:
 |---------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
 | `<classifier>_taxa_summary.tsv`                         | Raw counts, one row per `(sample, rank, taxid)`.                                                              |
 | `<classifier>_taxa_summary_RPM.tsv`                     | Adds `total_reads` (host-filtered read count for the sample) and `rpm` = `count / total_reads × 1e6`.         |
+| `<classifier>_taxa_summary_RPKM.tsv`                    | Adds `genome_length_bp`, `n_genomes`, `rpkm`. Only when `--viral-genomes` is configured.                      |
 | `<classifier>_taxa_summary_RPM.bleed.tsv`               | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
-| `<classifier>_taxa_summary_RPM.bleed.neg.tsv`           | Adds Poisson statistics against negative controls (`mu_bg`, `p_bg`, `neg_pass`). Only when `--negative-controls` was set. |
+| `<classifier>_taxa_summary_RPM.bleed.neg.tsv`           | Adds enrichment statistics (`neg_metric`, `fold_enrichment`, `log2_ratio`, `z_score`, `neg_pass`, etc.). Only when `--negative-controls` was set. |
 
 ### RPM normalisation
 
 Different samples have different total read counts. To compare a taxon's signal across samples we normalise by sequencing depth: `rpm = count / total_reads × 1,000,000`, where `total_reads` is the number of reads in the merged host-filtered FASTQ for that sample. The pipeline computes this per sample and joins it onto the summary.
+
+`total_reads` always reflects the correct denominator: dehosted reads (when dehosting is on), post-QC reads (Illumina with dehosting off), or raw reads (Nanopore with dehosting off).
+
+### RPKM normalisation (optional)
+
+When you supply `--viral-genomes` (a RefSeq viral FASTA) and `--viral-taxids` (a genome2taxid mapping), the pipeline builds a per-taxon median genome-length table at every rank (family, genus, species) and computes:
+
+```text
+rpkm = rpm × 1000 / genome_length_bp
+```
+
+RPKM at genus and family level is approximate (based on the median genome length of all accessions under that node). Taxons with no matching genome length get `rpkm = NA`.
 
 ### Bleed filter
 
@@ -255,7 +270,7 @@ If `max_rpm` is itself very small (`< rpm_floor`, currently 1.0), the filter is 
 
 Tune the strictness with `--bleed-fraction` (default `0.005`). Lower values (`0.001`) are stricter; higher values (`0.01`) are more permissive.
 
-### Negative-control filter
+### Negative-control enrichment filter
 
 If you sequence blanks (no-template controls, extraction blanks, etc.) alongside real samples, declare them as negative controls:
 
@@ -263,18 +278,18 @@ If you sequence blanks (no-template controls, extraction blanks, etc.) alongside
 viralunity meta illumina --negative-controls blank1,blank2 …
 ```
 
-The sample IDs must match the sample sheet exactly (no `sample-` prefix). For each taxon, the filter computes a background rate from the negative controls:
+The sample IDs must match the sample sheet exactly (no `sample-` prefix). For each taxon, the filter compares every biological sample to the distribution of the chosen metric (RPKM when available, else RPM) observed across the negative controls:
 
-```text
-λ           = total_count_in_negatives / total_reads_in_negatives
-μ_bg(sample) = λ × total_reads(sample)
-p_bg        = P(Poisson(μ_bg) ≥ observed_count)
-neg_pass    = p_bg < negative_p_threshold       # default 0.01
-```
+| Controls | Gate | Option |
+|---|---|---|
+| 0 | no filter (`neg_pass = NA`) | — |
+| 1 | `log2_ratio ≥ threshold` | `--log2-ratio-threshold` (default 1.0, i.e. 2-fold) |
+| ≥ 2 | `z_score ≥ threshold` | `--z-score-threshold` (default 3.0) |
+| ≥ 2, SD = 0 | falls back to log2-ratio | — |
 
-In plain English: "given how much of this taxon we see in the blanks, what is the probability of seeing at least as many reads in this sample by chance?" If that probability is below `--negative-p-threshold`, the row passes.
+`log2_ratio = log2((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*_RPM.bleed.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
 
-The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`.
+The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from the control rows are given a zero background — they pass the enrichment gate easily (conservative choice).
 
 ### Filtered Krona plots
 
@@ -282,7 +297,7 @@ Every classifier produces two Krona HTMLs per sample — `*.krona.html` (built d
 
 ## Reference assembly under the hood
 
-When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the bleed-filtered TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. Two strategies are available:
+When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the post-filter TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. It reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when `--negative-controls` is set, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`), and only considers taxa that did not explicitly fail `bleed_pass`/`neg_pass`. Two strategies are available:
 
 - **`taxid` (default)** — for each passing taxon assigned to a target family, look up the taxid directly in `viral_taxids` (`genome2taxid.tsv`). If the exact taxid is not present (often the classifier picked a strain that is below species in the NCBI taxonomy), resolve to the species-level ancestor via `taxdump` and retry. Fast and deterministic; assumes your classifier database and your `viral_genomes` database came from compatible RefSeq releases.
 
@@ -297,7 +312,9 @@ See [Notes — Reference selection strategies](../notes.md#reference-selection-s
 Sensitivity / specificity of detection:
 
 - **`--bleed-fraction`** (`0.005`) — lower = stricter cross-sample bleed filter.
-- **`--negative-p-threshold`** (`0.01`) — lower = stricter blank-background filter.
+- **`--z-score-threshold`** (`3.0`) — negative-control gate with ≥ 2 controls; higher = stricter (see [Negative-control enrichment filter](#negative-control-enrichment-filter)).
+- **`--log2-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
+- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log2-ratio.
 - **`--minimum-hit-group`** (`4`) — Kraken2's hit-group threshold; raising it makes Kraken2 more conservative.
 
 DIAMOND tuning:

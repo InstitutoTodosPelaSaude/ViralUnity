@@ -56,7 +56,11 @@ class ConfigKeys:
     MINIMAP2_CONSENSUS_ALIGN_FLAGS = "minimap2_consensus_align_flags"
     BLEED_FRACTION = "bleed_fraction"
     NEGATIVE_CONTROLS = "negative_controls"
-    NEGATIVE_P_THRESHOLD = "negative_p_threshold"
+    NEGATIVE_P_THRESHOLD = "negative_p_threshold"  # kept for backwards-compat config reading
+    COMPUTE_RPKM = "compute_rpkm"
+    ENRICHMENT_PSEUDOCOUNT = "enrichment_pseudocount"
+    Z_SCORE_THRESHOLD = "z_score_threshold"
+    LOG2_RATIO_THRESHOLD = "log2_ratio_threshold"
     # Nanopore polishing
     RUN_POLISH_RACON = "run_polish_racon"
     RUN_POLISH_MEDAKA = "run_polish_medaka"
