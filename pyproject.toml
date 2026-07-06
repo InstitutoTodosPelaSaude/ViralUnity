@@ -12,7 +12,7 @@ authors = [
     { name = "Felippe Nacif" },
 ]
 license = { file = "LICENSE" }
-requires-python = ">=3.9,<3.12"
+requires-python = ">=3.10,<3.12"
 keywords = [
     "metagenomics",
     "viral",
@@ -65,11 +65,11 @@ exclude = ["test*", "docs*", "docs-pt*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39", "py310", "py311"]
+target-version = ["py310", "py311"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 # Conservative starting set; can expand later.
@@ -84,7 +84,7 @@ ignore = [
 "viralunity/scripts/python/*.py" = ["F821"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 ignore_missing_imports = true
 warn_unused_ignores = true
 
