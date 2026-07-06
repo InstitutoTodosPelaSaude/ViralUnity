@@ -29,6 +29,7 @@ usage
 commands
 output
 notes
+scientific-review
 citation
 ```
 
