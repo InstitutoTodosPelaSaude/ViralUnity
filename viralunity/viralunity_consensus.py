@@ -8,7 +8,6 @@ Filipe Moreira - 2024/09/21
 
 import logging
 import os
-import sys
 from typing import Any, Dict
 
 from viralunity import _orchestrator
@@ -91,8 +90,10 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         ),
     )
 
-    # Add workflow_path (consensus-specific)
-    generator.add_workflow_path(sys.path[0])
+    # Add workflow_path (consensus-specific). Derive from this module's location
+    # rather than sys.path[0], which is the entry-point script's directory and is
+    # wrong when ViralUnity is imported and called in-process (e.g. by a service).
+    generator.add_workflow_path(os.path.join(os.path.abspath(os.path.dirname(__file__)), "scripts"))
 
     # Add Nanopore-specific settings if needed
     if data_type == DataType.NANOPORE:

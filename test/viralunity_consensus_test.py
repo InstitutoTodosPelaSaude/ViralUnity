@@ -1,6 +1,5 @@
 import csv
 import os
-import sys
 import tempfile
 import unittest
 from unittest.mock import mock_open, patch
@@ -322,7 +321,9 @@ class Test_GenerateConfigFile(unittest.TestCase):
         self.assertEqual(config_dict["scheme"], "scheme")
         self.assertEqual(config_dict["minimum_depth"], 5)
         self.assertEqual(config_dict["threads"], 1)
-        self.assertEqual(config_dict["workflow_path"], sys.path[0])
+        self.assertTrue(
+            config_dict["workflow_path"].endswith(os.path.join("viralunity", "scripts"))
+        )
         self.assertEqual(config_dict["output"], "output_dir/run_name/")
         self.assertEqual(config_dict["adapters"], "adapters.fasta")
         self.assertEqual(config_dict["minimum_length"], 50)
@@ -381,7 +382,9 @@ class Test_GenerateConfigFile(unittest.TestCase):
         self.assertEqual(config_dict["scheme"], "scheme")
         self.assertEqual(config_dict["minimum_depth"], 5)
         self.assertEqual(config_dict["threads"], 1)
-        self.assertEqual(config_dict["workflow_path"], sys.path[0])
+        self.assertTrue(
+            config_dict["workflow_path"].endswith(os.path.join("viralunity", "scripts"))
+        )
         self.assertEqual(config_dict["output"], "output_dir/run_name/")
         # Nanopore should not have Illumina-specific settings
         self.assertNotIn("adapters", config_dict)

@@ -2,6 +2,7 @@
 
 import csv
 import os
+import re
 from typing import Any, Dict, List
 
 from viralunity.constants import DataType
@@ -46,6 +47,62 @@ def validate_directory_exists(directory_path: str, description: str = "Directory
     """
     if not os.path.isdir(directory_path):
         raise ViralUnityFileNotFoundError(f"{description} does not exist: {directory_path}")
+
+
+# ---------------------------------------------------------------------------
+# Untrusted-input sanitization
+# ---------------------------------------------------------------------------
+#
+# Sample ids and run names become shell tokens and filesystem path components
+# inside the Snakemake rules (``sample-<id>``, ``<output>/<run_name>/...``).
+# When ViralUnity is embedded in a service that ingests uploaded data, these
+# must be constrained so they cannot inject path traversal or shell
+# metacharacters. The helpers here are opt-in checks the CLI/service layer can
+# call; they intentionally allow only a conservative identifier charset.
+
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def sanitize_identifier(value: Any, field: str = "identifier") -> str:
+    """Validate that *value* is a safe filesystem/shell identifier.
+
+    Allows letters, digits, ``.``, ``_`` and ``-`` (and must start with a
+    letter/digit). Rejects empty values, path separators, ``..``, NUL, and any
+    other metacharacter.
+
+    Returns:
+        The stripped value.
+
+    Raises:
+        ValidationError: If the value is not a safe identifier.
+    """
+    if value is None or not str(value).strip():
+        raise ValidationError(f"{field} must be a non-empty string.")
+    stripped = str(value).strip()
+    if stripped in (".", "..") or not _SAFE_IDENTIFIER_RE.match(stripped):
+        raise ValidationError(
+            f"{field} may only contain letters, digits, '.', '_', '-' and must not "
+            f"contain path separators or spaces: {value!r}"
+        )
+    return stripped
+
+
+def ensure_within_base(path: str, base: str) -> str:
+    """Resolve *path* against *base* and ensure it does not escape *base*.
+
+    Absolute paths are resolved as-is; relative paths are joined to *base*.
+
+    Returns:
+        The absolute, normalized target path.
+
+    Raises:
+        ValidationError: If the resolved path is outside *base*.
+    """
+    base_abs = os.path.abspath(base)
+    target = os.path.abspath(path if os.path.isabs(path) else os.path.join(base_abs, path))
+    if os.path.commonpath([base_abs, target]) != base_abs:
+        raise ValidationError(f"Path escapes base directory {base!r}: {path!r}")
+    return target
 
 
 def validate_sample_sheet(sample_sheet_path: str, data_type: str) -> Dict[str, List[str]]:
@@ -95,6 +152,15 @@ def validate_sample_sheet(sample_sheet_path: str, data_type: str) -> Dict[str, L
         sample_name = trimmed[0].strip()
         if not sample_name:
             raise SampleSheetError(f"Empty sample name on row {line_number}.")
+
+        # Sample ids become shell tokens and path components in the workflow
+        # (``sample-<id>``); reject anything that could inject a path or
+        # metacharacter when the sheet comes from untrusted input.
+        if sample_name in (".", "..") or not _SAFE_IDENTIFIER_RE.match(sample_name):
+            raise SampleSheetError(
+                f"Unsafe sample id '{sample_name}' on row {line_number}: use only letters, "
+                f"digits, '.', '_', '-' (no path separators or spaces)."
+            )
 
         if sample_name in samples:
             raise SampleSheetError(
