@@ -25,8 +25,9 @@ class Test_CreateSamplesheeetCommand(unittest.TestCase):
 
     def _invoke(self, extra_args=None):
         args = ["--input", "input/dir", "--output", "output.file"] + (extra_args or [])
-        with patch("viralunity.viralunity_create_samplesheet.validate_args"), patch(
-            "viralunity.viralunity_create_samplesheet.generate_sample_sheet"
+        with (
+            patch("viralunity.viralunity_create_samplesheet.validate_args"),
+            patch("viralunity.viralunity_create_samplesheet.generate_sample_sheet"),
         ):
             return self.runner.invoke(create_samplesheet, args, catch_exceptions=False)
 
@@ -41,9 +42,10 @@ class Test_CreateSamplesheeetCommand(unittest.TestCase):
 
     def test_default_values_optional_args(self):
         """Check that defaults match the expected values."""
-        with patch(
-            "viralunity.viralunity_create_samplesheet.validate_args"
-        ) as mock_validate, patch("viralunity.viralunity_create_samplesheet.generate_sample_sheet"):
+        with (
+            patch("viralunity.viralunity_create_samplesheet.validate_args") as mock_validate,
+            patch("viralunity.viralunity_create_samplesheet.generate_sample_sheet"),
+        ):
             result = self.runner.invoke(
                 create_samplesheet,
                 ["--input", "input/dir", "--output", "output.file"],

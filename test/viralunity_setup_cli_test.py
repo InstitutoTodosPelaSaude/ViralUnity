@@ -146,9 +146,10 @@ class Test_SetupCli(unittest.TestCase):
             self.assertIn(name, result.output)
 
     def test_conda_prefix_forwarded_to_snakemake(self):
-        with patch(
-            "viralunity.viralunity_setup_cli.snakemake", return_value=True
-        ) as mock_snake, tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch("viralunity.viralunity_setup_cli.snakemake", return_value=True) as mock_snake,
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             result = self.runner.invoke(
                 setup,
                 [
@@ -180,8 +181,9 @@ class Test_SetupCli(unittest.TestCase):
         self.assertEqual(mock_snake.call_args.kwargs["conda_prefix"], expected)
 
     def test_env_var_conda_prefix(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(
-            os.environ, {"VIRALUNITY_CONDA_PREFIX": tmp}
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"VIRALUNITY_CONDA_PREFIX": tmp}),
         ):
             with patch(
                 "viralunity.viralunity_setup_cli.snakemake", return_value=True
@@ -194,9 +196,10 @@ class Test_SetupCli(unittest.TestCase):
 
     def test_failure_exits_nonzero(self):
         """If Snakemake reports an env-build failure, setup exits non-zero."""
-        with patch(
-            "viralunity.viralunity_setup_cli.snakemake", return_value=False
-        ), tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch("viralunity.viralunity_setup_cli.snakemake", return_value=False),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             result = self.runner.invoke(
                 setup,
                 ["--pipelines", "consensus-illumina", "--conda-prefix", tmp],

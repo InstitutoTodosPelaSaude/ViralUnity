@@ -147,11 +147,12 @@ class TestMetaMainResolvesPaths(unittest.TestCase):
             captured.update(args)
             return {"sample1": ["/abs/sample1.fastq"]}
 
-        with patch("viralunity.viralunity_meta.validate_args", side_effect=fake_validate), patch(
-            "viralunity.viralunity_meta.generate_config_file"
-        ), patch(
-            "viralunity.viralunity_meta.run_snakemake_workflow", return_value=True
-        ), tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch("viralunity.viralunity_meta.validate_args", side_effect=fake_validate),
+            patch("viralunity.viralunity_meta.generate_config_file"),
+            patch("viralunity.viralunity_meta.run_snakemake_workflow", return_value=True),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             tmp_real = os.path.realpath(tmp)
             old_cwd = os.getcwd()
             os.chdir(tmp_real)
@@ -217,9 +218,10 @@ class TestMetaWorkdirUsesCwd(unittest.TestCase):
             captured.update(kwargs)
             return True
 
-        with patch(
-            "viralunity._orchestrator.snakemake", side_effect=fake_snakemake
-        ), tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch("viralunity._orchestrator.snakemake", side_effect=fake_snakemake),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             tmp_real = os.path.realpath(tmp)
             old_cwd = os.getcwd()
             os.chdir(tmp_real)
@@ -262,11 +264,12 @@ class TestConsensusMainResolvesPaths(unittest.TestCase):
             captured.update(args)
             return {"sample1": ["/abs/sample1.fastq"]}
 
-        with patch(
-            "viralunity.viralunity_consensus.validate_args", side_effect=fake_validate
-        ), patch("viralunity.viralunity_consensus.generate_config_file"), patch(
-            "viralunity.viralunity_consensus.run_snakemake_workflow", return_value=True
-        ), tempfile.TemporaryDirectory() as tmp:
+        with (
+            patch("viralunity.viralunity_consensus.validate_args", side_effect=fake_validate),
+            patch("viralunity.viralunity_consensus.generate_config_file"),
+            patch("viralunity.viralunity_consensus.run_snakemake_workflow", return_value=True),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
             tmp_real = os.path.realpath(tmp)
             old_cwd = os.getcwd()
             os.chdir(tmp_real)
