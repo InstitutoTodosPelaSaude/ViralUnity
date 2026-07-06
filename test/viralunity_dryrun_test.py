@@ -3,21 +3,25 @@ import subprocess
 
 import pytest
 
-# Path to the directory containing dry-run configurations
-CONFIG_DIR = os.path.join(os.getcwd(), "test", "dryrun_configs")
-SCRIPTS_DIR = os.path.join(os.getcwd(), "viralunity", "scripts")
-PLACEHOLDER_SCRIPT = os.path.join(
-    os.getcwd(), "test", "dryrun_configs", "create_dryrun_placeholders.sh"
-)
+# Resolve paths relative to this file, not the process cwd, so the suite runs
+# from anywhere (not only the repository root).
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(REPO_ROOT, "test", "dryrun_configs")
+SCRIPTS_DIR = os.path.join(REPO_ROOT, "viralunity", "scripts")
+PLACEHOLDER_SCRIPT = os.path.join(CONFIG_DIR, "create_dryrun_placeholders.sh")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_dryrun_placeholders():
     """Runs the placeholder script once per test session."""
     if os.path.exists(PLACEHOLDER_SCRIPT):
-        # We need to run it from the root because the script uses relative paths like 'data/reads'
+        # Run from the repo root because the script uses relative paths like 'data/reads'.
         result = subprocess.run(
-            ["bash", PLACEHOLDER_SCRIPT], check=True, capture_output=True, text=True
+            ["bash", PLACEHOLDER_SCRIPT],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
         )
         print(result.stdout)
     else:
@@ -68,7 +72,7 @@ def test_snakemake_dryrun(config_filename):
         "1",
     ]
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO_ROOT)
 
     # Assert success (return code 0)
     assert (
