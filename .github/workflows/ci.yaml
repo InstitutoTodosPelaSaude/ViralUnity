@@ -10,45 +10,85 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install lint tooling
-        run: pip install "black>=24.4" "ruff>=0.5"
-
+        # black pinned to the 2026 line so formatting is deterministic in CI.
+        run: pip install "black>=26,<27" "ruff>=0.5" "mypy>=1.0"
       - name: black --check
         run: black --check viralunity/ test/
-
       - name: ruff check
         run: ruff check viralunity/ test/
+      - name: mypy (advisory)
+        # Not yet gating: there is a known backlog of ~14 findings to clear.
+        # Runs so regressions are visible without blocking the build.
+        continue-on-error: true
+        run: mypy viralunity/
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
     steps:
       - uses: actions/checkout@v4
-
-      - name: Add conda to system path
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package with dev extras
+        # pulp<3: Snakemake 7.32 is incompatible with newer pulp.
         run: |
-          # $CONDA is an environment variable pointing to the root of the miniconda directory
-          echo $CONDA/bin >> $GITHUB_PATH
-
-      - name: Install conda env
-        run: conda env update --file environment.yml --name viralunity
-
-      - name: Activate conda env
-        run: echo $CONDA/envs/viralunity/bin >> $GITHUB_PATH
-
-      - name: Install viralunity with dev extras
-        run: pip install -e ".[dev]"
-
-      - name: Verify 'viralunity' installation working
+          pip install -e ".[dev]" "pulp<3"
+      - name: Verify console script
         run: viralunity --version
-
-      - name: Run unit tests
-        run: python -m unittest discover ./test -p *test.py
-
-      - name: Run Snakemake dry-run tests
+      - name: Unit tests with coverage
+        run: pytest test/ -m "not empirical" --cov=viralunity --cov-report=term-missing
+      - name: Snakemake dry-run tests
         run: pytest test/viralunity_dryrun_test.py -v
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install scanners
+        run: pip install pip-audit bandit
+      - name: pip-audit (advisory)
+        continue-on-error: true
+        run: |
+          pip install -e .
+          pip-audit
+      - name: bandit (advisory)
+        continue-on-error: true
+        run: bandit -r viralunity -x viralunity/scripts
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image (smoke)
+        run: docker build -t viralunity:ci .
+
+  conda-smoke:
+    # Full conda-env install smoke test (mirrors real user setup).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add conda to PATH
+        run: echo "$CONDA/bin" >> $GITHUB_PATH
+      - name: Create conda env
+        run: conda env update --file environment.yml --name viralunity
+      - name: Activate env
+        run: echo "$CONDA/envs/viralunity/bin" >> $GITHUB_PATH
+      - name: Install with dev extras
+        run: pip install -e ".[dev]"
+      - name: Verify install
+        run: viralunity --version
+      - name: Unit + dry-run tests
+        run: |
+          python -m unittest discover ./test -p '*test.py'
+          pytest test/viralunity_dryrun_test.py -v

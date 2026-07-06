@@ -1,4 +1,4 @@
-.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker lock
+.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker lock typecheck
 
 test: install-dev
 	python3 -m unittest discover ./test -p *test.py
@@ -15,6 +15,10 @@ test-empirical: install-dev
 lint: install-dev
 	black --check viralunity/ test/
 	ruff check viralunity/ test/
+
+# Advisory type check (not yet gating; ~14 known findings to clear over time).
+typecheck: install-dev
+	mypy viralunity/ || true
 
 format: install-dev
 	black viralunity/ test/
