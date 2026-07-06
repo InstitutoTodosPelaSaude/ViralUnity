@@ -9,8 +9,10 @@ rule all:
         config['output'] + "benchmark.tsv"
 
 def get_map_input_fastqs(wildcards):
-    reads = config["samples"][wildcards.sample].split()
-    return(reads)
+    reads = config["samples"][wildcards.sample]
+    if isinstance(reads, str):
+        reads = reads.split()
+    return reads
 
 include: "rules/qc_illumina.smk"
 include: "rules/alignment_illumina.smk"

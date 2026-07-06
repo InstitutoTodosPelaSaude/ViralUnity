@@ -1,7 +1,11 @@
 # Config for Illumina Consensus Dry-run (standard)
 samples:
-  SAMPLE1: data/reads/SAMPLE1_R1.fastq.gz data/reads/SAMPLE1_R2.fastq.gz
-  SAMPLE2: data/reads/SAMPLE2_R1.fastq.gz data/reads/SAMPLE2_R2.fastq.gz
+  SAMPLE1:
+    - data/reads/SAMPLE1_R1.fastq.gz
+    - data/reads/SAMPLE1_R2.fastq.gz
+  SAMPLE2:
+    - data/reads/SAMPLE2_R1.fastq.gz
+    - data/reads/SAMPLE2_R2.fastq.gz
 
 data: illumina
 output: test/dryrun_output/consensus_illumina/

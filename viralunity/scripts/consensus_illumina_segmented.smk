@@ -10,8 +10,10 @@ rule all:
         config['output'] + "benchmark.tsv"
 
 def get_map_input_fastqs(wildcards):
-    reads = config["samples"][wildcards.sample].split()
-    return(reads)
+    reads = config["samples"][wildcards.sample]
+    if isinstance(reads, str):
+        reads = reads.split()
+    return reads
 
 def get_segment_reference(wildcards):
     return SEGMENTS[wildcards.segment]

@@ -3,8 +3,12 @@
 # negative_controls (enrichment/z-score gate + *.bleed.neg.tsv targets), which
 # the baseline metagenomics_illumina.yaml leaves disabled.
 samples:
-  META1: data/reads/META1_R1.fastq.gz data/reads/META1_R2.fastq.gz
-  NEG: data/reads/SAMPLE1_R1.fastq.gz data/reads/SAMPLE1_R2.fastq.gz
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
+  NEG:
+    - data/reads/SAMPLE1_R1.fastq.gz
+    - data/reads/SAMPLE1_R2.fastq.gz
 
 data: illumina
 output: test/dryrun_output/metagenomics_illumina_rpkm/

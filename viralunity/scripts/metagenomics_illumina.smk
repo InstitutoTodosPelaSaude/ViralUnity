@@ -15,7 +15,9 @@ def get_sample_to_fastq():
 
 def get_map_input_fastqs(wildcards):
     """Return [R1, R2] for Trimmomatic / host filtering (Illumina paired-end)."""
-    paths = config["samples"][wildcards.sample].strip().split()
+    paths = config["samples"][wildcards.sample]
+    if isinstance(paths, str):
+        paths = paths.strip().split()
     return paths
 
 def get_final_input_fastq(wildcards):

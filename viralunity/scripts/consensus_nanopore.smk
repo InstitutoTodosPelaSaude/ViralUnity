@@ -22,8 +22,10 @@ rule all:
         config['output'] + "benchmark.tsv"
 
 def get_map_input_fastqs(wildcards):
-    reads = config["samples"][wildcards.sample].split()
-    return(reads)
+    reads = config["samples"][wildcards.sample]
+    if isinstance(reads, str):
+        reads = reads.split()
+    return reads
 
 include: "rules/alignment_nanopore.smk"
 include: "rules/consensus_nanopore.smk"
