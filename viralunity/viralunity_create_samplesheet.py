@@ -10,7 +10,7 @@ Filipe Moreira - 2023/09/16
 import glob
 import logging
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import click
 
@@ -76,7 +76,7 @@ def create_samplesheet(input_dir, output, separator, pattern, level):
         raise click.ClickException(str(e))
 
 
-def validate_args(args: Dict[str, any]) -> None:
+def validate_args(args: Dict[str, Any]) -> None:
     """Validate command line arguments.
 
     Args:
@@ -231,7 +231,7 @@ def find_samples_level_0(input_dir: str, separator: str, pattern: str) -> Dict[s
     return samples
 
 
-def generate_sample_sheet(args: Dict[str, any]) -> None:
+def generate_sample_sheet(args: Dict[str, Any]) -> None:
     """Generate sample sheet CSV file.
 
     Args:

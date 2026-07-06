@@ -78,8 +78,6 @@ class ConfigKeys:
 
     AF_THRESHOLD = "af_threshold"
     AF_ISNV_THRESHOLD = "af_isnv_threshold"
-    REMOVE_HUMAN_READS = "remove_human_reads"
-    REMOVE_UNCLASSIFIED_READS = "remove_unclassified_reads"
     CHUNK_SIZE = "chunk_size"
     CLAIR3_MODEL = "clair3_model"
     VARIANT_QUALITY = "variant_quality"
