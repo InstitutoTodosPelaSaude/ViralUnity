@@ -1,12 +1,17 @@
 """Tests for viralunity create-samplesheet CLI command (click-based)."""
 
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from click.testing import CliRunner
 
+from viralunity.exceptions import ValidationError
 from viralunity.viralunity_create_samplesheet import (
     create_samplesheet,
+    find_samples_level_0,
+    find_samples_level_1,
     generate_sample_sheet,
     validate_args,
 )
@@ -129,6 +134,46 @@ class Test_GenerateSamplesheet(unittest.TestCase):
         handle.write.assert_any_call(
             "R1,input/dir/1/R1_sample1.fastq,input/dir/1/R1_sample2.fastq\n"
         )
+
+
+class Test_SampleGroupingIntegrity(unittest.TestCase):
+    """Regressions for silent sample collisions in create-samplesheet."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _touch(self, *relparts):
+        path = os.path.join(self.tmp, *relparts)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "w").close()
+        return path
+
+    def test_level0_prefix_no_substring_collision(self):
+        """'s1' must not swallow 's10' files (old substring glob bug)."""
+        self._touch("s1_R1.fastq.gz")
+        self._touch("s1_R2.fastq.gz")
+        self._touch("s10_R1.fastq.gz")
+        self._touch("s10_R2.fastq.gz")
+
+        samples = find_samples_level_0(self.tmp, separator="_", pattern="R1")
+
+        self.assertEqual(set(samples), {"s1", "s10"})
+        self.assertEqual(len(samples["s1"]), 2)
+        self.assertEqual(len(samples["s10"]), 2)
+        self.assertTrue(all(os.path.basename(p).startswith("s1_") for p in samples["s1"]))
+        self.assertTrue(all(os.path.basename(p).startswith("s10_") for p in samples["s10"]))
+
+    def test_level1_duplicate_sample_names_rejected(self):
+        """Two subdirectories that reduce to the same sample name must error."""
+        self._touch("sampleA-1", "reads.fastq.gz")
+        self._touch("sampleA-2", "reads.fastq.gz")
+
+        with self.assertRaises(ValidationError):
+            find_samples_level_1(self.tmp, separator="-")
 
 
 if __name__ == "__main__":

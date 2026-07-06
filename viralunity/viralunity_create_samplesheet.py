@@ -176,6 +176,12 @@ def find_samples_level_1(input_dir: str, separator: str) -> Dict[str, List[str]]
             continue
 
         sample_name = extract_sample_name(directory, separator)
+        if sample_name in samples:
+            raise ValidationError(
+                f"Duplicate sample name '{sample_name}' derived from more than one "
+                f"directory under {input_dir}. Sample names must be unique; adjust the "
+                f"--separator or the directory names so no sample is silently overwritten."
+            )
         file_paths = sorted(find_files_in_directory(directory))
 
         validate_sample_files(file_paths, sample_name)
@@ -203,12 +209,20 @@ def find_samples_level_0(input_dir: str, separator: str, pattern: str) -> Dict[s
     samples = {}
     pattern_files = sorted(find_files_in_directory(input_dir, pattern))
 
-    for pattern_file in pattern_files:
-        sample_name = extract_sample_name(pattern_file, separator)
+    # Sample names that have an anchor (e.g. R1) file; these define the set of
+    # samples to emit. Grouping is done by *exact* extracted name below rather
+    # than a substring glob, so 's1' no longer captures 's10'/'s1b' files.
+    anchor_sample_names = {extract_sample_name(f, separator) for f in pattern_files}
 
-        # Find all files matching this sample name
-        sample_files = sorted(find_files_in_directory(input_dir, sample_name))
+    all_files = sorted(find_files_in_directory(input_dir))
+    grouped: Dict[str, List[str]] = {}
+    for file_path in all_files:
+        sample_name = extract_sample_name(file_path, separator)
+        if sample_name in anchor_sample_names:
+            grouped.setdefault(sample_name, []).append(file_path)
 
+    for sample_name, sample_files in sorted(grouped.items()):
+        sample_files = sorted(sample_files)
         validate_sample_files(sample_files, sample_name)
         samples[sample_name] = sample_files
 
