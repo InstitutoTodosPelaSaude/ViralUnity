@@ -51,7 +51,9 @@ rule generate_multiqc_report:
     benchmark:
         _TOP_LOG + "generate_multiqc_report/generate_multiqc_report.benchmark.txt"
     shell:
-        "multiqc -f -o {params.temp}/qc/reports/ {params.temp}/qc/reports/"
+        """
+        multiqc -f --cl-config "extra_fn_clean_exts: ['_R1']" -o {params.temp}/qc/reports/ {params.temp}/qc/reports/
+        """
 
 
 rule align_consensus_to_reference_genome:
