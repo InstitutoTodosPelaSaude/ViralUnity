@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Optional
 from snakemake import snakemake
 
 from viralunity.config_generator import ConfigGenerator
-from viralunity.exceptions import ValidationError
+from viralunity.exceptions import ValidationError, ViralUnityError
 
 logger = logging.getLogger(__name__)
 
@@ -114,9 +114,13 @@ def run_pipeline(
         successful = run_workflow_fn(args)
         return 0 if successful else 1
 
-    except ValidationError as e:
-        logger.error(f"Validation error: {e}")
+    except ViralUnityError as e:
+        # Expected, user-facing failures (bad inputs, missing files/DBs, config
+        # errors). Log a clean message with the machine-readable error code so a
+        # caller/service can key off it; no stack trace for these.
+        logger.error(f"[{e.code}] {e}")
         return 1
     except Exception as e:
+        # Genuinely unexpected: keep the traceback for debugging.
         logger.exception(f"Unexpected error: {e}")
         return 1
