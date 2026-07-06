@@ -1,4 +1,4 @@
-.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker
+.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker lock
 
 test: install-dev
 	python3 -m unittest discover ./test -p *test.py
@@ -19,6 +19,12 @@ lint: install-dev
 format: install-dev
 	black viralunity/ test/
 	ruff check --fix viralunity/ test/
+
+# Regenerate the pinned conda lockfile from environment.yml. Requires network
+# access and conda-lock (pip install conda-lock). Commit conda-lock.yml so the
+# runtime environment is reproducible across machines and over time.
+lock:
+	conda-lock lock --file environment.yml --lockfile conda-lock.yml
 
 install:
 	pip install -e .
