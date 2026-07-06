@@ -27,6 +27,8 @@ installation
 tutorial/index
 usage
 commands
+architecture
+embedding
 output
 notes
 citation
