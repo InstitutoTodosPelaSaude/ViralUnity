@@ -12,5 +12,5 @@ rule generate_multiqc_report:
         "../envs/qc.yaml"
     shell:
         r"""
-        multiqc -f -s -o {params.temp}/qc/reports/ {params.temp}/qc/reports/
+        multiqc -f --cl-config "extra_fn_clean_exts: ['_R1']" -o {params.temp}/qc/reports/ {params.temp}/qc/reports/
         """
