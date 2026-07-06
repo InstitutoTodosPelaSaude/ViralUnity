@@ -55,7 +55,7 @@ rule trim_primer_sequences:
     shell:
         """
         set -euo pipefail
-        if [ {params.bed} == NA ]; then
+        if [ "{params.bed}" = "NA" ]; then
             cp {input.bam} {output.bam};
             cp {input.bam_index} {output.bam_index};
             touch {output.trimmed_info};

@@ -25,6 +25,23 @@ def _make_db_dir(path: str, db_name: str) -> Path:
     return db_dir
 
 
+def _safe_extract_zip(zf: zipfile.ZipFile, dest) -> None:
+    """Extract a zip archive, refusing members that escape ``dest`` (zip slip).
+
+    ``--url`` is user-overridable for several databases, so a crafted archive
+    could otherwise write outside the target directory via ``../`` or absolute
+    member paths.
+    """
+    dest_abs = os.path.abspath(dest)
+    for member in zf.namelist():
+        target = os.path.abspath(os.path.join(dest_abs, member))
+        if target != dest_abs and os.path.commonpath([dest_abs, target]) != dest_abs:
+            raise click.ClickException(
+                f"Refusing to extract unsafe archive member (path traversal): {member!r}"
+            )
+    zf.extractall(dest_abs)
+
+
 @click.group(name="get-databases")
 def get_databases() -> None:
     """Download and set up reference databases for ViralUnity pipelines."""
@@ -85,6 +102,15 @@ def get_krona(path: str) -> None:
         raise click.ClickException(
             "CONDA_PREFIX is not set. Please activate the viralunity conda "
             "environment before running this command."
+        )
+    # Guard the destructive rmtree below: CONDA_PREFIX must be a real conda env
+    # directory (contains a conda-meta/), so a stray/empty/hostile value cannot
+    # point the rmtree at an arbitrary path.
+    if not os.path.isdir(conda_prefix) or not os.path.isdir(
+        os.path.join(conda_prefix, "conda-meta")
+    ):
+        raise click.ClickException(
+            f"CONDA_PREFIX does not look like a conda environment directory: {conda_prefix!r}"
         )
 
     taxonomy_dir = _make_db_dir(path, "krona") / "taxonomy"
@@ -346,7 +372,7 @@ def get_diamond(path: str, taxon: str, refseq: bool, threads: int, skip_makedb: 
 
     click.echo("Extracting archive...")
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(raw_dir)
+        _safe_extract_zip(zf, raw_dir)
 
     report_candidates = list(raw_dir.rglob("data_report.jsonl"))
     if not report_candidates:
@@ -607,7 +633,7 @@ def get_virus_genome(path: str, taxon: str, refseq: bool, skip_makeblastdb: bool
 
     click.echo("Extracting archive...")
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(raw_dir)
+        _safe_extract_zip(zf, raw_dir)
 
     # Parse taxonomy metadata
     report_candidates = list(raw_dir.rglob("data_report.jsonl"))
@@ -709,7 +735,7 @@ def get_host_genome(path: str, accession: str) -> None:
 
     click.echo("Extracting archive...")
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(raw_dir)
+        _safe_extract_zip(zf, raw_dir)
 
     fasta_candidates = list(raw_dir.rglob("*.fna"))
     if not fasta_candidates:

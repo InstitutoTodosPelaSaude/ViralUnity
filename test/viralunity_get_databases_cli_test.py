@@ -5,18 +5,50 @@ the NCBI Datasets bug where some virus protein FASTA records are actually
 nucleotide CDS sequences.
 """
 
+import os
 import tempfile
 import textwrap
 import unittest
+import zipfile
 from pathlib import Path
 
+import click
 from click.testing import CliRunner
 
 from viralunity.viralunity_get_databases_cli import (
     _looks_like_dna,
     _reformat_protein_fasta,
+    _safe_extract_zip,
     get_databases,
 )
+
+
+class Test_SafeExtractZip(unittest.TestCase):
+    """Zip-slip guard for user-overridable archive downloads."""
+
+    def test_rejects_path_traversal_member(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "evil.zip")
+            dest = os.path.join(tmp, "dest")
+            os.makedirs(dest)
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("../escaped.txt", "pwned")
+            with zipfile.ZipFile(zip_path) as zf:
+                with self.assertRaises(click.ClickException):
+                    _safe_extract_zip(zf, dest)
+            self.assertFalse(os.path.exists(os.path.join(tmp, "escaped.txt")))
+
+    def test_extracts_safe_member(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "ok.zip")
+            dest = os.path.join(tmp, "dest")
+            os.makedirs(dest)
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("sub/ok.txt", "fine")
+            with zipfile.ZipFile(zip_path) as zf:
+                _safe_extract_zip(zf, dest)
+            self.assertTrue(os.path.exists(os.path.join(dest, "sub", "ok.txt")))
+
 
 # ---------------------------------------------------------------------------
 # _looks_like_dna unit tests
