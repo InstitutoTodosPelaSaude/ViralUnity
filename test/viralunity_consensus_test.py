@@ -1,8 +1,9 @@
+import csv
+import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import mock_open, patch
-
-import pandas as pd
 
 from viralunity.exceptions import (
     AdaptersNotFoundError,
@@ -191,61 +192,87 @@ class Test_ValidateSampleSheet(unittest.TestCase):
     """
 
     def setUp(self):
-        self.samplesheet_dataframe = pd.DataFrame(
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        # Real FASTQ files so validate_file_exists passes against the parsed paths.
+        self.files = {}
+        for name in (
+            "R1_sample1.fastq",
+            "R2_sample1.fastq",
+            "R1_sample2.fastq",
+            "R2_sample2.fastq",
+            "np_sample1.fastq",
+            "np_sample2.fastq",
+        ):
+            path = os.path.join(self.tmp, name)
+            open(path, "w").close()
+            self.files[name] = path
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write_sheet(self, rows):
+        path = os.path.join(self.tmp, "sample_sheet.csv")
+        with open(path, "w", newline="") as fh:
+            csv.writer(fh).writerows(rows)
+        return path
+
+    def test_validate_sample_sheet_illumina(self):
+        """Illumina sheet parses into sample -> [R1, R2]."""
+        from viralunity.validators import validate_sample_sheet
+
+        sheet = self._write_sheet(
+            [
+                ["sample1", self.files["R1_sample1.fastq"], self.files["R2_sample1.fastq"]],
+                ["sample2", self.files["R1_sample2.fastq"], self.files["R2_sample2.fastq"]],
+            ]
+        )
+        samples = validate_sample_sheet(sheet, "illumina")
+        self.assertEqual(
+            samples,
             {
-                0: ["sample1", "sample2"],
-                1: ["R1_sample1.fastq", "R1_sample2.fastq"],
-                2: ["R2_sample1.fastq", "R2_sample2.fastq"],
-            }
+                "sample1": [self.files["R1_sample1.fastq"], self.files["R2_sample1.fastq"]],
+                "sample2": [self.files["R1_sample2.fastq"], self.files["R2_sample2.fastq"]],
+            },
         )
 
-    @patch("os.path.isfile", return_value=True)
-    def test_validate_sample_sheet_illumina(self, mock_isfile):
-        """Test sample sheet validation for Illumina data."""
+    def test_not_validate_sample_sheet_missing_read(self):
+        """A referenced read file that does not exist must raise."""
+        from viralunity.exceptions import ViralUnityFileNotFoundError
         from viralunity.validators import validate_sample_sheet
 
-        with patch("viralunity.validators.pd.read_csv", return_value=self.samplesheet_dataframe):
-            samples = validate_sample_sheet("sample_sheet.csv", "illumina")
-            self.assertEqual(
-                samples,
-                {
-                    "sample1": ["R1_sample1.fastq", "R2_sample1.fastq"],
-                    "sample2": ["R1_sample2.fastq", "R2_sample2.fastq"],
-                },
-            )
+        sheet = self._write_sheet(
+            [["sample1", os.path.join(self.tmp, "absent_R1.fastq"), self.files["R2_sample1.fastq"]]]
+        )
+        with self.assertRaises(ViralUnityFileNotFoundError):
+            validate_sample_sheet(sheet, "illumina")
 
-    @patch("os.path.isfile", return_value=False)
-    def test_not_validate_sample_sheet_illumina(self, mock_isfile):
-        """Test sample sheet validation fails when file doesn't exist."""
+    def test_validate_sample_sheet_nanopore(self):
+        """Nanopore sheet parses into sample -> [fastq]."""
         from viralunity.validators import validate_sample_sheet
 
-        with patch("viralunity.validators.pd.read_csv", return_value=self.samplesheet_dataframe):
-            with self.assertRaises(Exception):
-                validate_sample_sheet("sample_sheet.csv", "illumina")
+        sheet = self._write_sheet(
+            [
+                ["sample1", self.files["np_sample1.fastq"]],
+                ["sample2", self.files["np_sample2.fastq"]],
+            ]
+        )
+        samples = validate_sample_sheet(sheet, "nanopore")
+        self.assertEqual(
+            samples,
+            {
+                "sample1": [self.files["np_sample1.fastq"]],
+                "sample2": [self.files["np_sample2.fastq"]],
+            },
+        )
 
-    @patch("os.path.isfile", return_value=True)
-    def test_validate_sample_sheet_nanopore(self, mock_isfile):
-        """Test sample sheet validation for Nanopore data."""
+    def test_missing_sheet_file_raises(self):
+        """A missing sample-sheet path raises, rather than being read as empty."""
+        from viralunity.exceptions import ViralUnityFileNotFoundError
         from viralunity.validators import validate_sample_sheet
 
-        with patch("viralunity.validators.pd.read_csv", return_value=self.samplesheet_dataframe):
-            samples = validate_sample_sheet("sample_sheet.csv", "nanopore")
-            self.assertEqual(
-                samples,
-                {
-                    "sample1": ["R1_sample1.fastq"],
-                    "sample2": ["R1_sample2.fastq"],
-                },
-            )
-
-    @patch("os.path.isfile", return_value=False)
-    def test_not_validate_sample_sheet_nanopore(self, mock_isfile):
-        """Test sample sheet validation fails when file doesn't exist."""
-        from viralunity.validators import validate_sample_sheet
-
-        with patch("viralunity.validators.pd.read_csv", return_value=self.samplesheet_dataframe):
-            with self.assertRaises(Exception):
-                validate_sample_sheet("sample_sheet.csv", "nanopore")
+        with self.assertRaises(ViralUnityFileNotFoundError):
+            validate_sample_sheet(os.path.join(self.tmp, "does_not_exist.csv"), "illumina")
 
 
 class Test_GenerateConfigFile(unittest.TestCase):
