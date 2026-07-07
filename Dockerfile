@@ -14,6 +14,6 @@ COPY . /app/viralunity
 
 WORKDIR /app/viralunity
 RUN pip install . && rm -rf /root/.cache/pip
-RUN viralunity -v > viralunity-version.txt
+RUN viralunity --version > viralunity-version.txt
 
 WORKDIR /tmp/

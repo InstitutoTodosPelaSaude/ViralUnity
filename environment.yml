@@ -12,7 +12,7 @@ dependencies:
   - krona=2.8
   - biopython>=1.81
   - deacon=0.15
-  - python>=3.8.0,<3.12.0
+  - python>=3.10,<3.12
   # Pinned to <26 because conda-libmamba-solver 26.x queries
   # `repodata_shards.msgpack.zst` from bioconda, which is not published,
   # and conda mis-handles the resulting 404 (raises JSONDecodeError).
@@ -21,5 +21,7 @@ dependencies:
   - conda>=24,<26
   - conda-libmamba-solver>=24,<26
   - pip
-  - pip:
-    - .
+# NOTE: viralunity itself is installed separately with `pip install -e .`
+# (see README/Dockerfile), not via a `pip: - .` entry here. Embedding it in
+# `conda env create` runs pip before the repo is present (e.g. in the Docker
+# build, where only environment.yml is copied first) and fails.
