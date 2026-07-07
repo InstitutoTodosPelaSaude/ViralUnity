@@ -35,6 +35,8 @@ dependencies = [
     "biopython>=1.81",
     "snakemake>=7.32,<8",
     "pandas>=1.5",
+    # Snakemake 7.32 calls pulp.list_solvers(), which was removed in pulp 2.8.
+    "pulp<2.8",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +51,8 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/InstitutoTodosPelaSaude/ViralUnity"
 Documentation = "https://viralunity.readthedocs.io/en/latest/"
+Changelog = "https://github.com/InstitutoTodosPelaSaude/ViralUnity/blob/main/CHANGELOG.md"
+Issues = "https://github.com/InstitutoTodosPelaSaude/ViralUnity/issues"
 
 [project.scripts]
 viralunity = "viralunity.viralunity_cli:main"

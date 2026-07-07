@@ -1,4 +1,4 @@
-.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build-docker run-docker lock typecheck
+.PHONY: test test-dryrun test-empirical lint format run-meta run-consensus install install-dev build build-docker run-docker lock typecheck
 
 test: install-dev
 	python3 -m unittest discover ./test -p *test.py
@@ -62,11 +62,13 @@ run-consensus:
 		--threads-total 1 \
 		--output output/test-meta-exmaple
 
+# Build the sdist + wheel for PyPI (see RELEASING.md). Requires `build` + `twine`.
+build:
+	python -m build
+	twine check dist/*
+
 build-docker:
 	docker build -t viralunity/viralunity:latest .
 
 run-docker:
 	docker run --rm -i -t viralunity/viralunity:latest
-
-conda-build:
-	conda build viralunity/meta.yaml

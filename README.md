@@ -6,6 +6,19 @@ ViralUnity is a tool for analysing viral high-throughput sequencing data. It is 
 
 ## Installation
 
+Install the ViralUnity CLI from PyPI:
+
+```bash
+pip install viralunity
+```
+
+> **conda/mamba is still required at runtime.** ViralUnity orchestrates Snakemake, which
+> builds the per-rule tool environments (aligners, classifiers, assemblers) via
+> `--use-conda` on first run. Make sure conda or mamba is installed and on your `PATH`;
+> you can pre-build those environments up front with `viralunity setup --pipelines all`.
+
+To install from source for development instead:
+
 ```bash
 git clone https://github.com/InstitutoTodosPelaSaude/ViralUnity.git
 cd ViralUnity
