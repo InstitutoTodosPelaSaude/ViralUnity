@@ -85,11 +85,16 @@ both indexes and create the matching GitHub deployment environments:
 1. **Stage on TestPyPI first.** Trigger `release.yaml` manually
    (Actions → Release → *Run workflow*, or
    `gh workflow run release.yaml`). The `workflow_dispatch` run uploads to
-   TestPyPI. Verify a clean install:
+   TestPyPI **under the distribution name `viralunity_test`** — TestPyPI already
+   hosts an older `viralunity` project, so the staging job renames the
+   distribution (see the `publish-testpypi` job). This affects only the TestPyPI
+   distribution name; the import package and the `viralunity` console script are
+   unchanged, and real PyPI publishing keeps the `viralunity` name. Verify a
+   clean install:
 
    ```bash
    pip install --index-url https://test.pypi.org/simple/ \
-     --extra-index-url https://pypi.org/simple/ viralunity==X.Y.Z
+     --extra-index-url https://pypi.org/simple/ viralunity_test==X.Y.Z
    viralunity --version   # -> viralunity, version X.Y.Z
    ```
 
