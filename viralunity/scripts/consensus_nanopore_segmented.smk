@@ -24,8 +24,10 @@ rule sanitize_reference:
         """
 
 def get_map_input_fastqs(wildcards):
-    reads = config["samples"][wildcards.sample].split()
-    return(reads)
+    reads = config["samples"][wildcards.sample]
+    if isinstance(reads, str):
+        reads = reads.split()
+    return reads
 
 REFERENCE = rules.sanitize_reference.output.fasta
 SEGMENT_WILDCARD = "{segment}/"

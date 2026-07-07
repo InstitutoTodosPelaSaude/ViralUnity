@@ -56,14 +56,17 @@ class ConfigGenerator:
                         f"Illumina sample {sample_name} must have 2 files, "
                         f"found {len(file_paths)}"
                     )
-                formatted_samples[key] = f"{file_paths[0]} {file_paths[1]}"
+                # Store R1/R2 as a list rather than a space-joined string so a
+                # file path containing a space is not silently split by the
+                # workflow's ``.split()`` on the sample value.
+                formatted_samples[key] = [file_paths[0], file_paths[1]]
             else:
                 if len(file_paths) != 1:
                     raise ConfigurationError(
                         f"Nanopore sample {sample_name} must have 1 file, "
                         f"found {len(file_paths)}"
                     )
-                formatted_samples[key] = file_paths[0]
+                formatted_samples[key] = [file_paths[0]]
 
         self._set(ConfigKeys.SAMPLES, formatted_samples, self.SECTION_PARAMETERS)
         self._set(ConfigKeys.DATA, data_type, self.SECTION_PARAMETERS)

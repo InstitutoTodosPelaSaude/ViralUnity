@@ -1,6 +1,8 @@
 # Config for Illumina Metagenomics Dry-run
 samples:
-  META1: data/reads/META1_R1.fastq.gz data/reads/META1_R2.fastq.gz
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
 
 data: illumina
 output: test/dryrun_output/metagenomics_illumina/

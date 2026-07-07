@@ -1,6 +1,8 @@
 # Config for Segmented Illumina Consensus Dry-run
 samples:
-  SAMPLE1: data/reads/SAMPLE1_R1.fastq.gz data/reads/SAMPLE1_R2.fastq.gz
+  SAMPLE1:
+    - data/reads/SAMPLE1_R1.fastq.gz
+    - data/reads/SAMPLE1_R2.fastq.gz
 
 data: illumina
 output: test/dryrun_output/consensus_illumina_segmented/

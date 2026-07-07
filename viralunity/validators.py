@@ -1,9 +1,8 @@
 """Validation functions for ViralUnity pipeline arguments and data."""
 
+import csv
 import os
 from typing import Any, Dict, List
-
-import pandas as pd
 
 from viralunity.constants import DataType
 from viralunity.exceptions import (
@@ -65,42 +64,59 @@ def validate_sample_sheet(sample_sheet_path: str, data_type: str) -> Dict[str, L
     """
     validate_file_exists(sample_sheet_path, "Sample sheet file")
 
+    expected_columns = 3 if data_type == DataType.ILLUMINA else 2
+
     try:
-        df = pd.read_csv(sample_sheet_path, header=None)
-    except Exception as e:
+        with open(sample_sheet_path, newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+    except (OSError, UnicodeDecodeError) as e:
         raise SampleSheetError(f"Failed to read sample sheet: {e}") from e
 
-    samples = {}
+    samples: Dict[str, List[str]] = {}
 
-    for idx in df.index:
-        sample_name = df.iloc[idx, 0]
+    for line_number, row in enumerate(rows, start=1):
+        # Skip blank lines (rows with no cells, or only empty cells).
+        if not row or all(not cell.strip() for cell in row):
+            continue
+
+        # Tolerate trailing empty fields (e.g. a stray trailing comma) but
+        # reject rows whose real column count does not match the data type,
+        # instead of silently NaN-padding them the way pandas did.
+        trimmed = list(row)
+        while trimmed and not trimmed[-1].strip():
+            trimmed.pop()
+
+        if len(trimmed) != expected_columns:
+            raise SampleSheetError(
+                f"{str(data_type).capitalize()} sample sheet requires exactly "
+                f"{expected_columns} columns; row {line_number} has {len(trimmed)}: {row!r}"
+            )
+
+        sample_name = trimmed[0].strip()
+        if not sample_name:
+            raise SampleSheetError(f"Empty sample name on row {line_number}.")
+
+        if sample_name in samples:
+            raise SampleSheetError(
+                f"Duplicate sample id '{sample_name}' on row {line_number}. "
+                f"Sample ids must be unique so no sample is silently dropped."
+            )
+
+        file_paths = [cell.strip() for cell in trimmed[1:]]
+        for offset, file_path in enumerate(file_paths, start=2):
+            if not file_path:
+                raise SampleSheetError(
+                    f"Missing file path in column {offset} for sample "
+                    f"'{sample_name}' on row {line_number}."
+                )
 
         if data_type == DataType.ILLUMINA:
-            if df.shape[1] < 3:
-                raise SampleSheetError(
-                    f"Illumina sample sheet must have at least 3 columns. "
-                    f"Found {df.shape[1]} columns."
-                )
-
-            sample_r1 = df.iloc[idx, 1]
-            sample_r2 = df.iloc[idx, 2]
-
-            validate_file_exists(sample_r1, f"R1 file for sample {sample_name}")
-            validate_file_exists(sample_r2, f"R2 file for sample {sample_name}")
-
-            samples[sample_name] = [sample_r1, sample_r2]
-
+            validate_file_exists(file_paths[0], f"R1 file for sample {sample_name}")
+            validate_file_exists(file_paths[1], f"R2 file for sample {sample_name}")
         else:  # nanopore
-            if df.shape[1] < 2:
-                raise SampleSheetError(
-                    f"Nanopore sample sheet must have at least 2 columns. "
-                    f"Found {df.shape[1]} columns."
-                )
+            validate_file_exists(file_paths[0], f"File for sample {sample_name}")
 
-            sample_file = df.iloc[idx, 1]
-            validate_file_exists(sample_file, f"File for sample {sample_name}")
-
-            samples[sample_name] = [sample_file]
+        samples[sample_name] = file_paths
 
     if not samples:
         raise SampleSheetError("No valid samples found in sample sheet")
@@ -519,12 +535,14 @@ def get_samples_from_args(args: Dict[str, Any]) -> Dict[str, List[str]]:
     samples = args.get("samples")
     data_type = args.get("data_type")
 
-    if sample_sheet and os.path.isfile(sample_sheet):
+    if sample_sheet:
+        # A path was provided: it must exist. Do not silently fall back to
+        # `samples`, which would report a misleading "nothing provided" error
+        # when the real problem is a mistyped or missing sample-sheet path.
+        validate_file_exists(sample_sheet, "Sample sheet file")
         return validate_sample_sheet(sample_sheet, data_type)
-    elif samples:
+    if samples:
         return samples
-    else:
-        raise SampleConfigurationNotFoundError(
-            "Either 'sample_sheet' or 'samples' must be provided. "
-            f"Sample sheet path: {sample_sheet}"
-        )
+    raise SampleConfigurationNotFoundError(
+        "Either 'sample_sheet' or 'samples' must be provided. " f"Sample sheet path: {sample_sheet}"
+    )
