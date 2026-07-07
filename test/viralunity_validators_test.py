@@ -11,7 +11,12 @@ import tempfile
 import unittest
 
 from viralunity.exceptions import SampleSheetError, ValidationError, ViralUnityFileNotFoundError
-from viralunity.validators import validate_metagenomics_requirements, validate_sample_sheet
+from viralunity.validators import (
+    ensure_within_base,
+    sanitize_identifier,
+    validate_metagenomics_requirements,
+    validate_sample_sheet,
+)
 
 
 def _touch(path: str) -> str:
@@ -134,6 +139,34 @@ class Test_SampleSheetIntegrity(unittest.TestCase):
         sheet = self._sheet([["", self.np]])
         with self.assertRaises(SampleSheetError):
             validate_sample_sheet(sheet, "nanopore")
+
+    def test_unsafe_sample_name_rejected(self):
+        """A sample id with a path separator must be rejected (injection surface)."""
+        sheet = self._sheet([["../evil", self.np]])
+        with self.assertRaises(SampleSheetError):
+            validate_sample_sheet(sheet, "nanopore")
+
+
+class Test_Sanitization(unittest.TestCase):
+    """Untrusted-input guards for run names and output paths."""
+
+    def test_sanitize_identifier_accepts_safe(self):
+        self.assertEqual(sanitize_identifier("run_2026.01-A"), "run_2026.01-A")
+
+    def test_sanitize_identifier_rejects_path_separator(self):
+        for bad in ["../etc", "a/b", "a\\b", "..", ".", "", "  ", "a b", "a;rm -rf"]:
+            with self.assertRaises(ValidationError):
+                sanitize_identifier(bad, field="run name")
+
+    def test_ensure_within_base_allows_child(self):
+        with tempfile.TemporaryDirectory() as base:
+            target = ensure_within_base("runs/x", base)
+            self.assertTrue(target.startswith(os.path.abspath(base)))
+
+    def test_ensure_within_base_rejects_traversal(self):
+        with tempfile.TemporaryDirectory() as base:
+            with self.assertRaises(ValidationError):
+                ensure_within_base("../../etc/passwd", base)
 
 
 if __name__ == "__main__":
