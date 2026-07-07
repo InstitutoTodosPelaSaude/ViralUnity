@@ -42,7 +42,10 @@ If you cannot rebuild the env (for example, on a shared cluster install), the ma
 conda config --set solver classic
 ```
 
-Full background and the remediation plan are documented in [`CONDA_ENV_CREATION_FIX.md`](https://github.com/InstitutoTodosPelaSaude/ViralUnity/blob/main/CONDA_ENV_CREATION_FIX.md).
+This is why `environment.yml` pins `conda<26` / `conda-libmamba-solver<26`: newer
+solvers query `repodata_shards.msgpack.zst` from bioconda (not published) and
+mishandle the resulting 404. If you hit environment-creation errors, set the
+classic solver as shown above.
 
 ## Verify the installation
 

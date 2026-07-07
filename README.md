@@ -18,15 +18,19 @@ Per-rule conda environments under `viralunity/scripts/envs/` are managed automat
 
 ## Quick start
 
-Five top-level subcommands are exposed via the `viralunity` CLI:
+Six top-level subcommands are exposed via the `viralunity` CLI:
 
 ```bash
 viralunity create-samplesheet --input <runs-dir> --output samples.csv
 viralunity get-databases all --output databases/
+viralunity setup --pipelines all                # pre-build per-rule conda envs
 viralunity consensus illumina --sample-sheet samples.csv --reference ref.fasta --output run/
 viralunity meta      illumina --sample-sheet samples.csv --kraken2-database <db> --output run/
 viralunity build-deacon-index --input host.fasta --output host.dcn
 ```
+
+Global options: `--log-level {DEBUG,INFO,WARNING,ERROR}` and `--json-logs`
+(e.g. `viralunity --log-level DEBUG meta ...`).
 
 Each subcommand has its own `--help`; the same information is exhaustively documented in the `docs/` Sphinx site (rendered on ReadTheDocs at the link above).
 
@@ -40,7 +44,7 @@ This installs the package in editable mode (if not already installed) and runs t
 
 ## Citation
 
-A scientific publication describing this pipeline is being prepared. Meanwhile, please cite this repository. Primary references for upstream tools (Trimmomatic, FastQC, MultiQC, Minimap2, Samtools, iVar, BEDtools, Kraken2, Krona, DIAMOND, fastp, Clair3, Medaka, Deacon) are listed in the ReadTheDocs site.
+A scientific publication describing this pipeline is being prepared. Meanwhile, please cite this repository. Primary references for upstream tools (fastp, MultiQC, Minimap2, Samtools, BCFtools, BEDtools, gofasta, MEGAHIT, Racon, BLAST, Kraken2, Krona, DIAMOND, Clair3, Medaka, Deacon) are listed in the ReadTheDocs site.
 
 ## License
 
