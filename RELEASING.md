@@ -47,6 +47,10 @@ automatically — it must be bumped in lockstep.
    git push origin vX.Y.Z
    ```
 
+   Pushing the `vX.Y.Z` tag triggers the `release.yaml` workflow, which builds
+   the sdist + wheel and **publishes to PyPI** via trusted publishing. Stage on
+   TestPyPI first — see [Publishing to PyPI](#publishing-to-pypi) below.
+
 7. **Build and publish the Docker image** (if applicable):
 
    ```bash
@@ -57,11 +61,50 @@ automatically — it must be bumped in lockstep.
    docker push institutotodospelasaude/viralunity:latest
    ```
 
+## Publishing to PyPI
+
+Publishing is automated by [`.github/workflows/release.yaml`](.github/workflows/release.yaml)
+using **PyPI trusted publishing** (OIDC) — no API tokens are stored in the repo.
+
+### One-time setup (per maintainer account)
+
+Before the first release, register this repository as a *trusted publisher* on
+both indexes and create the matching GitHub deployment environments:
+
+1. On <https://test.pypi.org> and <https://pypi.org>, add a *pending publisher*
+   under the account/project publishing settings:
+   - Owner: `InstitutoTodosPelaSaude`, repo: `ViralUnity`
+   - Workflow: `release.yaml`
+   - Environment: `testpypi` (on test.pypi.org) / `pypi` (on pypi.org)
+2. In GitHub → Settings → Environments, create environments named `testpypi`
+   and `pypi` (add required reviewers on `pypi` if you want a manual approval
+   gate before the real upload).
+
+### Each release
+
+1. **Stage on TestPyPI first.** Trigger `release.yaml` manually
+   (Actions → Release → *Run workflow*, or
+   `gh workflow run release.yaml`). The `workflow_dispatch` run uploads to
+   TestPyPI. Verify a clean install:
+
+   ```bash
+   pip install --index-url https://test.pypi.org/simple/ \
+     --extra-index-url https://pypi.org/simple/ viralunity==X.Y.Z
+   viralunity --version   # -> viralunity, version X.Y.Z
+   ```
+
+2. **Promote to PyPI.** Push the `vX.Y.Z` tag (step 6 above). The tag push runs
+   the `publish-pypi` job, which uploads the same build to PyPI. The first real
+   upload of a version cannot be redone, which is why TestPyPI staging comes
+   first.
+
 ## Verifying
 
 After the tag is pushed:
 
 ```bash
+# PyPI install (once the publish-pypi job completes)
+pip install viralunity==X.Y.Z
 # Python package version
 viralunity --version
 # -> viralunity, version X.Y.Z

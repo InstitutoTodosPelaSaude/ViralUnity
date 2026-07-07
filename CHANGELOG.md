@@ -7,10 +7,15 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
-## [Unreleased]  - 2026-06-30
+## [1.2.0] - 2026-07-07
 
 ### Added
 
+- **Published to PyPI** — ViralUnity is now installable with `pip install viralunity`.
+  Releases are built and uploaded automatically via GitHub Actions trusted publishing
+  (OIDC) when a `vX.Y.Z` tag is pushed; see [RELEASING.md](RELEASING.md). Note that
+  conda/mamba is still required at runtime, since Snakemake builds the per-rule tool
+  environments via `--use-conda`.
 - **RPKM normalisation** — when `--viral-genomes` (RefSeq FASTA) and `--viral-taxids`
   (genome2taxid TSV) are provided, a per-taxon genome-length table is computed (median
   genome length at family, genus, and species level across all accessions under each node).
