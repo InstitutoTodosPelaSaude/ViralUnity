@@ -1,5 +1,6 @@
 """Tests for viralunity create-samplesheet CLI command (click-based)."""
 
+import csv
 import os
 import tempfile
 import unittest
@@ -10,11 +11,30 @@ from click.testing import CliRunner
 from viralunity.exceptions import ValidationError
 from viralunity.viralunity_create_samplesheet import (
     create_samplesheet,
+    extract_sample_name,
     find_samples_level_0,
     find_samples_level_1,
     generate_sample_sheet,
     validate_args,
+    write_sample_sheet,
 )
+
+
+class Test_SampleSheetWritingSafety(unittest.TestCase):
+    def test_extract_sample_name_rejects_unsafe_name(self):
+        # A name with a space would corrupt the sheet / become a wildcard hazard;
+        # reject it at the source instead of downstream.
+        with self.assertRaises(ValidationError):
+            extract_sample_name("bad name_R1.fastq", "_")
+
+    def test_write_sample_sheet_quotes_paths_with_commas(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = os.path.join(d, "s.csv")
+            write_sample_sheet({"S1": ["a,b.fastq", "c.fastq"]}, out)
+            with open(out) as f:
+                rows = list(csv.reader(f))
+            # A comma in a path must stay inside one field, not split the row.
+            self.assertEqual(rows[0], ["S1", "a,b.fastq", "c.fastq"])
 
 
 class Test_CreateSamplesheeetCommand(unittest.TestCase):
@@ -109,7 +129,7 @@ class Test_GenerateSamplesheet(unittest.TestCase):
     def test_generate_samplesheet_level_1(self, mock_open, mock_isfile, mock_isdir, mock_glob):
         self.args["level"] = 1
         generate_sample_sheet(self.args)
-        mock_open.assert_called_with("output.file", "w")
+        mock_open.assert_called_with("output.file", "w", newline="")
         handle = mock_open()
         handle.write.assert_any_call(
             "1,input/dir/1/R1_sample1.fastq,input/dir/1/R1_sample2.fastq\n"
@@ -131,7 +151,7 @@ class Test_GenerateSamplesheet(unittest.TestCase):
     def test_generate_samplesheet_level_0(self, mock_open, mock_isfile, mock_glob):
         self.args["level"] = 0
         generate_sample_sheet(self.args)
-        mock_open.assert_called_with("output.file", "w")
+        mock_open.assert_called_with("output.file", "w", newline="")
         handle = mock_open()
         handle.write.assert_any_call(
             "R1,input/dir/1/R1_sample1.fastq,input/dir/1/R1_sample2.fastq\n"
