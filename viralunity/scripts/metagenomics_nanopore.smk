@@ -90,6 +90,8 @@ def _enabled_taxonomic_filters(track):
         fs.append("ictv")
     if run_minimizer_filter and track.startswith("kraken2"):
         fs.append("min")
+    if run_nr_validation and track.endswith("contigs"):
+        fs.append("nr")
     return fs
 
 def taxonomic_filter_suffixes(track):

@@ -166,6 +166,24 @@ if run_denovo and run_k2_contigs:
             script:
                 "../python/apply_minimizer_filter.py"
 
+    if run_nr_validation:
+        rule harmonize_nr_kraken2_contigs:
+            input:
+                summary = summary_before_filter("kraken2_contigs", "nr"),
+                nr = config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.tsv",
+                krona = expand(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt", sample=list(config["samples"]))
+            output:
+                summary = summary_after_filter("kraken2_contigs", "nr"),
+                dropped = dropped_sidecar(summary_after_filter("kraken2_contigs", "nr")),
+                flags = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_nr_flags.tsv"
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/harmonize_nr_summary.py"
+
     rule apply_bleed_filter_kraken2_contigs:
         input:
             pre_bleed_summary("kraken2_contigs")

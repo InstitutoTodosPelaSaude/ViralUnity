@@ -338,6 +338,24 @@ if run_denovo and run_diamond_contigs:
             script:
                 "../python/apply_ictv_host_filter.py"
 
+    if run_nr_validation:
+        rule harmonize_nr_diamond_contigs:
+            input:
+                summary = summary_before_filter("diamond_contigs", "nr"),
+                nr = config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.tsv",
+                krona = expand(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv", sample=list(config["samples"]))
+            output:
+                summary = summary_after_filter("diamond_contigs", "nr"),
+                dropped = dropped_sidecar(summary_after_filter("diamond_contigs", "nr")),
+                flags = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_nr_flags.tsv"
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/harmonize_nr_summary.py"
+
     rule apply_bleed_filter_diamond_contigs:
         input:
             pre_bleed_summary("diamond_contigs")
