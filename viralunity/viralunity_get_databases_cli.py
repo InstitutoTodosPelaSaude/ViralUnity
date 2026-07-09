@@ -438,6 +438,111 @@ def get_diamond(path: str, taxon: str, refseq: bool, threads: int, skip_makedb: 
         )
 
 
+# NCBI BLAST+ database volumes ship an alias file (``<db>.pal`` for a
+# multi-volume protein db) or a single-volume index (``<db>.pin`` /
+# ``<db>.000.pin``). These are the same suffixes ``validators.py`` accepts for
+# ``--nr-diamond-database``, so a prefix that passes this check will also pass
+# metagenomics validation.
+_BLASTDB_SIDECARS = (".pal", ".pin", ".000.pin")
+
+
+def _build_update_blastdb_cmd(db_name: str, source: str, threads: int) -> list:
+    """Build the ``update_blastdb.pl`` argv to fetch and decompress a BLAST db."""
+    cmd = ["update_blastdb.pl", "--decompress", "--source", source]
+    if threads and threads > 1:
+        cmd += ["--num_threads", str(threads)]
+    cmd.append(db_name)
+    return cmd
+
+
+def _build_diamond_prepdb_cmd(db_prefix) -> list:
+    """Build the ``diamond prepdb`` argv that indexes a BLAST+ db for DIAMOND."""
+    return ["diamond", "prepdb", "--db", str(db_prefix)]
+
+
+def _verify_blastdb(db_prefix: Path) -> None:
+    """Raise if no BLAST+ index files exist for ``db_prefix``."""
+    if not any(Path(f"{db_prefix}{suffix}").is_file() for suffix in _BLASTDB_SIDECARS):
+        expected = ", ".join(f"{db_prefix.name}{s}" for s in _BLASTDB_SIDECARS)
+        raise click.ClickException(
+            f"No BLAST+ database files found for prefix {db_prefix} "
+            f"(expected one of: {expected}). The download may have failed."
+        )
+
+
+@get_databases.command("nr")
+@click.option(
+    "--path",
+    default="databases",
+    show_default=True,
+    help="Parent directory where the diamond/ subdirectory will be created.",
+)
+@click.option(
+    "--db-name",
+    default="nr",
+    show_default=True,
+    help="BLAST database name to fetch with update_blastdb.pl (e.g. 'nr', 'nr_viruses').",
+)
+@click.option(
+    "--source",
+    type=click.Choice(["ncbi", "aws", "gcp"]),
+    default="ncbi",
+    show_default=True,
+    help="Mirror update_blastdb.pl downloads from (aws/gcp are often faster than ncbi).",
+)
+@click.option(
+    "--threads",
+    default=1,
+    show_default=True,
+    type=int,
+    help="Threads for update_blastdb.pl download/decompression and diamond prepdb.",
+)
+@click.option(
+    "--skip-prepdb",
+    is_flag=True,
+    default=False,
+    help="Download only; let the pipeline run 'diamond prepdb' at runtime.",
+)
+def get_nr(path: str, db_name: str, source: str, threads: int, skip_prepdb: bool) -> None:
+    """Download and configure the NCBI nr database for DIAMOND NR validation.
+
+    Fetches NCBI's preformatted, md5-verified BLAST+ nr volumes with the
+    official ``update_blastdb.pl`` tool into ``{path}/diamond/`` and (unless
+    ``--skip-prepdb``) runs ``diamond prepdb`` once so DIAMOND can search it
+    directly. BLAST v5 databases carry taxonomy, so the ``staxids`` column the
+    NR-validation rule requests is populated without any extra download.
+
+    The nr database is very large (100+ GB decompressed) and takes a long time
+    to download; ensure ample free disk. It is intentionally NOT part of
+    ``get-databases all``.
+
+    Pass the printed prefix to ``--nr-diamond-database`` in ``viralunity meta``.
+    """
+    db_dir = _make_db_dir(path, "diamond")
+    db_prefix = db_dir / db_name
+
+    click.echo(
+        f"Downloading BLAST+ '{db_name}' database via update_blastdb.pl " f"(source: {source})..."
+    )
+    click.echo(
+        "  Note: nr is very large (100+ GB decompressed); this can take hours "
+        "and needs ample free disk."
+    )
+    # update_blastdb.pl writes its volumes into the current directory.
+    run_command(_build_update_blastdb_cmd(db_name, source, threads), cwd=str(db_dir))
+
+    _verify_blastdb(db_prefix)
+
+    if not skip_prepdb:
+        click.echo("Preparing database for DIAMOND (diamond prepdb)...")
+        run_command(_build_diamond_prepdb_cmd(db_prefix))
+
+    click.echo("\nNR database ready.")
+    click.echo(f"  DB prefix: {db_prefix}")
+    click.echo("\nUse in viralunity meta commands:")
+    click.echo(f"  --nr-diamond-database  {db_prefix}")
+
+
 # Removed _parse_genome_data_report — replaced by a call to
 # _parse_data_report_jsonl with `key_extractor=_accession_from_record`.
 
