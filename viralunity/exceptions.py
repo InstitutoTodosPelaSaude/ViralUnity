@@ -5,6 +5,8 @@ service can surface a structured error payload (``to_dict()``) to callers
 instead of only a log line.
 """
 
+from typing import Optional
+
 
 class ViralUnityError(Exception):
     """Base exception for all ViralUnity errors."""
@@ -13,7 +15,7 @@ class ViralUnityError(Exception):
     #: subclasses; may also be overridden per-instance via the ``code`` kwarg.
     code = "viralunity_error"
 
-    def __init__(self, message: str = "", *, code: str = None):
+    def __init__(self, message: str = "", *, code: Optional[str] = None):
         super().__init__(message)
         self.message = message
         if code is not None:

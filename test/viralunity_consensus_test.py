@@ -16,6 +16,16 @@ from viralunity.viralunity_consensus import (
 )
 
 
+class Test_RunNameSanitization(unittest.TestCase):
+    @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
+    @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
+    @patch("viralunity.viralunity_consensus.get_samples_from_args", return_value={"s": ["a"]})
+    def test_validate_args_rejects_unsafe_run_name(self, *_mocks):
+        args = {"run_name": "../evil", "primer_scheme": "s", "reference": "r.fasta"}
+        with self.assertRaises(ValidationError):
+            validate_args(args)
+
+
 class Test_ValidateArgs(unittest.TestCase):
     def setUp(self):
         self.args = {

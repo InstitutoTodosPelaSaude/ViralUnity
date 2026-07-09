@@ -40,7 +40,7 @@ def run_command(
     """
     click.echo(f"$ {' '.join(str(c) for c in cmd)}")
     try:
-        result = subprocess.run(list(cmd), cwd=cwd, timeout=timeout)
+        result = subprocess.run([str(c) for c in cmd], cwd=cwd, timeout=timeout)
     except subprocess.TimeoutExpired as e:
         raise click.ClickException(
             f"Command timed out after {e.timeout:.0f}s: " f"{' '.join(str(c) for c in cmd)}"

@@ -98,6 +98,9 @@ if run_denovo and run_diamond_contigs:
             contigs = config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa",
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
         output:
+            # temp(): the Illumina track does not reuse the id list after
+            # extraction (unlike Nanopore, where remap_reads_to_viral_contigs
+            # consumes it, so there it is kept persistent).
             ids = temp(config["output"] + "denovo_assembly/viral_contigs/{sample}.viral.ids.txt"),
             fasta = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral_contigs.fa"
         threads: 1
@@ -179,7 +182,7 @@ if run_denovo and run_diamond_contigs:
         output:
             filtered = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tsv"
         params:
-            min_mapped = 1
+            min_mapped = config.get("diamond_min_mapped", 1)
         log:
             config["output"] + "logs/diamond_filter/{sample}.log"
         benchmark:
@@ -363,7 +366,7 @@ if run_denovo and run_diamond_contigs:
             chain_output("diamond_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
-            rpm_floor = 1.0,
+            rpm_floor = config.get("bleed_rpm_floor", 1.0),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"

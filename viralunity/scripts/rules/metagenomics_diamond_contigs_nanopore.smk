@@ -98,6 +98,9 @@ if run_denovo and run_diamond_contigs:
             contigs = get_final_contigs,
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
         output:
+            # NOT temp(): remap_reads_to_viral_contigs reuses this id list
+            # downstream (see rules.extract_viral_contigs.output.ids), so unlike
+            # the Illumina track it must persist for the rest of the DAG.
             ids = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral.ids.txt",
             fasta = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral_contigs.fa"
         threads: 1
@@ -220,7 +223,7 @@ if run_denovo and run_diamond_contigs:
         output:
             filtered = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tsv"
         params:
-            min_mapped = 1
+            min_mapped = config.get("diamond_min_mapped", 1)
         log:
             config["output"] + "logs/diamond_filter/{sample}.log"
         benchmark:
@@ -404,7 +407,7 @@ if run_denovo and run_diamond_contigs:
             chain_output("diamond_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
-            rpm_floor = 1.0,
+            rpm_floor = config.get("bleed_rpm_floor", 1.0),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"

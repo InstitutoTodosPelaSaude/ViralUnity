@@ -25,9 +25,10 @@ rule map_reads:
     shell:
         """
         set -euo pipefail
+        exec 2> {log}
         minimap2 -a -t {threads} -x map-ont {input.reference} {input.fastq} |
         samtools view --min-MQ {params.minimum_map_quality} -bS -F 4 - |
-        samtools sort -o {output.bam} - 2> {log}
+        samtools sort -o {output.bam} -
         samtools index {output.bam} {output.bam_index}
         """
 

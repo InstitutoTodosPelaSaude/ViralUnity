@@ -11,7 +11,9 @@ bleed / negative-control-filtered summaries instead of the raw counts table:
   - collect_summary_files: one file per enabled (method, source) classifier.
 """
 
+import argparse
 import os
+import tempfile
 import unittest
 
 import numpy as np
@@ -20,6 +22,7 @@ import pandas as pd
 from viralunity.scripts.python.select_reference_genomes import (
     apply_pass_column_filters,
     collect_summary_files,
+    main,
     resolve_summary_file,
 )
 
@@ -155,6 +158,49 @@ class TestCollectSummaryFiles(unittest.TestCase):
                     "kraken2_reads_taxa_summary_RPM.bleed.tsv",
                 ],
             )
+
+
+class TestTaxidStrategyDtype(unittest.TestCase):
+    """A blank taxid in a summary must not float-coerce the whole taxid column
+    (3001 -> "3001.0"), which would silently miss the genome2taxid lookup and
+    produce an empty reference_targets.tsv."""
+
+    def test_valid_taxid_selected_despite_blank_taxid_row(self):
+        with tempfile.TemporaryDirectory() as root:
+            summ_dir = os.path.join(root, "taxonomic_assignments")
+            cdir = os.path.join(summ_dir, "kraken2_reads")
+            os.makedirs(cdir)
+            with open(os.path.join(cdir, "kraken2_reads_taxa_summary.tsv"), "w") as fh:
+                fh.write("sample\tmode\tcount\tname\ttaxid\n")
+                fh.write("S1\treads\t500\tCoronaviridae\t3001\n")
+                fh.write("S1\treads\t500\tCoronaviridae\t\n")  # blank taxid -> forces float64
+
+            g2t = os.path.join(root, "genome2taxid.tsv")
+            with open(g2t, "w") as fh:
+                fh.write("NC_045512.2\t3001\n")
+
+            out_tsv = os.path.join(root, "reference_targets.tsv")
+            args = argparse.Namespace(
+                summary_dir=summ_dir,
+                method="kraken2",
+                source="reads",
+                reads_count=100,
+                contigs_count=1,
+                families="Coronaviridae",
+                strategy="taxid",
+                genome2taxid=g2t,
+                blast_db="NA",
+                blast_qcov=80,
+                blast_pident=80,
+                contigs_dir=None,
+                taxdump="",
+                out_tsv=out_tsv,
+            )
+
+            main(args)
+
+            out = pd.read_csv(out_tsv, sep="\t")
+            self.assertIn("NC_045512.2", list(out["reference_genome"].astype(str)))
 
 
 if __name__ == "__main__":

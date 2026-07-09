@@ -7,15 +7,17 @@ Create sample sheet from directory structure
 Filipe Moreira - 2023/09/16
 """
 
+import csv
 import glob
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import click
 
 from viralunity.constants import SampleSheetPattern, SampleSheetSeparator
 from viralunity.exceptions import ValidationError, ViralUnityFileNotFoundError
+from viralunity.validators import sanitize_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -113,12 +115,17 @@ def extract_sample_name(path: str, separator: str) -> str:
 
     Returns:
         Sample name (first part before separator)
+
+    Raises:
+        ValidationError: If the derived name is not a safe identifier (spaces,
+            path separators, shell/glob metacharacters). Failing here surfaces
+            the problem at its source instead of downstream in the pipeline.
     """
     basename = os.path.basename(path)
-    return basename.split(separator)[0]
+    return sanitize_identifier(basename.split(separator)[0], "sample name")
 
 
-def find_files_in_directory(directory: str, pattern: str = None) -> List[str]:
+def find_files_in_directory(directory: str, pattern: Optional[str] = None) -> List[str]:
     """Find files in a directory, optionally matching a pattern.
 
     Args:
@@ -258,19 +265,28 @@ def generate_sample_sheet(args: Dict[str, Any]) -> None:
 
     logger.info(f"Found {len(samples)} samples")
 
-    # Write sample sheet
-    try:
-        with open(output_file, "w") as f:
-            for sample_name, file_paths in sorted(samples.items()):
-                if len(file_paths) == 2:
-                    line = f"{sample_name},{file_paths[0]},{file_paths[1]}\n"
-                else:
-                    line = f"{sample_name},{file_paths[0]}\n"
-                f.write(line)
-    except IOError as e:
-        raise ValidationError(f"Failed to write sample sheet: {e}")
+    write_sample_sheet(samples, output_file)
 
     logger.info(f"Sample sheet generated: {output_file}")
+
+
+def write_sample_sheet(samples: Dict[str, List[str]], output_file: str) -> None:
+    """Write the sample sheet CSV.
+
+    Uses ``csv.writer`` (with a ``\\n`` line terminator) so a sample name or a
+    file path that contains a comma is quoted rather than silently splitting the
+    row into extra columns.
+
+    Raises:
+        ValidationError: If the file cannot be written.
+    """
+    try:
+        with open(output_file, "w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            for sample_name, file_paths in sorted(samples.items()):
+                writer.writerow([sample_name, *file_paths])
+    except IOError as e:
+        raise ValidationError(f"Failed to write sample sheet: {e}")
 
 
 if __name__ == "__main__":

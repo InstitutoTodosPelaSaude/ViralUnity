@@ -53,6 +53,13 @@ if df.empty:
 # ----------------------------
 # Resolve taxid column
 # ----------------------------
+# NOTE: an int taxid_column is a POSITION into the (possibly keep_columns-sliced)
+# frame, not an original file-column label. After `df.iloc[:, keep_columns]` the
+# column labels are preserved, so df.columns[taxid_column] indexes positionally
+# into that reduced Index. With the shipped configs (kraken2: keep_columns=[1,2],
+# taxid_column=1; diamond: taxid_column=1, no slice) this resolves to the taxid
+# column. If keep_columns is ever reordered, taxid_column must track the new
+# position. A str taxid_column is treated as a label lookup instead.
 if isinstance(taxid_column, int):
     taxid_colname = df.columns[taxid_column]
 else:

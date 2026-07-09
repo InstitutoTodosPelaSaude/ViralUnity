@@ -1,3 +1,17 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
+onsuccess:
+    print("ViralUnity: workflow completed successfully.")
+
+
+onerror:
+    print(f"ViralUnity: workflow FAILED - see the Snakemake log: {log}")
+
+
 def get_exclude_taxids():
     """TaxIDs to exclude from classification outputs (e.g. human 9606, unclassified 0)."""
     exclude = []
