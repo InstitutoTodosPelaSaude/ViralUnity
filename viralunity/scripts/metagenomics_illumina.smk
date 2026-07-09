@@ -35,7 +35,6 @@ has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
 combine_contig_search = bool(config.get("combine_contig_search", False))
 run_ictv_host_filter = bool(config.get("run_ictv_host_filter", False))
-run_minimizer_filter = bool(config.get("run_minimizer_filter", False))
 run_nr_validation = bool(config.get("run_nr_validation", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
@@ -56,15 +55,12 @@ def _enabled_taxonomic_filters(track):
     """Ordered short names of the taxonomic filters enabled for this track.
 
     Taxonomic filters run BEFORE bleed/negative-control so those statistics are
-    computed on taxonomically-valid taxa. Order is cheap -> expensive. Minimizer
-    applies to kraken2 tracks only; NR validation to contig tracks only (both
-    added in later commits).
+    computed on taxonomically-valid taxa. Order is cheap -> expensive. NR
+    validation applies to contig tracks only.
     """
     fs = []
     if run_ictv_host_filter:
         fs.append("ictv")
-    if run_minimizer_filter and track.startswith("kraken2"):
-        fs.append("min")
     if run_nr_validation and track.endswith("contigs"):
         fs.append("nr")
     return fs

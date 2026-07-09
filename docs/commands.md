@@ -271,9 +271,6 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--minimum-hit-group` | `4` | Kraken2 minimum-hit-group parameter. |
 | `--run-ictv-host-filter`/`--no-ictv-host-filter` | off | Keep only vertebrate-infecting viruses (drop phages, plant/fungal/algal/invertebrate-only viruses). See *Taxonomic false-positive filters* below. |
 | `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by `viralunity get-databases ictv-vertebrate-taxids`). Required with `--run-ictv-host-filter`. |
-| `--run-minimizer-filter`/`--no-minimizer-filter` | off | Drop kraken2 taxa with too few distinct minimizers (KrakenUniq-style). kraken2 tracks only; needs `--report-minimizer-data`. |
-| `--minimizer-min-distinct` | `0` | Minimum distinct-minimizer count to keep a kraken2 taxon (`0` disables). |
-| `--minimizer-max-duplication` | `0.0` | Maximum minimizer duplication ratio (total/distinct) to keep a kraken2 taxon (`0` disables). |
 | `--run-nr-validation`/`--no-nr-validation` | off | Re-search de novo viral contigs against NCBI nr and keep only NR-confirmed viral contigs. Contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
 | `--nr-diamond-database` | `NA` | nr database for NR validation: a BLAST+ nr db (searched via `diamond prepdb`) or a native `.dmnd`. |
 | `--nr-evalue` | `1e-10` | E-value threshold for the NR DIAMOND search. |
@@ -453,7 +450,6 @@ byte-identical to before (`..._RPM.bleed[.neg].tsv`).
 | Filter | Flag | Scope | What it drops |
 |--------|------|-------|---------------|
 | ICTV host | `--run-ictv-host-filter` + `--ictv-vertebrate-taxids-file` | all four tracks | Taxa not in a vertebrate-infecting virus lineage (phages, plant/fungal/algal/invertebrate-only, giant viruses). Lineage-aware against an ICTV-derived taxid allowlist (built by `build_ictv_vertebrate_taxids.py`, see below). |
-| Minimizer | `--run-minimizer-filter` + `--minimizer-min-distinct` / `--minimizer-max-duplication` | kraken2 reads + contigs | kraken2 taxa with too few *distinct* minimizers (KrakenUniq-style). Needs kraken2 run with `--report-minimizer-data` (the default). |
 | NR validation | `--run-nr-validation` + `--nr-diamond-database` | contig tracks only | Contigs the NR (full `nr`) LCA consensus confidently calls non-viral. Runs one aggregated `diamond blastx` over all samples' de novo viral contigs; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
 
 NR validation also writes `<track>_nr_flags.tsv` surfacing (not filtering) species-level

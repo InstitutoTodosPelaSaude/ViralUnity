@@ -219,9 +219,6 @@ class ConfigGenerator:
         combine_contig_search: bool = False,
         run_ictv_host_filter: bool = False,
         ictv_vertebrate_taxids_file: str = "NA",
-        run_minimizer_filter: bool = False,
-        minimizer_min_distinct: int = 0,
-        minimizer_max_duplication: float = 0.0,
         run_nr_validation: bool = False,
         nr_diamond_database: str = "NA",
         nr_evalue: float = 1e-10,
@@ -272,14 +269,6 @@ class ConfigGenerator:
                 allowlist consumed by the ICTV host filter (built by
                 build_ictv_vertebrate_taxids.py). Required when
                 run_ictv_host_filter is True.
-            run_minimizer_filter: When True, drop kraken2 taxa with too few
-                distinct minimizers (KrakenUniq-style). Taxonomic filter applied
-                before bleed/negative-control, kraken2 tracks only. Off by
-                default; requires kraken2 to run with --report-minimizer-data.
-            minimizer_min_distinct: Minimum distinct-minimizer count to keep a
-                kraken2 taxon (0 disables this criterion).
-            minimizer_max_duplication: Maximum minimizer duplication ratio
-                (total/distinct) to keep a kraken2 taxon (0 disables it).
             run_nr_validation: When True, re-search the de novo viral contigs
                 against NCBI nr and keep only contigs an LCA consensus confirms
                 as viral. Contig tracks only; requires denovo + diamond_contigs.
@@ -332,9 +321,6 @@ class ConfigGenerator:
         self._set(ConfigKeys.KRAKEN2_EXTRA_FLAGS, kraken2_extra_flags, P)
         self._set(ConfigKeys.COMBINE_CONTIG_SEARCH, combine_contig_search, P)
         self._set(ConfigKeys.RUN_ICTV_HOST_FILTER, run_ictv_host_filter, P)
-        self._set(ConfigKeys.RUN_MINIMIZER_FILTER, run_minimizer_filter, P)
-        self._set(ConfigKeys.MINIMIZER_MIN_DISTINCT, minimizer_min_distinct, P)
-        self._set(ConfigKeys.MINIMIZER_MAX_DUPLICATION, minimizer_max_duplication, P)
         self._set(ConfigKeys.RUN_NR_VALIDATION, run_nr_validation, P)
         self._set(ConfigKeys.NR_EVALUE, nr_evalue, P)
         self._set(ConfigKeys.NR_MAX_TARGET_SEQS, nr_max_target_seqs, P)

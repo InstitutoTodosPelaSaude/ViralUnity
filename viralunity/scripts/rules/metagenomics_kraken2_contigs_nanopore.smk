@@ -149,23 +149,6 @@ if run_denovo and run_k2_contigs:
             script:
                 "../python/apply_ictv_host_filter.py"
 
-    if run_minimizer_filter:
-        rule apply_minimizer_filter_kraken2_contigs:
-            input:
-                summary = summary_before_filter("kraken2_contigs", "min"),
-                reports = expand(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.report.txt", sample=list(config["samples"]))
-            output:
-                summary = summary_after_filter("kraken2_contigs", "min"),
-                dropped = dropped_sidecar(summary_after_filter("kraken2_contigs", "min"))
-            params:
-                samples = list(config["samples"]),
-                min_distinct = config.get("minimizer_min_distinct", 0),
-                max_duplication = config.get("minimizer_max_duplication", 0.0)
-            conda:
-                "../envs/utils.yaml"
-            script:
-                "../python/apply_minimizer_filter.py"
-
     if run_nr_validation:
         rule harmonize_nr_kraken2_contigs:
             input:

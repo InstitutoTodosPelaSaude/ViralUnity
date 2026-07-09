@@ -167,30 +167,6 @@ _COMMON_META_OPTIONS = [
         ),
     ),
     click.option(
-        "--run-minimizer-filter/--no-minimizer-filter",
-        default=False,
-        show_default=True,
-        help=(
-            "Drop kraken2 taxa with too few distinct minimizers (KrakenUniq-style). "
-            "Requires kraken2 to run with --report-minimizer-data. Applied before "
-            "the bleed/negative-control filters; kraken2 tracks only."
-        ),
-    ),
-    click.option(
-        "--minimizer-min-distinct",
-        default=0,
-        show_default=True,
-        type=int,
-        help="Minimum distinct-minimizer count to keep a kraken2 taxon (0 disables).",
-    ),
-    click.option(
-        "--minimizer-max-duplication",
-        default=0.0,
-        show_default=True,
-        type=float,
-        help="Maximum minimizer duplication ratio (total/distinct) to keep a taxon (0 disables).",
-    ),
-    click.option(
         "--run-nr-validation/--no-nr-validation",
         default=False,
         show_default=True,

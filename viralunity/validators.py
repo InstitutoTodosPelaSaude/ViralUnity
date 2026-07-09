@@ -417,29 +417,10 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
                 f"ICTV vertebrate taxids file does not exist: {ictv_file}"
             )
 
-    # Minimizer filter: kraken2 must be enabled and run with --report-minimizer-data.
-    if args.get("run_minimizer_filter", False):
-        kraken2_on = args.get("run_kraken2_reads", True) or args.get(
-            "run_kraken2_contigs", True
-        )
-        if not kraken2_on:
-            raise ValidationError(
-                "--run-minimizer-filter needs a kraken2 track enabled "
-                "(--run-kraken2-reads or --run-kraken2-contigs)."
-            )
-        extra = str(args.get("kraken2_extra_flags", "--report-minimizer-data"))
-        if "--report-minimizer-data" not in extra:
-            raise ValidationError(
-                "--run-minimizer-filter requires kraken2 to run with "
-                "--report-minimizer-data (kraken2_extra_flags must include it)."
-            )
-
     # NR validation: contig tracks only; needs denovo + diamond_contigs and an
     # nr database that resolves as a BLAST+ db or a native .dmnd.
     if args.get("run_nr_validation", False):
-        if not args.get("run_denovo_assembly", False) or not args.get(
-            "run_diamond_contigs", False
-        ):
+        if not args.get("run_denovo_assembly", False) or not args.get("run_diamond_contigs", False):
             raise ValidationError(
                 "--run-nr-validation requires --run-denovo-assembly and "
                 "--run-diamond-contigs (the viral-contig set is diamond-defined)."
@@ -452,8 +433,7 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
             )
         is_dmnd = str(nr_db).endswith(".dmnd") and os.path.isfile(nr_db)
         is_blastdb = any(
-            os.path.isfile(f"{nr_db}{suffix}")
-            for suffix in (".pal", ".pin", ".000.pin", ".dmnd")
+            os.path.isfile(f"{nr_db}{suffix}") for suffix in (".pal", ".pin", ".000.pin", ".dmnd")
         )
         if not (is_dmnd or is_blastdb):
             raise ViralUnityFileNotFoundError(

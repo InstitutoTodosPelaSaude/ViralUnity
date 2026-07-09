@@ -118,6 +118,24 @@ The release process is documented in [RELEASING.md](RELEASING.md).
   `test/viralunity_meta_cli_test.py`), orchestrator forwarding
   (`test/viralunity_orchestrator_test.py`), and skeleton + setup CLI
   coverage (`test/viralunity_setup_cli_test.py`). +13 tests total.
+- **Taxonomic false-positive filters for `viralunity meta`** — optional
+  post-classification filters that remove non-target detections before the
+  bleed/negative-control statistics are computed. Filters run in a
+  cheap→expensive chain (each step appends a filename suffix and writes a
+  `*.dropped.tsv` audit sidecar):
+  - `--run-ictv-host-filter` (+ `--ictv-vertebrate-taxids-file`): keeps only
+    vertebrate-infecting viruses, dropping phages and plant/fungal/algal/
+    invertebrate-only viruses via a lineage-aware ICTV-derived taxid allowlist
+    (built by `viralunity get-databases ictv-vertebrate-taxids`). Applies to
+    all four tracks.
+  - `--run-nr-validation` (+ `--nr-diamond-database`, `--nr-evalue`,
+    `--nr-max-target-seqs`, `--nr-sensitivity`, `--nr-consensus-threshold`):
+    re-searches de novo viral contigs against NCBI `nr` in one aggregated
+    `diamond blastx` and drops contigs an LCA consensus confidently calls
+    non-viral. Contig tracks only; requires `--run-denovo-assembly` and
+    `--run-diamond-contigs`.
+  - `--combine-contig-search`: runs the contig DIAMOND search once over all
+    samples' contigs (combine → search → split) instead of per sample.
 
 ### Changed
 

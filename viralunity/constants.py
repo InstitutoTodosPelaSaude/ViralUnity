@@ -59,9 +59,6 @@ class ConfigKeys:
     # Taxonomic false-positive filters (run before bleed/negative-control)
     RUN_ICTV_HOST_FILTER = "run_ictv_host_filter"
     ICTV_VERTEBRATE_TAXIDS_FILE = "ictv_vertebrate_taxids_file"
-    RUN_MINIMIZER_FILTER = "run_minimizer_filter"
-    MINIMIZER_MIN_DISTINCT = "minimizer_min_distinct"
-    MINIMIZER_MAX_DUPLICATION = "minimizer_max_duplication"
     RUN_NR_VALIDATION = "run_nr_validation"
     NR_DIAMOND_DATABASE = "nr_diamond_database"
     NR_EVALUE = "nr_evalue"
