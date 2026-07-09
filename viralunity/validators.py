@@ -417,6 +417,23 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
                 f"ICTV vertebrate taxids file does not exist: {ictv_file}"
             )
 
+    # Minimizer filter: kraken2 must be enabled and run with --report-minimizer-data.
+    if args.get("run_minimizer_filter", False):
+        kraken2_on = args.get("run_kraken2_reads", True) or args.get(
+            "run_kraken2_contigs", True
+        )
+        if not kraken2_on:
+            raise ValidationError(
+                "--run-minimizer-filter needs a kraken2 track enabled "
+                "(--run-kraken2-reads or --run-kraken2-contigs)."
+            )
+        extra = str(args.get("kraken2_extra_flags", "--report-minimizer-data"))
+        if "--report-minimizer-data" not in extra:
+            raise ValidationError(
+                "--run-minimizer-filter requires kraken2 to run with "
+                "--report-minimizer-data (kraken2_extra_flags must include it)."
+            )
+
     validate_reference_assembly_requirements(args)
 
 

@@ -1,0 +1,60 @@
+# Config for Illumina Metagenomics Dry-run — minimizer filter variant.
+# Enables BOTH the ICTV and minimizer filters to exercise the chained taxonomic
+# suffixes (_RPM.ictv.min.tsv) feeding the bleed filter, on kraken2 tracks.
+samples:
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
+
+data: illumina
+output: test/dryrun_output/metagenomics_illumina_minimizer/
+threads: 2
+
+kraken2_database: databases/kraken2/
+krona_database: databases/krona/taxonomy/
+taxdump: databases/taxdump/
+diamond_database: databases/diamond/nr.dmnd
+
+remove_human_reads: false
+remove_unclassified_reads: false
+host_reference: NA
+deacon_index: NA
+
+run_denovo_assembly: true
+run_kraken2_reads: true
+run_kraken2_contigs: true
+run_diamond_reads: false
+run_diamond_contigs: false
+
+# Taxonomic filters under test (chained: ICTV then minimizer)
+run_ictv_host_filter: true
+ictv_vertebrate_taxids_file: databases/ictv/vertebrate_virus_taxids.txt
+run_minimizer_filter: true
+minimizer_min_distinct: 10
+minimizer_max_duplication: 0.0
+kraken2_extra_flags: "--report-minimizer-data"
+
+run_reference_assembly: false
+
+diamond_sensitivity: sensitive
+evalue: 0.001
+bleed_fraction: 0.005
+negative_controls: []
+compute_rpkm: false
+enrichment_pseudocount: 1.0
+z_score_threshold: 3.0
+log2_ratio_threshold: 1.0
+minimum_hit_group: 4
+
+adapters: NA
+minimum_length: 50
+trim_head: 0
+trim_tail: 0
+cut_front_mean_quality: 20
+cut_tail_mean_quality: 20
+cut_right_window_size: 4
+cut_right_mean_quality: 20
+
+af_threshold: 0.5
+af_isnv_threshold: 0.05
+run_isnv: false

@@ -35,6 +35,7 @@ has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
 combine_contig_search = bool(config.get("combine_contig_search", False))
 run_ictv_host_filter = bool(config.get("run_ictv_host_filter", False))
+run_minimizer_filter = bool(config.get("run_minimizer_filter", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -61,6 +62,8 @@ def _enabled_taxonomic_filters(track):
     fs = []
     if run_ictv_host_filter:
         fs.append("ictv")
+    if run_minimizer_filter and track.startswith("kraken2"):
+        fs.append("min")
     return fs
 
 def taxonomic_filter_suffixes(track):

@@ -152,6 +152,23 @@ if run_k2_reads:
             script:
                 "../python/apply_ictv_host_filter.py"
 
+    if run_minimizer_filter:
+        rule apply_minimizer_filter_kraken2_reads:
+            input:
+                summary = summary_before_filter("kraken2_reads", "min"),
+                reports = expand(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/results/{sample}.report.txt", sample=list(config["samples"]))
+            output:
+                summary = summary_after_filter("kraken2_reads", "min"),
+                dropped = dropped_sidecar(summary_after_filter("kraken2_reads", "min"))
+            params:
+                samples = list(config["samples"]),
+                min_distinct = config.get("minimizer_min_distinct", 0),
+                max_duplication = config.get("minimizer_max_duplication", 0.0)
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/apply_minimizer_filter.py"
+
     rule apply_bleed_filter_kraken2_reads:
         input:
             pre_bleed_summary("kraken2_reads")

@@ -59,6 +59,9 @@ class ConfigKeys:
     # Taxonomic false-positive filters (run before bleed/negative-control)
     RUN_ICTV_HOST_FILTER = "run_ictv_host_filter"
     ICTV_VERTEBRATE_TAXIDS_FILE = "ictv_vertebrate_taxids_file"
+    RUN_MINIMIZER_FILTER = "run_minimizer_filter"
+    MINIMIZER_MIN_DISTINCT = "minimizer_min_distinct"
+    MINIMIZER_MAX_DUPLICATION = "minimizer_max_duplication"
     NEGATIVE_CONTROLS = "negative_controls"
     NEGATIVE_P_THRESHOLD = "negative_p_threshold"  # kept for backwards-compat config reading
     COMPUTE_RPKM = "compute_rpkm"
