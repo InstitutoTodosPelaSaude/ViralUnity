@@ -3,6 +3,8 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  - python>=3.9
-  - pandas
-  - blast>=2.16
+  # Pinned to minor versions to match the other per-rule envs and keep runs
+  # reproducible; pandas previously floated entirely.
+  - python=3.11
+  - pandas=2.0
+  - blast=2.16
