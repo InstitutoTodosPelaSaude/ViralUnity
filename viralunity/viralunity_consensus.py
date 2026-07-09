@@ -16,6 +16,7 @@ from viralunity.validators import (
     CONSENSUS_PATH_ARG_KEYS,
     get_samples_from_args,
     resolve_path_args,
+    sanitize_identifier,
     validate_consensus_requirements,
     validate_illumina_requirements,
 )
@@ -37,6 +38,11 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
         ValidationError: If validation fails
     """
     logger.info("Validating pipeline arguments")
+
+    # Reject unsafe run names before they become output-path / DAG components
+    # (run_name is spliced into config["output"] and every rule's output path).
+    if args.get("run_name"):
+        sanitize_identifier(args["run_name"], "run_name")
 
     # Get and validate samples
     samples = get_samples_from_args(args)

@@ -6,12 +6,23 @@ from viralunity.exceptions import (
     Kraken2DatabaseNotFoundError,
     KronaDatabaseNotFoundError,
     SampleConfigurationNotFoundError,
+    ValidationError,
 )
 from viralunity.viralunity_meta import (
     generate_config_file,
     main,
     validate_args,
 )
+
+
+class Test_RunNameSanitization(unittest.TestCase):
+    @patch("viralunity.viralunity_meta.validate_illumina_requirements")
+    @patch("viralunity.viralunity_meta.validate_metagenomics_requirements")
+    @patch("viralunity.viralunity_meta.get_samples_from_args", return_value={"s": ["a"]})
+    def test_validate_args_rejects_unsafe_run_name(self, *_mocks):
+        args = {"run_name": "../evil", "data_type": "illumina"}
+        with self.assertRaises(ValidationError):
+            validate_args(args)
 
 
 class Test_ValidateArgs(unittest.TestCase):
