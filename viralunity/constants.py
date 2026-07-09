@@ -53,6 +53,7 @@ class ConfigKeys:
     MINIMUM_HIT_GROUP = "minimum_hit_group"
     DIAMOND_MAX_TARGET_SEQS = "diamond_max_target_seqs"
     KRAKEN2_EXTRA_FLAGS = "kraken2_extra_flags"
+    COMBINE_CONTIG_SEARCH = "combine_contig_search"
     MINIMAP2_CONSENSUS_ALIGN_FLAGS = "minimap2_consensus_align_flags"
     BLEED_FRACTION = "bleed_fraction"
     NEGATIVE_CONTROLS = "negative_controls"

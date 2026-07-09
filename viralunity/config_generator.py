@@ -216,6 +216,7 @@ class ConfigGenerator:
         minimum_hit_group: int = 4,
         diamond_max_target_seqs: int = 1,
         kraken2_extra_flags: str = "--report-minimizer-data",
+        combine_contig_search: bool = False,
         compute_rpkm: bool = False,
         enrichment_pseudocount: float = 1.0,
         z_score_threshold: float = 3.0,
@@ -247,6 +248,10 @@ class ConfigGenerator:
             kraken2_extra_flags: Extra flags appended to every kraken2
                 invocation alongside ``--threads`` and ``--minimum-hit-group``.
                 Defaults to ``--report-minimizer-data``; set to ``""`` to drop it.
+            combine_contig_search: When True, run the contig DIAMOND search once
+                over all samples' contigs combined (sample-prefixed headers) and
+                split the output per sample, instead of one search per sample.
+                Off by default; enable to benchmark against the per-sample path.
             compute_rpkm: Whether to compute RPKM (requires viral_genomes and
                 viral_taxids to be set).  Derived automatically from
                 ``viral_genomes != "NA"`` in the CLI layer.
@@ -283,6 +288,7 @@ class ConfigGenerator:
         self._set(ConfigKeys.MINIMUM_HIT_GROUP, minimum_hit_group, P)
         self._set(ConfigKeys.DIAMOND_MAX_TARGET_SEQS, diamond_max_target_seqs, P)
         self._set(ConfigKeys.KRAKEN2_EXTRA_FLAGS, kraken2_extra_flags, P)
+        self._set(ConfigKeys.COMBINE_CONTIG_SEARCH, combine_contig_search, P)
         self._set(ConfigKeys.COMPUTE_RPKM, compute_rpkm, P)
         self._set(ConfigKeys.ENRICHMENT_PSEUDOCOUNT, enrichment_pseudocount, P)
         self._set(ConfigKeys.Z_SCORE_THRESHOLD, z_score_threshold, P)

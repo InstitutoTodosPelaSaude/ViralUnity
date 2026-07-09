@@ -33,6 +33,7 @@ run_diamond_reads = config.get("run_diamond_reads", False)
 run_diamond_contigs = config.get("run_diamond_contigs", False)
 has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
+combine_contig_search = bool(config.get("combine_contig_search", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":

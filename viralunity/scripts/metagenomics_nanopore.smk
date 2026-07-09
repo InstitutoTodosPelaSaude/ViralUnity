@@ -31,6 +31,7 @@ run_diamond_reads = config.get("run_diamond_reads", False)
 run_diamond_contigs = config.get("run_diamond_contigs", False)
 has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
+combine_contig_search = bool(config.get("combine_contig_search", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -40,15 +41,24 @@ else:
     diamond_db_is_ready = False
     diamond_db_file = "NA"
 
+def _classification_contigs_name():
+    if run_polish_medaka:
+        return "polished.fasta"
+    if run_polish_racon:
+        return "racon.fasta"
+    return "final.contigs.fa"
+
 def get_final_contigs(wildcards):
     """Path to contigs used for classification (polished, racon, or raw MEGAHIT)."""
     base = config["output"] + "denovo_assembly/megahit/{sample}/"
-    s = wildcards.sample
-    if run_polish_medaka:
-        return base.format(sample=s) + "polished.fasta"
-    if run_polish_racon:
-        return base.format(sample=s) + "racon.fasta"
-    return base.format(sample=s) + "final.contigs.fa"
+    return base.format(sample=wildcards.sample) + _classification_contigs_name()
+
+def all_classification_contigs():
+    """Per-sample classification-contig paths, in config['samples'] order, for the
+    aggregated combined search."""
+    base = config["output"] + "denovo_assembly/megahit/{sample}/"
+    name = _classification_contigs_name()
+    return [base.format(sample=s) + name for s in config["samples"]]
 
 def get_medaka_assembly_input(wildcards):
     """Assembly input for Medaka (racon output or MEGAHIT)."""

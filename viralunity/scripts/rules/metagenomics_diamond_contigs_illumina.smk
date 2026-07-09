@@ -1,36 +1,97 @@
 if run_denovo and run_diamond_contigs:
-    rule run_diamond_contigs:
-        input:
-            fasta = config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa",
-            db = diamond_db_file
-        output:
-            tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
-        threads: config.get("run_diamond_contigs_cpus", 2)
-        resources:
-            mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
-        log:
-            config["output"] + "logs/diamond_contigs/{sample}.log"
-        benchmark:
-            config["output"] + "logs/diamond_contigs/{sample}.benchmark.txt"
-        params:
-            sensitivity = config.get("diamond_sensitivity", "sensitive"),
-            evalue = config.get("evalue", 0.001),
-            max_target_seqs = config.get("diamond_max_target_seqs", 1)
-        conda:
-            "../envs/taxonomy.yaml"
-        shell:
-            r"""
-            set -euo pipefail
-            if [ ! -s {input.fasta} ]; then
-                echo "WARNING: {input.fasta} empty. Creating dummy DIAMOND contigs output." >> {log}
-                touch {output.tsv}
-            else
-                diamond blastx --db {input.db} --query {input.fasta} \
-                    --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
-                    --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
-                    --{params.sensitivity} --threads {threads} 2> {log}
-            fi
-            """
+    # Contig DIAMOND search: either one search per sample (default) or a single
+    # aggregated search over all samples' contigs (sample-prefixed headers) that
+    # is split back per sample. Toggled by config["combine_contig_search"].
+    if combine_contig_search:
+        rule combine_diamond_contigs_query:
+            input:
+                fastas = expand(config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa", sample=list(config["samples"]))
+            output:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.contigs.fasta"
+            params:
+                samples = list(config["samples"])
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/combine_contigs.py"
+
+        rule run_diamond_contigs_combined:
+            input:
+                fasta = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.contigs.fasta",
+                db = diamond_db_file
+            output:
+                tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.diamond.tsv"
+            threads: config.get("run_diamond_contigs_cpus", 2)
+            resources:
+                mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
+            log:
+                config["output"] + "logs/diamond_contigs/_combined.log"
+            benchmark:
+                config["output"] + "logs/diamond_contigs/_combined.benchmark.txt"
+            params:
+                sensitivity = config.get("diamond_sensitivity", "sensitive"),
+                evalue = config.get("evalue", 0.001),
+                max_target_seqs = config.get("diamond_max_target_seqs", 1)
+            conda:
+                "../envs/taxonomy.yaml"
+            shell:
+                r"""
+                set -euo pipefail
+                if [ ! -s {input.fasta} ]; then
+                    echo "WARNING: {input.fasta} empty. Creating dummy combined DIAMOND output." >> {log}
+                    touch {output.tsv}
+                else
+                    diamond blastx --db {input.db} --query {input.fasta} \
+                        --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
+                        --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
+                        --{params.sensitivity} --threads {threads} 2> {log}
+                fi
+                """
+
+        rule split_diamond_contigs:
+            input:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.diamond.tsv"
+            output:
+                expand(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv", sample=list(config["samples"]))
+            params:
+                samples = list(config["samples"])
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/split_search_output.py"
+    else:
+        rule run_diamond_contigs:
+            input:
+                fasta = config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa",
+                db = diamond_db_file
+            output:
+                tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
+            threads: config.get("run_diamond_contigs_cpus", 2)
+            resources:
+                mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
+            log:
+                config["output"] + "logs/diamond_contigs/{sample}.log"
+            benchmark:
+                config["output"] + "logs/diamond_contigs/{sample}.benchmark.txt"
+            params:
+                sensitivity = config.get("diamond_sensitivity", "sensitive"),
+                evalue = config.get("evalue", 0.001),
+                max_target_seqs = config.get("diamond_max_target_seqs", 1)
+            conda:
+                "../envs/taxonomy.yaml"
+            shell:
+                r"""
+                set -euo pipefail
+                if [ ! -s {input.fasta} ]; then
+                    echo "WARNING: {input.fasta} empty. Creating dummy DIAMOND contigs output." >> {log}
+                    touch {output.tsv}
+                else
+                    diamond blastx --db {input.db} --query {input.fasta} \
+                        --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
+                        --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
+                        --{params.sensitivity} --threads {threads} 2> {log}
+                fi
+                """
 
     rule extract_viral_contigs:
         input:

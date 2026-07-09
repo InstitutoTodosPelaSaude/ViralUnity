@@ -126,6 +126,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         minimum_hit_group=args.get("minimum_hit_group", 4),
         diamond_max_target_seqs=args.get("diamond_max_target_seqs", 1),
         kraken2_extra_flags=args.get("kraken2_extra_flags", "--report-minimizer-data"),
+        combine_contig_search=args.get("combine_contig_search", False),
         compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
         enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
         z_score_threshold=args.get("z_score_threshold", 3.0),
