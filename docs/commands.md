@@ -269,6 +269,17 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--z-score-threshold` | `3.0` | Z-score threshold for `neg_pass` (used when ≥2 negative controls are present). |
 | `--log2-ratio-threshold` | `1.0` | Log2-ratio threshold for `neg_pass` (used when exactly 1 negative control is present, or when z-score is undefined due to zero control variance). |
 | `--minimum-hit-group` | `4` | Kraken2 minimum-hit-group parameter. |
+| `--run-ictv-host-filter`/`--no-ictv-host-filter` | off | Keep only vertebrate-infecting viruses (drop phages, plant/fungal/algal/invertebrate-only viruses). See *Taxonomic false-positive filters* below. |
+| `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by `viralunity get-databases ictv-vertebrate-taxids`). Required with `--run-ictv-host-filter`. |
+| `--run-minimizer-filter`/`--no-minimizer-filter` | off | Drop kraken2 taxa with too few distinct minimizers (KrakenUniq-style). kraken2 tracks only; needs `--report-minimizer-data`. |
+| `--minimizer-min-distinct` | `0` | Minimum distinct-minimizer count to keep a kraken2 taxon (`0` disables). |
+| `--minimizer-max-duplication` | `0.0` | Maximum minimizer duplication ratio (total/distinct) to keep a kraken2 taxon (`0` disables). |
+| `--run-nr-validation`/`--no-nr-validation` | off | Re-search de novo viral contigs against NCBI nr and keep only NR-confirmed viral contigs. Contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
+| `--nr-diamond-database` | `NA` | nr database for NR validation: a BLAST+ nr db (searched via `diamond prepdb`) or a native `.dmnd`. |
+| `--nr-evalue` | `1e-10` | E-value threshold for the NR DIAMOND search. |
+| `--nr-max-target-seqs` | `10` | Top hits kept per contig for the NR LCA consensus. |
+| `--nr-sensitivity` | `fast` | DIAMOND sensitivity for the NR search. |
+| `--nr-consensus-threshold` | `0.5` | Fraction of a contig's hits that must agree at a rank for the LCA consensus. |
 | `--run-reference-assembly`/`--no-run-reference-assembly` | off | Enable reference assembly from filtered taxonomic hits. |
 | `--method` | `kraken2` | Method used for reference assembly (`kraken2`, `diamond`, `both`). Required when `--run-reference-assembly` is set. |
 | `--source` | `reads` | Source of taxonomy data for reference assembly (`reads`, `contigs`, `both`). Required when `--run-reference-assembly` is set. |
@@ -424,6 +435,54 @@ python viralunity/scripts/python/filter_krona_by_pass_taxids.py \
     --sample {sample} --tool diamond --mode contigs \
     --taxdump path/to/taxdump
 ```
+
+### Taxonomic false-positive filters (optional)
+
+Open classifiers (kraken2 + viral index, DIAMOND + viral RefSeq) can report taxa that are
+artifacts of imperfect taxonomic identification — bacteriophages, giant algal viruses, endogenous
+retroviruses, and bacterial/eukaryal contigs mislabelled as viral. Three optional, tunable filters
+remove these. They are **off by default**, and each writes a `*.dropped.tsv` audit sidecar next to
+its output listing the removed rows and why.
+
+**Order.** Taxonomic filters run **before** the bleed and negative-control filters
+(`taxonomic → bleed → cn`), so those cross-sample statistics are computed only on
+taxonomically-valid taxa. Enabled filters append suffixes to the summary filename in this order,
+e.g. `..._taxa_summary_RPM.ictv.min.nr.bleed.neg.tsv`. With every filter off the chain is
+byte-identical to before (`..._RPM.bleed[.neg].tsv`).
+
+| Filter | Flag | Scope | What it drops |
+|--------|------|-------|---------------|
+| ICTV host | `--run-ictv-host-filter` + `--ictv-vertebrate-taxids-file` | all four tracks | Taxa not in a vertebrate-infecting virus lineage (phages, plant/fungal/algal/invertebrate-only, giant viruses). Lineage-aware against an ICTV-derived taxid allowlist (built by `build_ictv_vertebrate_taxids.py`, see below). |
+| Minimizer | `--run-minimizer-filter` + `--minimizer-min-distinct` / `--minimizer-max-duplication` | kraken2 reads + contigs | kraken2 taxa with too few *distinct* minimizers (KrakenUniq-style). Needs kraken2 run with `--report-minimizer-data` (the default). |
+| NR validation | `--run-nr-validation` + `--nr-diamond-database` | contig tracks only | Contigs the NR (full `nr`) LCA consensus confidently calls non-viral. Runs one aggregated `diamond blastx` over all samples' de novo viral contigs; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
+
+NR validation also writes `<track>_nr_flags.tsv` surfacing (not filtering) species-level
+RefSeq-vs-NR disagreements — `misid_novel` (an NR virus species absent from that sample's RefSeq
+calls, highest surveillance interest) and `misid_known`.
+
+**Building the ICTV allowlist.** The vertebrate-virus taxid allowlist is derived from the ICTV
+Virus Metadata Resource (VMR; keep taxa whose "Host source" contains `vertebrates`) and is a
+plain, user-editable list of NCBI taxids. Download the current VMR spreadsheet from
+<https://ictv.global/vmr>, then:
+
+```bash
+python viralunity/scripts/python/build_ictv_vertebrate_taxids.py \
+    --vmr VMR_MSLxx.xlsx --names <taxdump>/names.dmp \
+    --output databases/ictv/vertebrate_virus_taxids.txt
+```
+
+The script maps ICTV family/genus names to taxids via the taxdump `names.dmp`; regenerate it
+against a new VMR/taxdump release, or edit the taxid list by hand to tune coverage.
+
+**Aggregated contig search (config-only).** `combine_contig_search: true` in the YAML runs the
+per-sample contig DIAMOND search once over all samples' contigs combined (sample-prefixed headers),
+splitting the output per sample — often faster (one DB load). Off by default; toggle via
+`--create-config-only`, edit the YAML, and rerun. Benchmark against the per-sample path using the
+`logs/diamond_contigs/*.benchmark.txt` wall-times before adopting it.
+
+**Not yet in scope (future).** Physically slimmed diamond/kraken2 databases, an empirical
+REVISA-trained FP classifier, and a targeted mapping/genotyping track for a curated
+virus-of-interest panel are documented directions, not implemented.
 
 ---
 
