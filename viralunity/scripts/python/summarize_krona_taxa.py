@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 from collections import defaultdict
 
 try:
@@ -20,7 +21,7 @@ def load_diamond_reads(diamond_tax_file):
             parts = line.rstrip("\n").split("\t")
             contig_id = parts[0]
             try:
-                mapped_reads = int(parts[-1]) if len(parts) >= 1 else 0
+                mapped_reads = int(parts[-1])
             except ValueError:
                 continue  # skip header or malformed lines
             reads[contig_id] = mapped_reads
@@ -37,7 +38,11 @@ def summarize_krona(krona_file, parent_map, rank_map, diamond_reads=None):
             if not line.strip():
                 continue
 
-            contig_id, taxid = line.strip().split("\t")
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 2:
+                sys.stderr.write(f"WARNING: skipping malformed krona line: {line.rstrip()}\n")
+                continue
+            contig_id, taxid = parts[0], parts[1]
             lineage = get_lineage(taxid, parent_map)
             seen_ranks = set()
 
@@ -137,7 +142,7 @@ if "snakemake" in globals():
         unit=snakemake.params.mode,
         output=snakemake.output[0],
     )
-else:
+elif __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
