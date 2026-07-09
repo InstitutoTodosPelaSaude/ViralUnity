@@ -1,0 +1,86 @@
+# Config for Illumina Metagenomics Dry-run — full taxonomic-filter chain.
+# Turns on RPKM + NR + negative controls + ICTV together so the longest
+# cumulative summary chain is exercised end-to-end in the DAG:
+#   contigs: <track>_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv
+#   reads:   <track>_taxa_summary_RPKM.bleed.neg.ictv.tsv   (no NR on reads)
+# Also drives reference assembly so select_reference_genomes resolves the
+# fully-filtered summary via final_summary/most-filtered globbing.
+samples:
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
+  META2:
+    - data/reads/META2_R1.fastq.gz
+    - data/reads/META2_R2.fastq.gz
+  NEG:
+    - data/reads/SAMPLE1_R1.fastq.gz
+    - data/reads/SAMPLE1_R2.fastq.gz
+
+data: illumina
+output: test/dryrun_output/metagenomics_illumina_fullchain/
+threads: 2
+
+kraken2_database: databases/kraken2/
+krona_database: databases/krona/taxonomy/
+taxdump: databases/taxdump/
+diamond_database: databases/diamond/nr.dmnd
+taxids: databases/diamond/protein2taxid.tsv
+
+remove_human_reads: false
+remove_unclassified_reads: false
+host_reference: NA
+deacon_index: NA
+
+run_denovo_assembly: true
+run_kraken2_reads: true
+run_kraken2_contigs: true
+run_diamond_reads: false
+run_diamond_contigs: true
+
+# Taxonomic false-positive filters — all on
+run_ictv_host_filter: true
+ictv_vertebrate_taxids_file: databases/ictv/vertebrate_virus_taxids.txt
+run_nr_validation: true
+nr_diamond_database: databases/NCBI_nr/nr
+nr_evalue: 1.0e-10
+nr_max_target_seqs: 10
+nr_sensitivity: fast
+nr_consensus_threshold: 0.5
+
+# Reference assembly (reads the fully-filtered summary via select_reference_genomes)
+run_reference_assembly: true
+ref_assembly_method: kraken2
+ref_assembly_source: reads
+ref_assembly_reads_count: 100
+ref_assembly_contigs_count: 1
+ref_assembly_families:
+  - Coronaviridae
+ref_selection_strategy: taxid
+ref_blast_qcov: 80
+ref_blast_pident: 80
+viral_genomes: databases/virus_genomes/viral.genomes.fasta
+viral_taxids: databases/virus_genomes/genome2taxid.tsv
+
+diamond_sensitivity: sensitive
+evalue: 0.001
+bleed_fraction: 0.005
+negative_controls:
+  - NEG
+compute_rpkm: true
+enrichment_pseudocount: 1.0
+z_score_threshold: 3.0
+log2_ratio_threshold: 1.0
+minimum_hit_group: 4
+
+adapters: NA
+minimum_length: 50
+trim_head: 0
+trim_tail: 0
+cut_front_mean_quality: 20
+cut_tail_mean_quality: 20
+cut_right_window_size: 4
+cut_right_mean_quality: 20
+
+af_threshold: 0.5
+af_isnv_threshold: 0.05
+run_isnv: false

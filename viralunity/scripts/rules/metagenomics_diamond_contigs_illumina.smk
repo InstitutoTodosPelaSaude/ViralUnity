@@ -326,10 +326,10 @@ if run_denovo and run_diamond_contigs:
     if run_ictv_host_filter:
         rule apply_ictv_filter_diamond_contigs:
             input:
-                summary = summary_before_filter("diamond_contigs", "ictv")
+                summary = chain_input("diamond_contigs", "ictv")
             output:
-                summary = summary_after_filter("diamond_contigs", "ictv"),
-                dropped = dropped_sidecar(summary_after_filter("diamond_contigs", "ictv"))
+                summary = chain_output("diamond_contigs", "ictv"),
+                dropped = dropped_sidecar(chain_output("diamond_contigs", "ictv"))
             params:
                 allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
                 taxdump = config["taxdump"]
@@ -341,12 +341,12 @@ if run_denovo and run_diamond_contigs:
     if run_nr_validation:
         rule harmonize_nr_diamond_contigs:
             input:
-                summary = summary_before_filter("diamond_contigs", "nr"),
+                summary = chain_input("diamond_contigs", "nr"),
                 nr = config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.tsv",
                 krona = expand(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv", sample=list(config["samples"]))
             output:
-                summary = summary_after_filter("diamond_contigs", "nr"),
-                dropped = dropped_sidecar(summary_after_filter("diamond_contigs", "nr")),
+                summary = chain_output("diamond_contigs", "nr"),
+                dropped = dropped_sidecar(chain_output("diamond_contigs", "nr")),
                 flags = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_nr_flags.tsv"
             params:
                 samples = list(config["samples"]),
@@ -358,9 +358,9 @@ if run_denovo and run_diamond_contigs:
 
     rule apply_bleed_filter_diamond_contigs:
         input:
-            pre_bleed_summary("diamond_contigs")
+            chain_input("diamond_contigs", "bleed")
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
+            chain_output("diamond_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
             rpm_floor = 1.0,
@@ -370,28 +370,25 @@ if run_denovo and run_diamond_contigs:
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule add_negative_control_enrichment_diamond_contigs:
-        input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
-        output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv"
-        params:
-            negatives = config.get("negative_controls", []),
-            pseudocount = config.get("enrichment_pseudocount", 1.0),
-            z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
-        conda:
-            "../envs/utils.yaml"
-        script:
-            "../python/add_negative_control_enrichment.py"
+    if has_negative_controls:
+        rule add_negative_control_enrichment_diamond_contigs:
+            input:
+                chain_input("diamond_contigs", "neg")
+            output:
+                chain_output("diamond_contigs", "neg")
+            params:
+                negatives = config.get("negative_controls", []),
+                pseudocount = config.get("enrichment_pseudocount", 1.0),
+                z_score_threshold = config.get("z_score_threshold", 3.0),
+                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_diamond_contigs:
         input:
-            summary = (
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv"
-                if has_negative_controls else
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
-            ),
+            summary = final_summary("diamond_contigs"),
             krona_input = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.filtered.krona_input.tsv"

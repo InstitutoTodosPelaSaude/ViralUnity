@@ -153,10 +153,10 @@ if run_diamond_reads:
     if run_ictv_host_filter:
         rule apply_ictv_filter_diamond_reads:
             input:
-                summary = summary_before_filter("diamond_reads", "ictv")
+                summary = chain_input("diamond_reads", "ictv")
             output:
-                summary = summary_after_filter("diamond_reads", "ictv"),
-                dropped = dropped_sidecar(summary_after_filter("diamond_reads", "ictv"))
+                summary = chain_output("diamond_reads", "ictv"),
+                dropped = dropped_sidecar(chain_output("diamond_reads", "ictv"))
             params:
                 allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
                 taxdump = config["taxdump"]
@@ -167,9 +167,9 @@ if run_diamond_reads:
 
     rule apply_bleed_filter_diamond_reads:
         input:
-            pre_bleed_summary("diamond_reads")
+            chain_input("diamond_reads", "bleed")
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
+            chain_output("diamond_reads", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
             rpm_floor = 1.0,
@@ -179,28 +179,25 @@ if run_diamond_reads:
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule add_negative_control_enrichment_diamond_reads:
-        input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
-        output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.neg.tsv"
-        params:
-            negatives = config.get("negative_controls", []),
-            pseudocount = config.get("enrichment_pseudocount", 1.0),
-            z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
-        conda:
-            "../envs/utils.yaml"
-        script:
-            "../python/add_negative_control_enrichment.py"
+    if has_negative_controls:
+        rule add_negative_control_enrichment_diamond_reads:
+            input:
+                chain_input("diamond_reads", "neg")
+            output:
+                chain_output("diamond_reads", "neg")
+            params:
+                negatives = config.get("negative_controls", []),
+                pseudocount = config.get("enrichment_pseudocount", 1.0),
+                z_score_threshold = config.get("z_score_threshold", 3.0),
+                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_diamond_reads:
         input:
-            summary = (
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.neg.tsv"
-                if has_negative_controls else
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
-            ),
+            summary = final_summary("diamond_reads"),
             krona_input = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/results/{sample}.diamond.supported.krona_input.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/results/{sample}.diamond.supported.filtered.krona_input.tsv"

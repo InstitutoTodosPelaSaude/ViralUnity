@@ -51,43 +51,45 @@ def _summary_stem(track):
 def _summary_base(track):
     return _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
 
-def _enabled_taxonomic_filters(track):
-    """Ordered short names of the taxonomic filters enabled for this track.
+def _chain_steps(track):
+    """Ordered post-metric processing steps enabled for this track.
 
-    Taxonomic filters run BEFORE bleed/negative-control so those statistics are
-    computed on taxonomically-valid taxa. Order is cheap -> expensive. NR
-    validation applies to contig tracks only.
+    The taxa summary flows through one cumulative chain:
+    base -> _RPM/_RPKM -> [.nr] -> .bleed -> [.neg] -> [.ictv]. Each enabled step
+    appends exactly one filename suffix. NR validation applies to contig tracks
+    only; bleed is always on; neg runs when negative controls are present; the
+    ICTV host filter applies to all tracks and runs last.
     """
-    fs = []
-    if run_ictv_host_filter:
-        fs.append("ictv")
+    steps = []
     if run_nr_validation and track.endswith("contigs"):
-        fs.append("nr")
-    return fs
+        steps.append("nr")
+    steps.append("bleed")
+    if has_negative_controls:
+        steps.append("neg")
+    if run_ictv_host_filter:
+        steps.append("ictv")
+    return steps
 
-def taxonomic_filter_suffixes(track):
-    return ["." + name for name in _enabled_taxonomic_filters(track)]
+def _chain_path(track, upto):
+    """Active-metric base + '.'-joined step suffixes up to index ``upto`` (-1 = base only)."""
+    steps = _chain_steps(track)
+    return _summary_base(track) + "".join("." + s for s in steps[: upto + 1]) + ".tsv"
 
-def summary_before_filter(track, name):
-    """The summary a given taxonomic filter consumes (base + earlier suffixes)."""
-    fs = _enabled_taxonomic_filters(track)
-    idx = fs.index(name)
-    return _summary_base(track) + "".join("." + f for f in fs[:idx]) + ".tsv"
+def chain_input(track, step):
+    """Summary a chain step consumes (the prior step's output, or the metric base)."""
+    return _chain_path(track, _chain_steps(track).index(step) - 1)
 
-def summary_after_filter(track, name):
-    """The summary a given taxonomic filter produces (base + suffixes up to it)."""
-    fs = _enabled_taxonomic_filters(track)
-    idx = fs.index(name)
-    return _summary_base(track) + "".join("." + f for f in fs[: idx + 1]) + ".tsv"
+def chain_output(track, step):
+    """Summary a chain step produces (base + suffixes up to and including it)."""
+    return _chain_path(track, _chain_steps(track).index(step))
 
 def dropped_sidecar(path):
-    """Audit path for rows a taxonomic filter removed: '<x>.tsv' -> '<x>.dropped.tsv'."""
+    """Audit path for rows a row-removing step dropped: '<x>.tsv' -> '<x>.dropped.tsv'."""
     return path[:-4] + ".dropped.tsv" if path.endswith(".tsv") else path + ".dropped.tsv"
 
-def pre_bleed_summary(track):
-    """Summary file the bleed filter consumes: the RPM/RPKM base with any enabled
-    taxonomic-filter suffixes applied (taxonomic -> bleed -> cn ordering)."""
-    return _summary_base(track) + "".join(taxonomic_filter_suffixes(track)) + ".tsv"
+def final_summary(track):
+    """The last file in the chain for a track (the fully-filtered summary)."""
+    return _chain_path(track, len(_chain_steps(track)) - 1)
 
 def _all_inputs():
     targets = [
@@ -95,37 +97,25 @@ def _all_inputs():
         config["output"] + "benchmark.tsv"
     ]
     if run_k2_reads:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("kraken2_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_k2_contigs:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("kraken2_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_diamond_reads:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("diamond_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/reports/{sample}.diamond.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_diamond_contigs:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("diamond_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/reports/{sample}.diamond.supported.filtered.krona.html",
             sample=config["samples"],
