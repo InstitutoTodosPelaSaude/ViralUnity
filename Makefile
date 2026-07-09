@@ -53,14 +53,13 @@ run-consensus:
 	viralunity consensus \
 		--data-type illumina \
 		--sample-sheet input/viralunity_samplesheet.csv \
-		--config-file output/config_meta.yml \
-		--run-name test-meta \
-		--kraken2-database input/database/kraken2 \
-		--krona-database input/database/krona/taxonomy/ \
-		--adapters input/references/SARS-CoV-2_RefSeq.fasta \
+		--config-file output/config_consensus.yml \
+		--run-name test-consensus \
+		--reference input/references/SARS-CoV-2_RefSeq.fasta \
+		--primer-scheme input/references/scheme.bed \
 		--threads 1 \
 		--threads-total 1 \
-		--output output/test-meta-exmaple
+		--output output/test-consensus-example
 
 # Build the sdist + wheel for PyPI (see RELEASING.md). Requires `build` + `twine`.
 build:
