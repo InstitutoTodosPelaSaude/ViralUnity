@@ -62,6 +62,12 @@ class ConfigKeys:
     RUN_MINIMIZER_FILTER = "run_minimizer_filter"
     MINIMIZER_MIN_DISTINCT = "minimizer_min_distinct"
     MINIMIZER_MAX_DUPLICATION = "minimizer_max_duplication"
+    RUN_NR_VALIDATION = "run_nr_validation"
+    NR_DIAMOND_DATABASE = "nr_diamond_database"
+    NR_EVALUE = "nr_evalue"
+    NR_MAX_TARGET_SEQS = "nr_max_target_seqs"
+    NR_SENSITIVITY = "nr_sensitivity"
+    NR_CONSENSUS_THRESHOLD = "nr_consensus_threshold"
     NEGATIVE_CONTROLS = "negative_controls"
     NEGATIVE_P_THRESHOLD = "negative_p_threshold"  # kept for backwards-compat config reading
     COMPUTE_RPKM = "compute_rpkm"
@@ -144,6 +150,7 @@ class ResourceDefaults:
         "index_viral_contigs",
         "remap_reads_to_viral_contigs",
         "bam_sort_index_idxstats_from_medaka",
+        "run_diamond_nr",
     ]
 
     # Metagenomics pipeline — Illumina-specific computational rules

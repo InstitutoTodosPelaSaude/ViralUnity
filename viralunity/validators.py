@@ -434,6 +434,32 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
                 "--report-minimizer-data (kraken2_extra_flags must include it)."
             )
 
+    # NR validation: contig tracks only; needs denovo + diamond_contigs and an
+    # nr database that resolves as a BLAST+ db or a native .dmnd.
+    if args.get("run_nr_validation", False):
+        if not args.get("run_denovo_assembly", False) or not args.get(
+            "run_diamond_contigs", False
+        ):
+            raise ValidationError(
+                "--run-nr-validation requires --run-denovo-assembly and "
+                "--run-diamond-contigs (the viral-contig set is diamond-defined)."
+            )
+        nr_db = args.get("nr_diamond_database", "NA")
+        if not nr_db or str(nr_db).strip() in ("", "NA"):
+            raise ValidationError(
+                "--run-nr-validation requires --nr-diamond-database (a BLAST+ nr "
+                "database or a .dmnd)."
+            )
+        is_dmnd = str(nr_db).endswith(".dmnd") and os.path.isfile(nr_db)
+        is_blastdb = any(
+            os.path.isfile(f"{nr_db}{suffix}")
+            for suffix in (".pal", ".pin", ".000.pin", ".dmnd")
+        )
+        if not (is_dmnd or is_blastdb):
+            raise ViralUnityFileNotFoundError(
+                f"nr database not found (expected a .dmnd or BLAST+ nr db): {nr_db}"
+            )
+
     validate_reference_assembly_requirements(args)
 
 
@@ -529,6 +555,7 @@ META_PATH_ARG_KEYS = (
     "taxids",
     "diamond_database",
     "ictv_vertebrate_taxids_file",
+    "nr_diamond_database",
     "viral_genomes",
     "viral_taxids",
     "adapters",

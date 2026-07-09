@@ -36,6 +36,7 @@ compute_rpkm = bool(config.get("compute_rpkm", False))
 combine_contig_search = bool(config.get("combine_contig_search", False))
 run_ictv_host_filter = bool(config.get("run_ictv_host_filter", False))
 run_minimizer_filter = bool(config.get("run_minimizer_filter", False))
+run_nr_validation = bool(config.get("run_nr_validation", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -132,6 +133,9 @@ def _all_inputs():
             sample=config["samples"],
         ))
 
+    if run_denovo and run_diamond_contigs and run_nr_validation:
+        targets.append(config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.viruses_only.tsv")
+
     if config.get("run_reference_assembly", False):
         targets.append(config["output"] + "reference_assembly_done.txt")
     return targets
@@ -167,6 +171,7 @@ include: "rules/metagenomics_diamond_reads_illumina.smk"
 include: "rules/metagenomics_assembly_illumina.smk"
 include: "rules/metagenomics_kraken2_contigs_illumina.smk"
 include: "rules/metagenomics_diamond_contigs_illumina.smk"
+include: "rules/metagenomics_nr_validation_illumina.smk"
 include: "rules/metagenomics_multiqc_illumina.smk"
 if config.get("run_reference_assembly", False):
     include: "rules/metagenomics_reference_assembly.smk"
