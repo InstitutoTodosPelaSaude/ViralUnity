@@ -6,7 +6,12 @@ import tempfile
 import unittest
 
 from viralunity import __version__
-from viralunity.provenance import MANIFEST_FILENAME, build_run_manifest, write_run_manifest
+from viralunity.provenance import (
+    MANIFEST_FILENAME,
+    build_run_manifest,
+    record_run_completion,
+    write_run_manifest,
+)
 
 
 class Test_RunManifest(unittest.TestCase):
@@ -54,6 +59,24 @@ class Test_RunManifest(unittest.TestCase):
             loaded = json.load(fh)
         self.assertEqual(loaded["run_name"], "run1")
         self.assertEqual(loaded["data_type"], "illumina")
+
+    def test_config_sha256_none_when_config_absent(self):
+        manifest = build_run_manifest(self.args, self.samples)
+        self.assertIsNone(manifest["config_sha256"])
+
+    def test_config_sha256_recorded_when_config_present(self):
+        with open(self.args["config_file"], "w") as fh:
+            fh.write("samples: {}\n")
+        manifest = build_run_manifest(self.args, self.samples)
+        self.assertEqual(len(manifest["config_sha256"]), 64)
+
+    def test_record_run_completion_updates_manifest(self):
+        path = write_run_manifest(self.args, self.samples)
+        record_run_completion(path, status="success", timestamp="2026-01-02T00:00:00+00:00")
+        with open(path) as fh:
+            loaded = json.load(fh)
+        self.assertEqual(loaded["status"], "success")
+        self.assertEqual(loaded["finished_utc"], "2026-01-02T00:00:00+00:00")
 
 
 if __name__ == "__main__":

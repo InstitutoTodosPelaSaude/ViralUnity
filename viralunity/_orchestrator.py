@@ -16,7 +16,7 @@ from snakemake import snakemake
 
 from viralunity.config_generator import ConfigGenerator
 from viralunity.exceptions import ValidationError, ViralUnityError
-from viralunity.provenance import write_run_manifest
+from viralunity.provenance import record_run_completion, write_run_manifest
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +112,9 @@ def run_pipeline(
             logger.info("Config file created. Exiting without running workflow.")
             return 0
 
-        # Provenance: record version, config, and input checksums for the run.
-        # Best-effort — a manifest failure must never abort an analysis.
+        # Provenance: record version, config hash, and input checksums for the
+        # run. Best-effort — a manifest failure must never abort an analysis.
+        manifest_path: Optional[str] = None
         try:
             manifest_path = write_run_manifest(args, samples)
             logger.info(f"Wrote run manifest: {manifest_path}")
@@ -121,6 +122,14 @@ def run_pipeline(
             logger.warning(f"Could not write run manifest: {e}")
 
         successful = run_workflow_fn(args)
+
+        # Patch the manifest with the actual outcome (it was written pre-run).
+        if manifest_path is not None:
+            try:
+                record_run_completion(manifest_path, status="success" if successful else "failed")
+            except Exception as e:
+                logger.warning(f"Could not update run manifest with completion status: {e}")
+
         return 0 if successful else 1
 
     except ViralUnityError as e:
