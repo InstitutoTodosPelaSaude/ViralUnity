@@ -76,18 +76,26 @@ def annotate(
         open(out_path, "w").close()
         return 0
     written = 0
+    skipped = 0
     with open(in_path) as inp, open(out_path, "w") as out:
         for line in inp:
             if not line.strip():
                 continue
             cols = line.rstrip("\n").split("\t")
             if len(cols) < 13:
+                skipped += 1
                 continue
             blast = cols[:12]
             staxids = cols[12]
             ranks = resolve_lineage_ranks(staxids, parent_map, rank_map, name_map)
             out.write("\t".join(blast + ranks) + "\n")
             written += 1
+    if skipped:
+        print(
+            f"[annotate_nr_taxonomy] WARNING: skipped {skipped} row(s) with fewer than "
+            f"13 columns (missing DIAMOND 'staxids' field?); wrote {written}.",
+            file=sys.stderr,
+        )
     return written
 
 

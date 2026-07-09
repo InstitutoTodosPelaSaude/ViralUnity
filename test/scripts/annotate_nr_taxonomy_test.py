@@ -1,5 +1,7 @@
 """Tests for viralunity.scripts.python.annotate_nr_taxonomy."""
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -100,6 +102,19 @@ class TestAnnotate(unittest.TestCase):
         self.assertEqual(len(fields), 21)
         self.assertEqual(fields[:12], blast)
         self.assertEqual(fields[20], "Influenza A virus")  # species column
+
+    def test_rows_missing_staxids_are_skipped_with_a_warning(self):
+        blast = ["q1", "s1", "99", "100", "0", "0", "1", "100", "1", "100", "1e-40", "200"]
+        with open(self.in_path, "w") as f:
+            f.write("\t".join(blast) + "\n")  # 12 cols: no staxids field
+            f.write("\t".join(blast + ["11320"]) + "\n")  # well-formed
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            written = annotate(self.in_path, self.out_path, self.parent, self.rank, self.name)
+        self.assertEqual(written, 1)  # only the well-formed row
+        msg = err.getvalue()
+        self.assertIn("skipped 1", msg)
+        self.assertIn("staxids", msg)
 
 
 if __name__ == "__main__":

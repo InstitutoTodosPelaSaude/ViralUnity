@@ -1,6 +1,8 @@
 """Tests for viralunity.scripts.python.filter_top_species_hits (ported from the
 REVISA nr_validation prototype)."""
 
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -96,6 +98,21 @@ class TestProcessFile(unittest.TestCase):
             # header + 1 viral query row
             self.assertEqual(len(viral_lines), 2)
             self.assertIn("q1", viral_lines[1])
+
+    def test_wrong_column_count_rows_skipped_with_warning(self):
+        with tempfile.TemporaryDirectory() as d:
+            in_path = os.path.join(d, "in.tsv")
+            out_path = os.path.join(d, "out.tsv")
+            viral_path = os.path.join(d, "out.viruses_only.tsv")
+            with open(in_path, "w") as f:
+                f.write("\t".join(_row("q1", species="Flu")) + "\n")  # 21 cols, valid
+                f.write("q_bad\tonly\tthree\n")  # malformed: not 21 columns
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                queries, _viral = process_file(in_path, out_path, viral_path, threshold=0.5)
+            self.assertEqual(queries, 1)  # only the valid query
+            msg = err.getvalue()
+            self.assertIn("skipped 1", msg)
 
 
 if __name__ == "__main__":

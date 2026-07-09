@@ -113,6 +113,7 @@ def process_file(
             vout.write(record)
 
     header = "\t".join(OUT_HEADER) + "\n"
+    skipped = 0
     with open(in_path) as inp, open(out_path, "w") as out, open(viral_path, "w") as vout:
         out.write(header)
         vout.write(header)
@@ -123,6 +124,7 @@ def process_file(
                 continue
             cols = line.rstrip("\n").split("\t")
             if len(cols) != N_COLS:
+                skipped += 1
                 continue
             if cols[0] != current_q:
                 _flush(group, out, vout)
@@ -130,6 +132,12 @@ def process_file(
                 group = []
             group.append(cols)
         _flush(group, out, vout)
+    if skipped:
+        print(
+            f"[filter_top_species_hits] WARNING: skipped {skipped} row(s) not exactly "
+            f"{N_COLS} columns (upstream annotation malformed?); {queries} queries kept.",
+            file=sys.stderr,
+        )
     return queries, viral
 
 

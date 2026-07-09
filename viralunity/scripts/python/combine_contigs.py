@@ -47,7 +47,12 @@ def combine_contigs(inputs: Iterable[Tuple[str, str]], output_path) -> int:
             with path.open() as fh:
                 for line in fh:
                     if line.startswith(">"):
-                        contig_id = line[1:].strip().split()[0]
+                        tokens = line[1:].strip().split()
+                        if not tokens:
+                            # Bare '>' with no contig id: skip the malformed
+                            # header rather than crash on an empty defline.
+                            continue
+                        contig_id = tokens[0]
                         out.write(f">{sample}|{contig_id}\n")
                         written += 1
                     else:

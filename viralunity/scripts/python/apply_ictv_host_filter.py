@@ -89,6 +89,12 @@ def filter_summary(
         dropped.to_csv(dropped_path, sep="\t", index=False)
         return 0, 0
 
+    if "taxid" not in df.columns:
+        raise ValueError(
+            f"Input summary {in_path!r} has no 'taxid' column; cannot apply the "
+            f"ICTV host filter. Columns present: {list(df.columns)}"
+        )
+
     keep_mask = df["taxid"].apply(lambda t: lineage_allowed(t, allowset, parent_map))
     kept = df[keep_mask]
     dropped = df[~keep_mask].copy()

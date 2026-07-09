@@ -86,6 +86,18 @@ class TestCombineContigs(unittest.TestCase):
         self.assertTrue(os.path.exists(self.out))
         self.assertEqual(_read_fasta(self.out), [])
 
+    def test_bare_gt_header_is_skipped_not_crashing(self):
+        # A malformed '>' header with no contig id must not raise IndexError.
+        a = os.path.join(self.d, "a.fa")
+        with open(a, "w") as fh:
+            fh.write(">\n")  # bare header, empty defline
+            fh.write("ACGT\n")
+            fh.write(">k141_2\nGGGG\n")
+        n = combine_contigs([("sample-A", a)], self.out)
+        # only the well-formed record is emitted
+        self.assertEqual(n, 1)
+        self.assertEqual(_read_fasta(self.out), [("sample-A|k141_2", "GGGG")])
+
 
 if __name__ == "__main__":
     unittest.main()

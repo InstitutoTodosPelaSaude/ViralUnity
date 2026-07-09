@@ -190,12 +190,22 @@ def harmonize(
     )
 
     if not os.path.exists(summary_path) or os.path.getsize(summary_path) == 0:
+        # A truly empty (0-byte) input has no header to mirror, so the summary
+        # and dropped outputs are written empty; the flags file always carries
+        # its fixed schema. Downstream steps treat a 0-byte summary as "no taxa".
         open(output_path, "w").close()
         open(dropped_path, "w").close()
         _write_flags(flags_path, [])
         return 0, 0
 
     df = pd.read_csv(summary_path, sep="\t", dtype=str).fillna(NA)
+    required = {"rank", "name", "sample", "taxid"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"Input summary {summary_path!r} is missing required column(s) "
+            f"{sorted(missing)}; columns present: {list(df.columns)}"
+        )
     sample_summary_species = defaultdict(set)
     for _, r in df.iterrows():
         if r["rank"] == "species" and r["name"] != NA:

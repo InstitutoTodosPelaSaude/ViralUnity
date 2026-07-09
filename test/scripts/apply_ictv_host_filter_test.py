@@ -153,6 +153,17 @@ class TestFilterSummary(unittest.TestCase):
         self.assertEqual(kept, 0)
         self.assertEqual(dropped, 7)
 
+    def test_missing_taxid_column_raises_clear_error(self):
+        # A non-empty summary that lacks the 'taxid' column must fail with a
+        # clear message, not a bare KeyError.
+        pd.DataFrame(
+            [("A", "kraken2", "reads", "species", "Influenza A virus")],
+            columns=["sample", "tool", "mode", "rank", "name"],
+        ).to_csv(self.in_path, sep="\t", index=False)
+        with self.assertRaises(ValueError) as ctx:
+            filter_summary(self.in_path, self.out_path, self.dropped_path, {"1000"}, self.parent)
+        self.assertIn("taxid", str(ctx.exception))
+
 
 class TestRunEndToEnd(unittest.TestCase):
     def test_run_glues_allowlist_and_taxdump(self):
