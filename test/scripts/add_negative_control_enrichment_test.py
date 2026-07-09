@@ -471,5 +471,37 @@ class TestPseudocountEffect(unittest.TestCase):
         self.assertAlmostEqual(out.iloc[0]["enrichment_pseudocount"], 2.5)
 
 
+class TestZeroFillControlStatistics(unittest.TestCase):
+    """A taxon absent from a control counts as 0 there, so control stats are
+    computed over all n_controls, and the z-score gate applies whenever there
+    are >= 2 controls (H1 contract)."""
+
+    def _df(self):
+        # 3 controls (C1..C3) + 1 sample. taxid 100 is detected only in C1;
+        # C2/C3 appear in the table via a different taxon so n_controls == 3.
+        return pd.DataFrame(
+            [
+                {"sample": "S1", "taxid": "100", "rpm": 100.0},
+                {"sample": "C1", "taxid": "100", "rpm": 30.0},
+                {"sample": "C2", "taxid": "999", "rpm": 5.0},
+                {"sample": "C3", "taxid": "999", "rpm": 5.0},
+            ]
+        )
+
+    def test_control_mean_is_zero_filled_over_all_controls(self):
+        out = apply_negative_control_enrichment(self._df(), negatives=["C1", "C2", "C3"])
+        row = out[(out["sample"] == "S1") & (out["taxid"] == "100")].iloc[0]
+        # Zero-fill: mean(30, 0, 0) = 10, not the lone detected value 30.
+        self.assertAlmostEqual(row["control_mean"], 10.0)
+        self.assertEqual(int(row["n_negative_controls"]), 3)
+
+    def test_zscore_gate_used_with_two_or_more_controls(self):
+        out = apply_negative_control_enrichment(self._df(), negatives=["C1", "C2", "C3"])
+        row = out[(out["sample"] == "S1") & (out["taxid"] == "100")].iloc[0]
+        # With zero-fill the control vector is [30, 0, 0] (SD > 0), so the
+        # decision uses the z-score, not the log2-ratio fallback.
+        self.assertEqual(row["neg_decision"], "z_score")
+
+
 if __name__ == "__main__":
     unittest.main()
