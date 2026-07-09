@@ -136,9 +136,7 @@ if run_denovo and run_k2_contigs:
 
     rule apply_bleed_filter_kraken2_contigs:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.tsv"
+            pre_bleed_summary("kraken2_contigs")
         output:
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv"
         params:

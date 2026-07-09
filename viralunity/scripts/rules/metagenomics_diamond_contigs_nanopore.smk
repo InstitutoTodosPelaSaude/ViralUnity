@@ -366,9 +366,7 @@ if run_denovo and run_diamond_contigs:
 
     rule apply_bleed_filter_diamond_contigs:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv"
+            pre_bleed_summary("diamond_contigs")
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
         params:

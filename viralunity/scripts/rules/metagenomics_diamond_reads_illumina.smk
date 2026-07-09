@@ -152,9 +152,7 @@ if run_diamond_reads:
 
     rule apply_bleed_filter_diamond_reads:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv"
+            pre_bleed_summary("diamond_reads")
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv"
         params:

@@ -139,9 +139,7 @@ if run_k2_reads:
 
     rule apply_bleed_filter_kraken2_reads:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv"
+            pre_bleed_summary("kraken2_reads")
         output:
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv"
         params:

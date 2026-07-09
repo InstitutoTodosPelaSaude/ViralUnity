@@ -68,6 +68,26 @@ def get_medaka_assembly_input(wildcards):
         return base.format(sample=s) + "racon.fasta"
     return base.format(sample=s) + "final.contigs.fa"
 
+def _summary_stem(track):
+    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + track + "_taxa_summary"
+
+def taxonomic_filter_suffixes(track):
+    """Ordered filename suffixes for the taxonomic filters enabled on this track.
+
+    Taxonomic filters (ICTV host, minimizer, NR) run BEFORE the bleed and
+    negative-control filters so those statistics are computed on
+    taxonomically-valid taxa. Empty until a taxonomic filter is enabled, in which
+    case ``pre_bleed_summary`` equals the RPM/RPKM base and the chain is identical
+    to the historical behavior.
+    """
+    return []
+
+def pre_bleed_summary(track):
+    """Summary file the bleed filter consumes: the RPM/RPKM base with any enabled
+    taxonomic-filter suffixes applied (taxonomic -> bleed -> cn ordering)."""
+    base = _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
+    return base + "".join(taxonomic_filter_suffixes(track)) + ".tsv"
+
 def _all_inputs():
     targets = [
         config["output"] + "benchmark.tsv"
