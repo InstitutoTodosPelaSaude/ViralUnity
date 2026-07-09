@@ -4,6 +4,14 @@ wildcard_constraints:
     ref_key=r"[^/]+",
 
 
+onsuccess:
+    print("ViralUnity: workflow completed successfully.")
+
+
+onerror:
+    print(f"ViralUnity: workflow FAILED - see the Snakemake log: {log}")
+
+
 SEGMENTS = config["reference"]  # dict: {"S": "/path/S.fa", "L": "/path/L.fa", ...}
 
 rule all:

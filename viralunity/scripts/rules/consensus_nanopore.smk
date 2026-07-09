@@ -30,12 +30,15 @@ rule infer_consensus_sequence:
         variant_depth = config.get("variant_depth", 5)
     benchmark:
         config['output'] + "assembly/" + SEGMENT_WILDCARD + "logs/consensus/{sample}.benchmark.txt"
+    log:
+        config['output'] + "assembly/" + SEGMENT_WILDCARD + "logs/consensus/{sample}.log"
     threads: config.get("infer_consensus_sequence_cpus", 2)
     resources:
         mem_mb = config.get("infer_consensus_sequence_ram", 4) * 1024
     shell:
         """
         set -euo pipefail
+        exec > {log} 2>&1
         run_clair3.sh \
             --bam_fn={input.bam} \
             --ref_fn={input.reference} \

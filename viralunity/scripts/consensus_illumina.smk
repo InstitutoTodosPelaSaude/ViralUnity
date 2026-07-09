@@ -4,6 +4,14 @@ wildcard_constraints:
     ref_key=r"[^/]+",
 
 
+onsuccess:
+    print("ViralUnity: workflow completed successfully.")
+
+
+onerror:
+    print(f"ViralUnity: workflow FAILED - see the Snakemake log: {log}")
+
+
 SEGMENT_WILDCARD = ""
 REFERENCE = config["reference"]
 SAMPLE_SEGMENT_LOG_PREFIX = config['output'] + "logs/consensus_illumina/"
