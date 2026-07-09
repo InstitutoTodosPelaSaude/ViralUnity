@@ -217,6 +217,8 @@ class ConfigGenerator:
         diamond_max_target_seqs: int = 1,
         kraken2_extra_flags: str = "--report-minimizer-data",
         combine_contig_search: bool = False,
+        run_ictv_host_filter: bool = False,
+        ictv_vertebrate_taxids_file: str = "NA",
         compute_rpkm: bool = False,
         enrichment_pseudocount: float = 1.0,
         z_score_threshold: float = 3.0,
@@ -252,6 +254,15 @@ class ConfigGenerator:
                 over all samples' contigs combined (sample-prefixed headers) and
                 split the output per sample, instead of one search per sample.
                 Off by default; enable to benchmark against the per-sample path.
+            run_ictv_host_filter: When True, drop taxa that are not
+                vertebrate-infecting viruses (bacteriophages, plant/fungal/algal
+                /invertebrate-only viruses) using the ICTV-derived allowlist. A
+                taxonomic filter applied before bleed/negative-control. Off by
+                default.
+            ictv_vertebrate_taxids_file: Path to the vertebrate-virus taxid
+                allowlist consumed by the ICTV host filter (built by
+                build_ictv_vertebrate_taxids.py). Required when
+                run_ictv_host_filter is True.
             compute_rpkm: Whether to compute RPKM (requires viral_genomes and
                 viral_taxids to be set).  Derived automatically from
                 ``viral_genomes != "NA"`` in the CLI layer.
@@ -273,6 +284,7 @@ class ConfigGenerator:
         self._set(ConfigKeys.TAXDUMP, taxdump, D)
         self._set(ConfigKeys.TAXIDS, taxids, D)
         self._set(ConfigKeys.DIAMOND_DATABASE, diamond_database, D)
+        self._set(ConfigKeys.ICTV_VERTEBRATE_TAXIDS_FILE, ictv_vertebrate_taxids_file, D)
         # Pipeline parameters
         self._set(ConfigKeys.REMOVE_HUMAN_READS, remove_human_reads, P)
         self._set(ConfigKeys.REMOVE_UNCLASSIFIED_READS, remove_unclassified_reads, P)
@@ -289,6 +301,7 @@ class ConfigGenerator:
         self._set(ConfigKeys.DIAMOND_MAX_TARGET_SEQS, diamond_max_target_seqs, P)
         self._set(ConfigKeys.KRAKEN2_EXTRA_FLAGS, kraken2_extra_flags, P)
         self._set(ConfigKeys.COMBINE_CONTIG_SEARCH, combine_contig_search, P)
+        self._set(ConfigKeys.RUN_ICTV_HOST_FILTER, run_ictv_host_filter, P)
         self._set(ConfigKeys.COMPUTE_RPKM, compute_rpkm, P)
         self._set(ConfigKeys.ENRICHMENT_PSEUDOCOUNT, enrichment_pseudocount, P)
         self._set(ConfigKeys.Z_SCORE_THRESHOLD, z_score_threshold, P)

@@ -150,6 +150,21 @@ if run_diamond_reads:
             script:
                 "../python/add_rpkm_to_summary.py"
 
+    if run_ictv_host_filter:
+        rule apply_ictv_filter_diamond_reads:
+            input:
+                summary = summary_before_filter("diamond_reads", "ictv")
+            output:
+                summary = summary_after_filter("diamond_reads", "ictv"),
+                dropped = dropped_sidecar(summary_after_filter("diamond_reads", "ictv"))
+            params:
+                allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/apply_ictv_host_filter.py"
+
     rule apply_bleed_filter_diamond_reads:
         input:
             pre_bleed_summary("diamond_reads")

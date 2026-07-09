@@ -127,6 +127,8 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         diamond_max_target_seqs=args.get("diamond_max_target_seqs", 1),
         kraken2_extra_flags=args.get("kraken2_extra_flags", "--report-minimizer-data"),
         combine_contig_search=args.get("combine_contig_search", False),
+        run_ictv_host_filter=args.get("run_ictv_host_filter", False),
+        ictv_vertebrate_taxids_file=args.get("ictv_vertebrate_taxids_file", "NA"),
         compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
         enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
         z_score_threshold=args.get("z_score_threshold", 3.0),

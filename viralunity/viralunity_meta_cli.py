@@ -148,6 +148,25 @@ _COMMON_META_OPTIONS = [
         help="Max-RPM bleed filter fraction.",
     ),
     click.option(
+        "--run-ictv-host-filter/--no-ictv-host-filter",
+        default=False,
+        show_default=True,
+        help=(
+            "Drop non-vertebrate-infecting viruses (bacteriophages, plant/fungal/"
+            "algal/invertebrate-only viruses) using the ICTV-derived allowlist. "
+            "Applied before the bleed/negative-control filters."
+        ),
+    ),
+    click.option(
+        "--ictv-vertebrate-taxids-file",
+        default="NA",
+        show_default=True,
+        help=(
+            "Path to the vertebrate-virus taxid allowlist (built by "
+            "build_ictv_vertebrate_taxids.py). Required with --run-ictv-host-filter."
+        ),
+    ),
+    click.option(
         "--negative-controls",
         default="",
         show_default=True,

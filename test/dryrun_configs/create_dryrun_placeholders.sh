@@ -36,6 +36,9 @@ touch databases/taxdump/names.dmp
 touch databases/diamond/nr.dmnd
 touch databases/diamond/protein2taxid.tsv
 
+mkdir -p databases/ictv
+touch databases/ictv/vertebrate_virus_taxids.txt
+
 echo "Placeholder files created successfully in data/, databases/, etc."
 echo "You can now run 'snakemake -n' for any of the dry-run configs."
 

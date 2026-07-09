@@ -80,6 +80,51 @@ class Test_RPKM_Validation(unittest.TestCase):
         validate_metagenomics_requirements(args)
 
 
+class Test_ICTV_HostFilter_Validation(unittest.TestCase):
+    """run_ictv_host_filter requires an existing vertebrate-virus taxids file."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.base_args = {
+            "run_denovo_assembly": False,
+            "run_kraken2_reads": False,
+            "run_kraken2_contigs": False,
+            "run_diamond_reads": False,
+            "run_diamond_contigs": False,
+            "run_reference_assembly": False,
+        }
+        self.allowlist = _touch(os.path.join(self.tmp, "vertebrate_virus_taxids.txt"))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_filter_off_needs_no_file(self):
+        validate_metagenomics_requirements({**self.base_args, "run_ictv_host_filter": False})
+
+    def test_filter_on_without_file_raises(self):
+        args = {**self.base_args, "run_ictv_host_filter": True, "ictv_vertebrate_taxids_file": "NA"}
+        with self.assertRaises(ValidationError):
+            validate_metagenomics_requirements(args)
+
+    def test_filter_on_with_missing_file_raises(self):
+        args = {
+            **self.base_args,
+            "run_ictv_host_filter": True,
+            "ictv_vertebrate_taxids_file": os.path.join(self.tmp, "nope.txt"),
+        }
+        with self.assertRaises(ViralUnityFileNotFoundError):
+            validate_metagenomics_requirements(args)
+
+    def test_filter_on_with_existing_file_is_ok(self):
+        args = {
+            **self.base_args,
+            "run_ictv_host_filter": True,
+            "ictv_vertebrate_taxids_file": self.allowlist,
+        }
+        validate_metagenomics_requirements(args)
+
+
 class Test_SampleSheetIntegrity(unittest.TestCase):
     """Guardrails against silent sample-sheet data loss / corruption."""
 

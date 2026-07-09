@@ -1,0 +1,63 @@
+# Config for Illumina Metagenomics Dry-run — ICTV vertebrate-virus filter variant.
+# Exercises run_ictv_host_filter=true so the taxonomic -> bleed -> cn reorder and
+# the per-track apply_ictv_filter_* rules resolve on kraken2 reads + contigs and
+# diamond contigs.
+samples:
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
+
+data: illumina
+output: test/dryrun_output/metagenomics_illumina_ictv/
+threads: 2
+
+# Databases and paths
+kraken2_database: databases/kraken2/
+krona_database: databases/krona/taxonomy/
+taxdump: databases/taxdump/
+diamond_database: databases/diamond/nr.dmnd
+taxids: databases/diamond/protein2taxid.tsv
+
+# Execution flags
+remove_human_reads: false
+remove_unclassified_reads: false
+host_reference: NA
+deacon_index: NA
+
+run_denovo_assembly: true
+run_kraken2_reads: true
+run_kraken2_contigs: true
+run_diamond_reads: false
+run_diamond_contigs: true
+
+# Taxonomic FP filter under test
+run_ictv_host_filter: true
+ictv_vertebrate_taxids_file: databases/ictv/vertebrate_virus_taxids.txt
+
+run_reference_assembly: false
+
+# Advanced parameters
+diamond_sensitivity: sensitive
+evalue: 0.001
+bleed_fraction: 0.005
+negative_controls: []
+compute_rpkm: false
+enrichment_pseudocount: 1.0
+z_score_threshold: 3.0
+log2_ratio_threshold: 1.0
+minimum_hit_group: 4
+
+# QC parameters
+adapters: NA
+minimum_length: 50
+trim_head: 0
+trim_tail: 0
+cut_front_mean_quality: 20
+cut_tail_mean_quality: 20
+cut_right_window_size: 4
+cut_right_mean_quality: 20
+
+# Alignment parameters
+af_threshold: 0.5
+af_isnv_threshold: 0.05
+run_isnv: false

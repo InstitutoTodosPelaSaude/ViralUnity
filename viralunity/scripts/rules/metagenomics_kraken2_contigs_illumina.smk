@@ -134,6 +134,21 @@ if run_denovo and run_k2_contigs:
             script:
                 "../python/add_rpkm_to_summary.py"
 
+    if run_ictv_host_filter:
+        rule apply_ictv_filter_kraken2_contigs:
+            input:
+                summary = summary_before_filter("kraken2_contigs", "ictv")
+            output:
+                summary = summary_after_filter("kraken2_contigs", "ictv"),
+                dropped = dropped_sidecar(summary_after_filter("kraken2_contigs", "ictv"))
+            params:
+                allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/apply_ictv_host_filter.py"
+
     rule apply_bleed_filter_kraken2_contigs:
         input:
             pre_bleed_summary("kraken2_contigs")

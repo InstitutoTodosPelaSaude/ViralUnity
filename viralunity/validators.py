@@ -403,6 +403,20 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
         if not os.path.isfile(viral_taxids):
             raise ViralUnityFileNotFoundError(f"Viral taxids file does not exist: {viral_taxids}")
 
+    # ICTV vertebrate-virus host filter: allowlist taxid file must exist when on.
+    if args.get("run_ictv_host_filter", False):
+        ictv_file = args.get("ictv_vertebrate_taxids_file", "NA")
+        if not ictv_file or str(ictv_file).strip() in ("", "NA"):
+            raise ValidationError(
+                "--run-ictv-host-filter requires --ictv-vertebrate-taxids-file "
+                "(the vertebrate-virus taxid allowlist built by "
+                "build_ictv_vertebrate_taxids.py)."
+            )
+        if not os.path.isfile(ictv_file):
+            raise ViralUnityFileNotFoundError(
+                f"ICTV vertebrate taxids file does not exist: {ictv_file}"
+            )
+
     validate_reference_assembly_requirements(args)
 
 
@@ -497,6 +511,7 @@ META_PATH_ARG_KEYS = (
     "deacon_index",
     "taxids",
     "diamond_database",
+    "ictv_vertebrate_taxids_file",
     "viral_genomes",
     "viral_taxids",
     "adapters",

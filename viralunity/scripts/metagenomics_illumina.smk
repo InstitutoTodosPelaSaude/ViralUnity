@@ -34,6 +34,7 @@ run_diamond_contigs = config.get("run_diamond_contigs", False)
 has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
 combine_contig_search = bool(config.get("combine_contig_search", False))
+run_ictv_host_filter = bool(config.get("run_ictv_host_filter", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -46,22 +47,45 @@ else:
 def _summary_stem(track):
     return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + track + "_taxa_summary"
 
-def taxonomic_filter_suffixes(track):
-    """Ordered filename suffixes for the taxonomic filters enabled on this track.
+def _summary_base(track):
+    return _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
 
-    Taxonomic filters (ICTV host, minimizer, NR) run BEFORE the bleed and
-    negative-control filters so those statistics are computed on
-    taxonomically-valid taxa. Empty until a taxonomic filter is enabled, in which
-    case ``pre_bleed_summary`` equals the RPM/RPKM base and the chain is identical
-    to the historical behavior.
+def _enabled_taxonomic_filters(track):
+    """Ordered short names of the taxonomic filters enabled for this track.
+
+    Taxonomic filters run BEFORE bleed/negative-control so those statistics are
+    computed on taxonomically-valid taxa. Order is cheap -> expensive. Minimizer
+    applies to kraken2 tracks only; NR validation to contig tracks only (both
+    added in later commits).
     """
-    return []
+    fs = []
+    if run_ictv_host_filter:
+        fs.append("ictv")
+    return fs
+
+def taxonomic_filter_suffixes(track):
+    return ["." + name for name in _enabled_taxonomic_filters(track)]
+
+def summary_before_filter(track, name):
+    """The summary a given taxonomic filter consumes (base + earlier suffixes)."""
+    fs = _enabled_taxonomic_filters(track)
+    idx = fs.index(name)
+    return _summary_base(track) + "".join("." + f for f in fs[:idx]) + ".tsv"
+
+def summary_after_filter(track, name):
+    """The summary a given taxonomic filter produces (base + suffixes up to it)."""
+    fs = _enabled_taxonomic_filters(track)
+    idx = fs.index(name)
+    return _summary_base(track) + "".join("." + f for f in fs[: idx + 1]) + ".tsv"
+
+def dropped_sidecar(path):
+    """Audit path for rows a taxonomic filter removed: '<x>.tsv' -> '<x>.dropped.tsv'."""
+    return path[:-4] + ".dropped.tsv" if path.endswith(".tsv") else path + ".dropped.tsv"
 
 def pre_bleed_summary(track):
     """Summary file the bleed filter consumes: the RPM/RPKM base with any enabled
     taxonomic-filter suffixes applied (taxonomic -> bleed -> cn ordering)."""
-    base = _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
-    return base + "".join(taxonomic_filter_suffixes(track)) + ".tsv"
+    return _summary_base(track) + "".join(taxonomic_filter_suffixes(track)) + ".tsv"
 
 def _all_inputs():
     targets = [

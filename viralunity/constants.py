@@ -56,6 +56,9 @@ class ConfigKeys:
     COMBINE_CONTIG_SEARCH = "combine_contig_search"
     MINIMAP2_CONSENSUS_ALIGN_FLAGS = "minimap2_consensus_align_flags"
     BLEED_FRACTION = "bleed_fraction"
+    # Taxonomic false-positive filters (run before bleed/negative-control)
+    RUN_ICTV_HOST_FILTER = "run_ictv_host_filter"
+    ICTV_VERTEBRATE_TAXIDS_FILE = "ictv_vertebrate_taxids_file"
     NEGATIVE_CONTROLS = "negative_controls"
     NEGATIVE_P_THRESHOLD = "negative_p_threshold"  # kept for backwards-compat config reading
     COMPUTE_RPKM = "compute_rpkm"
