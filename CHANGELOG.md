@@ -7,6 +7,64 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.3.0] - 2026-07-09
+
+### Added
+
+- **ICTV vertebrate-virus taxonomic filter** (`viralunity meta --run-ictv-host-filter`)
+  — optional false-positive removal that drops hits outside a vertebrate-infecting
+  allowlist built from the ICTV VMR sheet (`build_ictv_vertebrate_taxids.py`), matched
+  lineage-aware. Requires `--ictv-vertebrate-taxids-file`.
+- **NR validation of viral contigs** (`--run-nr-validation`) — combines the viral
+  contigs, searches them against a DIAMOND NR database, assigns an LCA verdict, and
+  harmonizes the result back into the contig tracks as an `nr_pass` column (dropping
+  contigs that fail). New options: `--nr-diamond-database`, `--nr-evalue`,
+  `--nr-max-target-seqs`, `--nr-sensitivity`, `--nr-consensus-threshold`.
+- **Aggregated contig DIAMOND search** — optional combine → search → split path that
+  reduces redundant DIAMOND invocations across samples.
+- A dedicated taxonomic-filter stage that runs **before** the bleed / negative-control
+  filters, with each track's taxa summary flowing through one cumulative, consistently
+  named chain: `…_taxa_summary[_RPM|_RPKM][.nr].bleed[.neg][.ictv].tsv`.
+
+### Changed
+
+- **Negative-control enrichment now zero-fills absent controls.** Control mean/SD are
+  computed over *all* negative controls (a taxon undetected in a control counts as 0),
+  and the z-score gate uses the same denominator as the pass/fail decision. This changes
+  which taxa pass the contamination filter relative to 1.2.0 (which used only the controls
+  where a taxon was detected). No division by zero — the z-score is `NA` when the control
+  SD is 0.
+- `make test-empirical` runs inside the `viralunity` conda env, so it no longer fails
+  under a Python 3.12 base environment.
+- Pinned the `genome_selection` conda env (`python=3.11`, `pandas=2.0`, `blast=2.16`).
+- Assembly-stats read counts are computed as `lines // 4` instead of counting `+`
+  separator lines (which miscounted `+<id>` separators and Phred-10 quality lines).
+
+### Fixed
+
+- `convert_diamond_output_to_krona_input.py` crashed on CLI use (`argparse` was never
+  imported).
+- Reference selection silently produced an empty `reference_targets.tsv` when a summary
+  contained a blank taxid (float coercion); taxids are now read as strings.
+- Hardened taxonomy post-processing (`annotate_diamond_taxonomy`, `summarize_krona_taxa`)
+  and removed error-swallowing patterns in the dehosting/alignment/consensus shell rules.
+- `create-samplesheet` writes CSV via `csv.writer` and sanitizes sample names.
+
+### Engineering
+
+- Input hardening for service use: `run_name` sanitization and numeric-parameter range
+  validation (threads, thresholds, e-value); `wildcard_constraints` on every workflow.
+- Observability: `onerror`/`onsuccess` handlers and per-rule logs on the Clair3 and
+  MultiQC rules.
+- Run-provenance manifest now records the config SHA-256 and a post-run completion status.
+- CI: `mypy` cleared to zero errors and promoted to a **gating** check; new unit tests
+  take every metagenomics metric-path script off 0% coverage.
+
+### Removed
+
+- Nothing user-facing. (A KrakenUniq-style minimizer filter was prototyped during
+  development and removed before release.)
+
 ## [1.2.0] - 2026-07-07
 
 ### Added
