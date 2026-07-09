@@ -1,3 +1,9 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
 SEGMENTS = config["reference"]  # dict: {"S": "/path/S.fa", "L": "/path/L.fa", ...}
 
 rule all:

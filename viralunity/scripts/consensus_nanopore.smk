@@ -1,3 +1,9 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
 SEGMENT_WILDCARD = ""
 rule sanitize_reference:
     conda:

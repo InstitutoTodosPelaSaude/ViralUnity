@@ -1,3 +1,9 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
 def get_exclude_taxids():
     """TaxIDs to exclude from classification outputs (e.g. human 9606, unclassified 0)."""
     exclude = []

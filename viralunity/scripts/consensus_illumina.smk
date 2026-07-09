@@ -1,3 +1,9 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
 SEGMENT_WILDCARD = ""
 REFERENCE = config["reference"]
 SAMPLE_SEGMENT_LOG_PREFIX = config['output'] + "logs/consensus_illumina/"
