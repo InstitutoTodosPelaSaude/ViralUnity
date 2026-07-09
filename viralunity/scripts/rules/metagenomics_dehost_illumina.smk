@@ -121,10 +121,15 @@ rule merge_host_filtered_reads:
         set -euo pipefail
         mkdir -p $(dirname {output.merged}) $(dirname {log})
         decompress() {{
-            case "$1" in
-                *.gz) gzip -dc "$1" 2>/dev/null || true ;;
-                *) [ -s "$1" ] && cat "$1" || true ;;
-            esac
+            # Skip genuinely empty files (0 reads survived host removal is legal),
+            # but let a corrupt/truncated input fail the rule instead of silently
+            # producing an empty merge.
+            if [ -s "$1" ]; then
+                case "$1" in
+                    *.gz) gzip -dc "$1" ;;
+                    *) cat "$1" ;;
+                esac
+            fi
         }}
         {{ decompress "{input.filtered_R1}"; decompress "{input.filtered_R2}"; }} | gzip -c > {output.merged}
         """

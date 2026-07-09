@@ -471,5 +471,92 @@ class TestPseudocountEffect(unittest.TestCase):
         self.assertAlmostEqual(out.iloc[0]["enrichment_pseudocount"], 2.5)
 
 
+class TestZeroFillEdgeCases(unittest.TestCase):
+    """Zero-fill must never divide by zero: when the (zero-filled) control vector
+    has SD 0, the z-score is NA and the taxon routes to the log2 gate. Covers the
+    absent-from-all-controls and identical-controls cases plus the single-control
+    tier."""
+
+    def _run(self, rows, negatives):
+        # Should never raise (the div-by-zero concern).
+        return apply_negative_control_enrichment(pd.DataFrame(rows), negatives=negatives)
+
+    def _pick(self, out, sample, taxid):
+        return out[(out["sample"] == sample) & (out["taxid"] == taxid)].iloc[0]
+
+    def test_case_a_absent_from_all_controls_is_na_not_crash(self):
+        # taxon 100 is only in the sample; the 3 controls carry a different taxon
+        # so n_controls == 3 but taxon 100's control vector is [0, 0, 0].
+        rows = [
+            {"sample": "S1", "taxid": "100", "rpm": 100.0},
+            {"sample": "C1", "taxid": "999", "rpm": 5.0},
+            {"sample": "C2", "taxid": "999", "rpm": 5.0},
+            {"sample": "C3", "taxid": "999", "rpm": 5.0},
+        ]
+        out = self._run(rows, ["C1", "C2", "C3"])
+        row = self._pick(out, "S1", "100")
+        self.assertEqual(row["control_mean"], 0.0)
+        self.assertTrue(pd.isna(row["z_score"]))  # SD 0 -> no z-score, no ZeroDivisionError
+        self.assertEqual(row["neg_decision"], "log2_ratio_fallback")
+
+    def test_case_c_identical_controls_sd_zero_is_na(self):
+        # taxon 200 present in all 3 controls with identical values -> SD 0.
+        rows = [
+            {"sample": "S1", "taxid": "200", "rpm": 50.0},
+            {"sample": "C1", "taxid": "200", "rpm": 5.0},
+            {"sample": "C2", "taxid": "200", "rpm": 5.0},
+            {"sample": "C3", "taxid": "200", "rpm": 5.0},
+        ]
+        out = self._run(rows, ["C1", "C2", "C3"])
+        row = self._pick(out, "S1", "200")
+        self.assertAlmostEqual(row["control_mean"], 5.0)
+        self.assertTrue(pd.isna(row["z_score"]))
+        self.assertEqual(row["neg_decision"], "log2_ratio_fallback")
+
+    def test_single_control_uses_log2_gate_without_crash(self):
+        # n_controls == 1: z-score is undefined (needs >= 2), so the log2 gate is used.
+        rows = [
+            {"sample": "S1", "taxid": "300", "rpm": 100.0},
+            {"sample": "C1", "taxid": "300", "rpm": 10.0},
+        ]
+        out = self._run(rows, ["C1"])
+        row = self._pick(out, "S1", "300")
+        self.assertEqual(int(row["n_negative_controls"]), 1)
+        self.assertTrue(pd.isna(row["z_score"]))
+        self.assertEqual(row["neg_decision"], "log2_ratio")
+
+
+class TestZeroFillControlStatistics(unittest.TestCase):
+    """A taxon absent from a control counts as 0 there, so control stats are
+    computed over all n_controls, and the z-score gate applies whenever there
+    are >= 2 controls (H1 contract)."""
+
+    def _df(self):
+        # 3 controls (C1..C3) + 1 sample. taxid 100 is detected only in C1;
+        # C2/C3 appear in the table via a different taxon so n_controls == 3.
+        return pd.DataFrame(
+            [
+                {"sample": "S1", "taxid": "100", "rpm": 100.0},
+                {"sample": "C1", "taxid": "100", "rpm": 30.0},
+                {"sample": "C2", "taxid": "999", "rpm": 5.0},
+                {"sample": "C3", "taxid": "999", "rpm": 5.0},
+            ]
+        )
+
+    def test_control_mean_is_zero_filled_over_all_controls(self):
+        out = apply_negative_control_enrichment(self._df(), negatives=["C1", "C2", "C3"])
+        row = out[(out["sample"] == "S1") & (out["taxid"] == "100")].iloc[0]
+        # Zero-fill: mean(30, 0, 0) = 10, not the lone detected value 30.
+        self.assertAlmostEqual(row["control_mean"], 10.0)
+        self.assertEqual(int(row["n_negative_controls"]), 3)
+
+    def test_zscore_gate_used_with_two_or_more_controls(self):
+        out = apply_negative_control_enrichment(self._df(), negatives=["C1", "C2", "C3"])
+        row = out[(out["sample"] == "S1") & (out["taxid"] == "100")].iloc[0]
+        # With zero-fill the control vector is [30, 0, 0] (SD > 0), so the
+        # decision uses the z-score, not the log2-ratio fallback.
+        self.assertEqual(row["neg_decision"], "z_score")
+
+
 if __name__ == "__main__":
     unittest.main()

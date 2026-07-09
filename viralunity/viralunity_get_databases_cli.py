@@ -263,7 +263,7 @@ def _reformat_protein_fasta(
     taxid_map = {}  # protein_acc -> taxid (written to protein2taxid.tsv)
     written = 0
     skipped_dna = 0
-    skipped_dna_examples = []
+    skipped_dna_examples: list[str] = []
 
     with open(output_faa, "w") as out_handle:
         for prot_file in protein_files:
@@ -537,7 +537,7 @@ def clean_protein_fasta(
 
     kept = 0
     dropped = 0
-    dropped_examples = []
+    dropped_examples: list[str] = []
 
     click.echo(f"Cleaning protein FASTA: {input_p}")
     with open(tmp_p, "w") as out_handle:

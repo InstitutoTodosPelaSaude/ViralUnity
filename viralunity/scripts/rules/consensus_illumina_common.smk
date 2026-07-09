@@ -41,7 +41,13 @@ rule generate_multiqc_report:
         # to avoid an include-order cycle: ``unify_assembly_statistics_reports``
         # lives in the top-level snakefile and itself references
         # ``rules.calculate_assembly_statistics`` defined here.
-        unified_stats_summary = config['output'] + "assembly/assembly_stats_summary.csv"
+        unified_stats_summary = config['output'] + "assembly/assembly_stats_summary.csv",
+        # Declare the fastp JSONs MultiQC actually aggregates so that editing a
+        # fastp output retriggers the report (the shell scans the directory).
+        fastp_json = expand(
+            config['output'] + "qc/reports/trim.{sample}_fastp.json",
+            sample=config["samples"],
+        )
     output:
         multiqc_report = config['output'] + "qc/reports/multiqc_report.html"
     params:
@@ -67,9 +73,11 @@ rule align_consensus_to_reference_genome:
             allow_missing=True
         )
     output:
-        aln_consensus = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/samples_alignment.fasta"
+        aln_consensus = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/samples_alignment.fasta",
+        combined = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/consensus.fasta",
+        sam = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/aln.consensus.sam",
+        masked = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/aln.consensus.indelsMasked.fasta"
     params:
-        path_consensus = config['output'] + "assembly/" + SEGMENT_WILDCARD + "consensus/final_consensus/",
         reference = REFERENCE,
         minimap2_flags = config.get("minimap2_consensus_align_flags", "-a --sam-hit-only --secondary=no --score-N=0")
     log:
@@ -79,8 +87,9 @@ rule align_consensus_to_reference_genome:
     shell:
         """
         set -euo pipefail
-        cat {params.reference} {params.path_consensus}/*renamed.fasta > {params.path_consensus}/consensus.fasta;
-        minimap2 {params.minimap2_flags} {params.reference} {params.path_consensus}/consensus.fasta -o {params.path_consensus}/aln.consensus.sam;
-        gofasta sam toMultiAlign --pad -s {params.path_consensus}/aln.consensus.sam -o {output.aln_consensus};
-        sed '/^>/ ! s/-/N/g' {output.aln_consensus} > {params.path_consensus}/aln.consensus.indelsMasked.fasta
+        exec > {log} 2>&1
+        cat {params.reference} {input.consensus_files} > {output.combined}
+        minimap2 {params.minimap2_flags} {params.reference} {output.combined} -o {output.sam}
+        gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
+        sed '/^>/ ! s/-/N/g' {output.aln_consensus} > {output.masked}
         """

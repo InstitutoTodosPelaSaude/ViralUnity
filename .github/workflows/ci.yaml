@@ -20,10 +20,9 @@ jobs:
         run: black --check viralunity/ test/
       - name: ruff check
         run: ruff check viralunity/ test/
-      - name: mypy (advisory)
-        # Not yet gating: there is a known backlog of ~14 findings to clear.
-        # Runs so regressions are visible without blocking the build.
-        continue-on-error: true
+      - name: mypy
+        # Gating: the backlog has been cleared (0 errors), so type regressions
+        # now block the build.
         run: mypy viralunity/
 
   test:

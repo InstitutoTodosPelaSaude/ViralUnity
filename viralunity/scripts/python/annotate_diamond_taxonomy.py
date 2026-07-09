@@ -63,7 +63,19 @@ def run(diamond_tsv, taxids, taxdump_dir, output_path):
                 continue
             qseqid = parts[0]
             sseqid = parts[1]
-            mapped_reads = parts[-1] if len(parts) > 1 else "0"
+            # The last column is the mapped-read count appended by
+            # filter_diamond_by_idxstats. Validate it is an integer so that a
+            # raw DIAMOND outfmt6 file (whose last column is a float bitscore)
+            # fails loudly instead of silently corrupting read counts.
+            mapped_reads = parts[-1]
+            try:
+                int(mapped_reads)
+            except ValueError:
+                raise ValueError(
+                    f"{diamond_tsv}: expected an integer mapped-read count as the last "
+                    f"column (produced by filter_diamond_by_idxstats), got {mapped_reads!r}. "
+                    "Was a raw DIAMOND outfmt6 file passed instead of *.diamond.supported.tsv?"
+                )
             acc = sseqid.split("|")[0] if "|" in sseqid else sseqid
             taxid = acc2taxid.get(acc, "0")
             name = taxid2name.get(taxid, "NA")

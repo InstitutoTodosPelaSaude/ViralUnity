@@ -16,15 +16,6 @@ def parse_args():
     parser.add_argument(
         "--summary-dir", required=True, help="Directory containing TSV summary files."
     )
-    parser.add_argument(
-        "--summary-suffix",
-        default="",
-        help="Suffix of the per-classifier summary table to read: '' for the raw "
-        "counts table, '_RPM.bleed' for the bleed-filtered table, or "
-        "'_RPM.bleed.neg' for the negative-control-filtered table. Rows that "
-        "explicitly fail bleed_pass/neg_pass are dropped before selection; "
-        "missing files fall back through bleed-only to raw counts.",
-    )
     parser.add_argument("--method", required=True, choices=["kraken2", "diamond", "both"])
     parser.add_argument("--source", required=True, choices=["reads", "contigs", "both"])
     parser.add_argument("--reads-count", type=int, default=100)
@@ -129,36 +120,48 @@ _CLASSIFIERS = (
 )
 
 
-# Summary tables from most- to least-filtered. Reference selection prefers the
-# requested level, then degrades gracefully to less-filtered tables so it still
-# works on older outputs that predate the bleed / negative-control steps.
-_SUFFIX_HIERARCHY = ("_RPM.bleed.neg", "_RPM.bleed", "")
+# Audit/sidecar outputs that are NOT summary tables to select from.
+_NON_SUMMARY_TOKENS = (".dropped", "_nr_flags")
 
 
-def _fallback_suffixes(suffix):
-    """Ordered suffixes to try: the requested level then progressively less-filtered ones."""
-    suffix = suffix or ""
-    if suffix in _SUFFIX_HIERARCHY:
-        return list(_SUFFIX_HIERARCHY[_SUFFIX_HIERARCHY.index(suffix) :])
-    # Unknown/custom suffix: try it, then the standard fallbacks.
-    return [suffix, "_RPM.bleed", ""]
+def _chain_depth(path):
+    """Number of cumulative filter steps in a summary filename (dot-separated
+    suffixes after the metric token), used to rank most- vs least-filtered."""
+    stem = os.path.basename(path)
+    if stem.endswith(".tsv"):
+        stem = stem[: -len(".tsv")]
+    return stem.count(".")
 
 
-def resolve_summary_file(summary_dir, classifier, suffix):
-    """Return the most-filtered existing summary file for a classifier, or None."""
-    for suf in _fallback_suffixes(suffix):
-        path = os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary{suf}.tsv")
-        if os.path.exists(path):
-            return path
-    return None
+def resolve_summary_file(summary_dir, classifier, suffix=None):
+    """Return the most-filtered summary table for a classifier, or None.
+
+    The pipeline writes a cumulative chain
+    ``<classifier>_taxa_summary[_RPM|_RPKM][.nr][.bleed][.neg][.ictv].tsv``; the
+    file with the most chain steps is the fully-filtered one. We prefer that,
+    degrading to less-filtered tables (and finally the raw counts table) so
+    selection still works on partial or older outputs. ``suffix`` is accepted
+    for backward compatibility and ignored. Audit sidecars (``*.dropped.tsv``,
+    ``*_nr_flags.tsv``) are never selected.
+    """
+    pattern = os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary*.tsv")
+    candidates = [
+        p
+        for p in glob.glob(pattern)
+        if not any(tok in os.path.basename(p) for tok in _NON_SUMMARY_TOKENS)
+    ]
+    if not candidates:
+        return None
+    # Most-filtered first: most chain steps, then longest name (RPKM/RPM over base).
+    return max(candidates, key=lambda p: (_chain_depth(p), len(os.path.basename(p))))
 
 
-def collect_summary_files(summary_dir, method, source, suffix):
+def collect_summary_files(summary_dir, method, source, suffix=None):
     """Resolve one summary file per enabled (method, source) classifier."""
     files = []
     for m, s, classifier in _CLASSIFIERS:
         if method in (m, "both") and source in (s, "both"):
-            path = resolve_summary_file(summary_dir, classifier, suffix)
+            path = resolve_summary_file(summary_dir, classifier)
             if path is not None:
                 files.append(path)
     return files
@@ -218,13 +221,10 @@ def main(args=None):
             "Family-level filtering will be skipped and ref_key may be inaccurate."
         )
 
-    # Parse summary TSVs. Prefer the negative-control / bleed-filtered tables
-    # (per --summary-suffix) so reference assembly is not triggered by taxa that
-    # the cross-sample filters flagged as contamination.
-    summary_suffix = getattr(args, "summary_suffix", "") or ""
-    summary_files = collect_summary_files(
-        args.summary_dir, args.method, args.source, summary_suffix
-    )
+    # Parse summary TSVs. resolve_summary_file picks the most-filtered table per
+    # classifier so reference assembly is not triggered by taxa the filters
+    # flagged as contamination or non-viral.
+    summary_files = collect_summary_files(args.summary_dir, args.method, args.source)
 
     if not summary_files:
         print("Warning: No summary TSVs found for the given method and source.")
@@ -236,7 +236,10 @@ def main(args=None):
     frames = []
     for f in summary_files:
         if os.path.exists(f):
-            frames.append(pd.read_csv(f, sep="\t"))
+            # Force taxid to str: a blank/NaN taxid in any summary would otherwise
+            # coerce the whole column to float64, stringifying "3001" as "3001.0"
+            # so it never matches the genome2taxid keys (silent empty selection).
+            frames.append(pd.read_csv(f, sep="\t", dtype={"taxid": str}))
 
     if not frames:
         pd.DataFrame(columns=["sample", "ref_key", "reference_genome"]).to_csv(
@@ -450,7 +453,6 @@ if "snakemake" in globals():
 
     args = SnakemakeArgs()
     args.summary_dir = snakemake.params.summary_dir
-    args.summary_suffix = getattr(snakemake.params, "summary_suffix", "")
     args.method = snakemake.params.method
     args.source = snakemake.params.source
     args.reads_count = snakemake.params.reads_count

@@ -269,6 +269,14 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--z-score-threshold` | `3.0` | Z-score threshold for `neg_pass` (used when ≥2 negative controls are present). |
 | `--log2-ratio-threshold` | `1.0` | Log2-ratio threshold for `neg_pass` (used when exactly 1 negative control is present, or when z-score is undefined due to zero control variance). |
 | `--minimum-hit-group` | `4` | Kraken2 minimum-hit-group parameter. |
+| `--run-ictv-host-filter`/`--no-ictv-host-filter` | off | Keep only vertebrate-infecting viruses (drop phages, plant/fungal/algal/invertebrate-only viruses). See *Taxonomic false-positive filters* below. |
+| `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by `viralunity get-databases ictv-vertebrate-taxids`). Required with `--run-ictv-host-filter`. |
+| `--run-nr-validation`/`--no-nr-validation` | off | Re-search de novo viral contigs against NCBI nr and keep only NR-confirmed viral contigs. Contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
+| `--nr-diamond-database` | `NA` | nr database for NR validation: a BLAST+ nr db (searched via `diamond prepdb`) or a native `.dmnd`. |
+| `--nr-evalue` | `1e-10` | E-value threshold for the NR DIAMOND search. |
+| `--nr-max-target-seqs` | `10` | Top hits kept per contig for the NR LCA consensus. |
+| `--nr-sensitivity` | `fast` | DIAMOND sensitivity for the NR search. |
+| `--nr-consensus-threshold` | `0.5` | Fraction of a contig's hits that must agree at a rank for the LCA consensus. |
 | `--run-reference-assembly`/`--no-run-reference-assembly` | off | Enable reference assembly from filtered taxonomic hits. |
 | `--method` | `kraken2` | Method used for reference assembly (`kraken2`, `diamond`, `both`). Required when `--run-reference-assembly` is set. |
 | `--source` | `reads` | Source of taxonomy data for reference assembly (`reads`, `contigs`, `both`). Required when `--run-reference-assembly` is set. |
@@ -402,7 +410,7 @@ viralunity meta nanopore \
 For every classifier/mode that runs, the pipeline emits two Krona HTMLs per sample:
 
 - `samples/<sample>/<classifier>_<mode>.krona.html` — built directly from the per-sample taxonomic classification before any cross-sample filtering. This is the raw view of what the classifier reported.
-- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the cross-sample filters in the `_taxa_summary_RPM.bleed[.neg].tsv` table for that `(sample, tool, mode)`.
+- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the filters recorded in the fully-filtered taxa-summary table (the longest-named file in the cumulative chain, e.g. `_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`) for that `(sample, tool, mode)`.
 
 Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its leaf taxid at the `family`, `genus`, or `species` rank passes `bleed_pass` (and, when negative controls are configured, also `neg_pass`). This is the inverse of how `summarize_krona_taxa.py` aggregates rows up the lineage, so the filtered Krona shows exactly the contigs/reads that contributed to a passing rank-row. Strain and sub-species hits whose species/genus/family passes are preserved; rows with `taxid==0` are dropped.
 
@@ -412,18 +420,75 @@ Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its lea
 - `neg_pass = True/False` with `neg_decision = "z_score"` — two or more controls; gate is `z_score ≥ --z-score-threshold`.
 - `neg_pass = True/False` with `neg_decision = "log2_ratio_fallback"` — two or more controls but all identical (SD = 0); falls back to the log2-ratio gate.
 
-Additional diagnostic columns in `*_RPM.bleed.neg.tsv`: `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log2_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log2_ratio_threshold_used`, `n_negative_controls`.
+Additional diagnostic columns added by the negative-control step (the `.neg` suffix): `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log2_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log2_ratio_threshold_used`, `n_negative_controls`.
 
 `viralunity/scripts/python/filter_krona_by_pass_taxids.py` also exposes a CLI for standalone use:
 
 ```bash
 python viralunity/scripts/python/filter_krona_by_pass_taxids.py \
-    --summary path/to/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv \
+    --summary path/to/diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv \
     --krona-input path/to/{sample}.diamond.supported.krona_input.tsv \
     --out path/to/{sample}.diamond.supported.filtered.krona_input.tsv \
     --sample {sample} --tool diamond --mode contigs \
     --taxdump path/to/taxdump
 ```
+
+### Taxonomic false-positive filters (optional)
+
+Open classifiers (kraken2 + viral index, DIAMOND + viral RefSeq) can report taxa that are
+artifacts of imperfect taxonomic identification — bacteriophages, giant algal viruses, endogenous
+retroviruses, and bacterial/eukaryal contigs mislabelled as viral. Three optional, tunable filters
+remove these. They are **off by default**, and each writes a `*.dropped.tsv` audit sidecar next to
+its output listing the removed rows and why.
+
+**Order.** The taxa summary flows through **one cumulative chain**; each enabled step appends
+exactly one suffix, in this order:
+
+```
+_RPM/_RPKM → .nr → .bleed → .neg → .ictv
+```
+
+so a fully-loaded contig track ends at `..._taxa_summary_RPKM.nr.bleed.neg.ictv.tsv` and the
+*fully-filtered* table is always the file with the longest name. NR validation is contig-tracks
+only; the ICTV host filter applies to all tracks. The order is **result-neutral** with respect to
+the surviving taxa: `.bleed` and `.neg` only add per-taxon `bleed_pass`/`neg_pass` columns (they
+never remove rows and don't depend on which other taxa are present), while the row-removing steps
+(`.nr`, `.ictv`) use criteria independent of those columns. With every filter off the chain is just
+`..._RPM.bleed.tsv` (or `_RPKM.bleed.tsv` with `--viral-genomes`), byte-identical in content to
+before. Row-removing steps write a `*.dropped.tsv` audit sidecar.
+
+| Filter | Flag | Scope | What it drops |
+|--------|------|-------|---------------|
+| ICTV host | `--run-ictv-host-filter` + `--ictv-vertebrate-taxids-file` | all four tracks | Taxa not in a vertebrate-infecting virus lineage (phages, plant/fungal/algal/invertebrate-only, giant viruses). Lineage-aware against an ICTV-derived taxid allowlist (built by `build_ictv_vertebrate_taxids.py`, see below). |
+| NR validation | `--run-nr-validation` + `--nr-diamond-database` | contig tracks only | Contigs the NR (full `nr`) LCA consensus confidently calls non-viral. Runs one aggregated `diamond blastx` over all samples' de novo viral contigs; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
+
+NR validation also writes `<track>_nr_flags.tsv` surfacing (not filtering) species-level
+RefSeq-vs-NR disagreements — `misid_novel` (an NR virus species absent from that sample's RefSeq
+calls, highest surveillance interest) and `misid_known`.
+
+**Building the ICTV allowlist.** The vertebrate-virus taxid allowlist is derived from the ICTV
+Virus Metadata Resource (VMR; keep taxa whose "Host source" contains `vertebrates`) and is a
+plain, user-editable list of NCBI taxids. Download the current VMR spreadsheet from
+<https://ictv.global/vmr>, then:
+
+```bash
+python viralunity/scripts/python/build_ictv_vertebrate_taxids.py \
+    --vmr VMR_MSLxx.xlsx --names <taxdump>/names.dmp \
+    --output databases/ictv/vertebrate_virus_taxids.txt
+```
+
+The script maps ICTV family/genus names to taxids via the taxdump `names.dmp`; regenerate it
+against a new VMR/taxdump release, or edit the taxid list by hand to tune coverage.
+
+**Aggregated contig search (config-only).** `combine_contig_search: true` in the YAML runs the
+per-sample contig DIAMOND search once over all samples' contigs combined (sample-prefixed headers),
+splitting the output per sample — often faster (one DB load). Off by default; toggle via
+`--create-config-only`, edit the YAML, and rerun. Benchmark against the per-sample path using the
+`logs/diamond_contigs/*.benchmark.txt` wall-times before adopting it.
+
+**Not yet in scope (future).** Physically slimmed diamond/kraken2 databases, an empirical
+REVISA-trained FP classifier, and a targeted mapping/genotyping track for a curated
+virus-of-interest panel are documented directions, not implemented.
 
 ---
 

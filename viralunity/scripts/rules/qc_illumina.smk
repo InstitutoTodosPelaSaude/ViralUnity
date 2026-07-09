@@ -34,8 +34,6 @@ rule perform_qc:
         config['output'] + "logs/fastp/{sample}.log"
     benchmark:
         config['output'] + "logs/fastp/{sample}.benchmark.txt"
-    conda:
-        "../envs/qc.yaml"
     shell:
         """
         set -euo pipefail

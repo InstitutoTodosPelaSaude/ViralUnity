@@ -80,6 +80,14 @@ my_results*
 scratch/
 teste_*
 my_test_data/
+my_test_data*
+my_test_chikv/
+results/
+revisa5_run/
+revisa_*.csv
+samples_illumina.csv
+samples_nanopore.csv
+*.tar.gz
 tmp_*
 
 # Local test assets

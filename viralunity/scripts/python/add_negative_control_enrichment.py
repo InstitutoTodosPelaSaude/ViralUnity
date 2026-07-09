@@ -20,6 +20,13 @@ Pass/fail logic (``neg_pass``):
   * n_controls == 1  → neg_pass = (log2_ratio >= log2_ratio_threshold)
   * taxa absent from controls → control_mean = 0, computed against pseudocount
 
+Control statistics use *zero-fill*: a taxon not detected in a given control
+contributes a metric of 0 for that control, so control_mean / control_sd /
+control_median are computed over all ``n_negative_controls`` values (not only
+the controls where the taxon appears). This keeps the z-score denominator
+consistent with ``n_controls`` and prevents a contaminant seen in one of many
+controls from overstating the control baseline.
+
 The downstream lineage-aware Krona filter (filter_krona_by_pass_taxids.py)
 treats NA ``neg_pass`` as keep (conservative), so the existing contract is
 preserved.
@@ -100,8 +107,17 @@ def calculate_z_score(
 def _build_ctrl_stats(
     control_rows: pd.DataFrame,
     group_cols: List[str],
+    n_controls: int,
 ) -> Dict[tuple, dict]:
     """Return a dict mapping group-key tuples to per-taxon control statistics.
+
+    A taxon absent from a given negative control contributes a metric of 0 for
+    that control (zero-fill), so control_mean/SD/median are computed over all
+    ``n_controls`` values rather than only the controls where the taxon was
+    detected. This keeps the z-score denominator (the number of control values)
+    consistent with the ``n_controls`` the pass/fail decision branch keys off,
+    and stops a contaminant seen in a single control from setting control_mean
+    to that lone value.
 
     Uses an explicit Python loop to avoid pandas MultiIndex surprises when
     ``groupby().apply()`` returns a Series from the aggregation function.
@@ -115,22 +131,15 @@ def _build_ctrl_stats(
 
     stats: Dict[tuple, dict] = {}
     for key, vals in metric_lists.items():
-        if vals:
-            stats[key] = {
-                "control_mean": statistics.mean(vals),
-                "control_sd": statistics.stdev(vals) if len(vals) >= 2 else None,
-                "control_median": statistics.median(vals),
-                "control_max": max(vals),
-                "_ctrl_vals": vals,
-            }
-        else:
-            stats[key] = {
-                "control_mean": 0.0,
-                "control_sd": None,
-                "control_median": 0.0,
-                "control_max": 0.0,
-                "_ctrl_vals": [],
-            }
+        # Zero-fill the controls where this taxon was not detected.
+        padded = vals + [0.0] * max(0, n_controls - len(vals))
+        stats[key] = {
+            "control_mean": statistics.mean(padded),
+            "control_sd": statistics.stdev(padded) if len(padded) >= 2 else None,
+            "control_median": statistics.median(padded),
+            "control_max": max(padded),
+            "_ctrl_vals": padded,
+        }
     return stats
 
 
@@ -244,11 +253,13 @@ def apply_negative_control_enrichment(
 
     # ── Per-taxon control statistics ──────────────────────────────────────────
     control_rows = out[out["is_negative_control"]].copy()
-    ctrl_stats = _build_ctrl_stats(control_rows, group_cols)
+    ctrl_stats = _build_ctrl_stats(control_rows, group_cols, n_controls)
 
-    # Attach control statistics to each row via explicit lookup
-    out["control_mean"] = 0.0  # default for taxa absent from controls
-    out["control_sd"] = pd.NA
+    # Attach control statistics to each row via explicit lookup. A taxon absent
+    # from *all* controls has n_controls zeros: mean/median 0 and (for >= 2
+    # controls) SD 0, which routes it to the log2-ratio fallback below.
+    out["control_mean"] = 0.0
+    out["control_sd"] = 0.0 if n_controls >= 2 else pd.NA
     out["control_median"] = 0.0
     out["control_max"] = 0.0
     out["_ctrl_vals"] = pd.NA
@@ -282,9 +293,9 @@ def apply_negative_control_enrichment(
     non_ctrl_mask = ~out["is_negative_control"]
     for idx in out[non_ctrl_mask].index:
         ctrl_vals = out.at[idx, "_ctrl_vals"]
-        # Normalise: NaN (absent) → empty list
+        # Normalise: a taxon absent from all controls → n_controls zeros.
         if not isinstance(ctrl_vals, list):
-            ctrl_vals = []
+            ctrl_vals = [0.0] * n_controls
         z = calculate_z_score(out.at[idx, "_metric"], ctrl_vals, min_controls=2)
         if z is not None:
             out.at[idx, "z_score"] = z

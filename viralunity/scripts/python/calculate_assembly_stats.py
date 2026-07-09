@@ -16,24 +16,31 @@ the segment name is inserted as the second column.
 
 import gzip
 import subprocess
+import sys
 from typing import Optional, Sequence, Tuple
 
 import pandas as pd
 
 
 def get_number_of_reads(fastq: str) -> int:
-    """Count records in a FASTQ file by counting the "+" separator lines.
+    """Count records in a FASTQ file as ``number of lines // 4``.
 
     Works for both plain and gzip-compressed inputs. Avoids subprocess +
-    shell=True so the path is not interpreted by a shell.
+    shell=True so the path is not interpreted by a shell. Counting the "+"
+    separator line is unsafe: the separator may carry the read id ("+<id>"),
+    and a single-base read's quality line can itself be "+", so a line count
+    is used instead (matching ``add_RPM_to_summary.count_fastq_reads``).
     """
     opener = gzip.open if fastq.endswith(".gz") else open
-    count = 0
+    n_lines = 0
     with opener(fastq, "rt") as f:
-        for line in f:
-            if line.rstrip("\n") == "+":
-                count += 1
-    return count
+        for _ in f:
+            n_lines += 1
+    if n_lines % 4 != 0:
+        sys.stderr.write(
+            f"WARNING: FASTQ line count not divisible by 4: {fastq} (lines={n_lines}).\n"
+        )
+    return n_lines // 4
 
 
 def get_number_of_mapped_reads(bam: str) -> int:

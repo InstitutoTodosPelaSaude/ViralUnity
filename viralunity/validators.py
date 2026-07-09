@@ -3,7 +3,7 @@
 import csv
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, cast
 
 from viralunity.constants import DataType
 from viralunity.exceptions import (
@@ -103,6 +103,63 @@ def ensure_within_base(path: str, base: str) -> str:
     if os.path.commonpath([base_abs, target]) != base_abs:
         raise ValidationError(f"Path escapes base directory {base!r}: {path!r}")
     return target
+
+
+# Objective validity bounds for numeric parameters. These are correctness
+# constraints (a thread count must be >= 1; an allele frequency is a fraction in
+# [0, 1]), NOT scientific tuning choices — analysis knobs such as
+# z_score_threshold / log2_ratio_threshold are intentionally left unbounded.
+_NUMERIC_BOUNDS = {
+    "threads": (1, None),
+    "threads_total": (1, None),
+    "minimum_coverage": (1, None),
+    "minimum_depth": (1, None),
+    "minimum_length": (0, None),
+    "minimum_read_length": (0, None),
+    "af_threshold": (0.0, 1.0),
+    "af_isnv_threshold": (0.0, 1.0),
+    "bleed_fraction": (0.0, 1.0),
+}
+# Parameters that must be strictly positive.
+_POSITIVE_NUMERIC_KEYS = ("evalue", "enrichment_pseudocount")
+
+
+def validate_numeric_parameters(args: Dict[str, Any]) -> None:
+    """Range-check numeric parameters that have objective validity bounds.
+
+    Only keys present in ``args`` are checked, so the same function is safe for
+    both the consensus and metagenomics pipelines. Raises on the first
+    out-of-range value.
+
+    Raises:
+        ValidationError: If a present numeric parameter is non-numeric or falls
+            outside its valid range.
+    """
+
+    def _as_number(key: str) -> Optional[float]:
+        if key not in args or args[key] is None:
+            return None
+        val = args[key]
+        # bool is a subclass of int; reject it explicitly.
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            raise ValidationError(f"{key} must be a number, got {val!r}.")
+        return val
+
+    for key, (lo, hi) in _NUMERIC_BOUNDS.items():
+        val = _as_number(key)
+        if val is None:
+            continue
+        if lo is not None and val < lo:
+            raise ValidationError(f"{key} must be >= {lo}, got {val}.")
+        if hi is not None and val > hi:
+            raise ValidationError(f"{key} must be <= {hi}, got {val}.")
+
+    for key in _POSITIVE_NUMERIC_KEYS:
+        val = _as_number(key)
+        if val is None:
+            continue
+        if val <= 0:
+            raise ValidationError(f"{key} must be > 0, got {val}.")
 
 
 def validate_sample_sheet(sample_sheet_path: str, data_type: str) -> Dict[str, List[str]]:
@@ -274,7 +331,7 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
                 raise ReferenceNotFoundError(str(e)) from e
     else:
         try:
-            validate_file_exists(reference, "Reference sequence file")
+            validate_file_exists(cast(str, reference), "Reference sequence file")
         except ViralUnityFileNotFoundError as e:
             raise ReferenceNotFoundError(f"Reference sequence file does not exist: {e}") from e
 
@@ -374,7 +431,7 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
                 "taxids mapping file is required when running Diamond. "
                 "Set --taxids or do not use --run-diamond-reads / --run-diamond-contigs."
             )
-        if not os.path.isfile(taxids) and not (taxids.endswith(".gz") and os.path.isfile(taxids)):
+        if not os.path.isfile(taxids):
             raise DiamondDatabaseNotFoundError(f"Taxid mapping file not found: {taxids}")
 
     # Deacon index: when provided for host depletion, must exist
@@ -402,6 +459,43 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
             )
         if not os.path.isfile(viral_taxids):
             raise ViralUnityFileNotFoundError(f"Viral taxids file does not exist: {viral_taxids}")
+
+    # ICTV vertebrate-virus host filter: allowlist taxid file must exist when on.
+    if args.get("run_ictv_host_filter", False):
+        ictv_file = args.get("ictv_vertebrate_taxids_file", "NA")
+        if not ictv_file or str(ictv_file).strip() in ("", "NA"):
+            raise ValidationError(
+                "--run-ictv-host-filter requires --ictv-vertebrate-taxids-file "
+                "(the vertebrate-virus taxid allowlist built by "
+                "build_ictv_vertebrate_taxids.py)."
+            )
+        if not os.path.isfile(ictv_file):
+            raise ViralUnityFileNotFoundError(
+                f"ICTV vertebrate taxids file does not exist: {ictv_file}"
+            )
+
+    # NR validation: contig tracks only; needs denovo + diamond_contigs and an
+    # nr database that resolves as a BLAST+ db or a native .dmnd.
+    if args.get("run_nr_validation", False):
+        if not args.get("run_denovo_assembly", False) or not args.get("run_diamond_contigs", False):
+            raise ValidationError(
+                "--run-nr-validation requires --run-denovo-assembly and "
+                "--run-diamond-contigs (the viral-contig set is diamond-defined)."
+            )
+        nr_db = args.get("nr_diamond_database", "NA")
+        if not nr_db or str(nr_db).strip() in ("", "NA"):
+            raise ValidationError(
+                "--run-nr-validation requires --nr-diamond-database (a BLAST+ nr "
+                "database or a .dmnd)."
+            )
+        is_dmnd = str(nr_db).endswith(".dmnd") and os.path.isfile(nr_db)
+        is_blastdb = any(
+            os.path.isfile(f"{nr_db}{suffix}") for suffix in (".pal", ".pin", ".000.pin", ".dmnd")
+        )
+        if not (is_dmnd or is_blastdb):
+            raise ViralUnityFileNotFoundError(
+                f"nr database not found (expected a .dmnd or BLAST+ nr db): {nr_db}"
+            )
 
     validate_reference_assembly_requirements(args)
 
@@ -497,6 +591,8 @@ META_PATH_ARG_KEYS = (
     "deacon_index",
     "taxids",
     "diamond_database",
+    "ictv_vertebrate_taxids_file",
+    "nr_diamond_database",
     "viral_genomes",
     "viral_taxids",
     "adapters",
@@ -535,7 +631,7 @@ def _is_path_sentinel(value: Any) -> bool:
 def resolve_path_args(
     args: Dict[str, Any],
     keys,
-    base_dir: str = None,
+    base_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Rewrite path-typed argument values to absolute paths in place.
 
@@ -606,7 +702,7 @@ def get_samples_from_args(args: Dict[str, Any]) -> Dict[str, List[str]]:
         # `samples`, which would report a misleading "nothing provided" error
         # when the real problem is a mistyped or missing sample-sheet path.
         validate_file_exists(sample_sheet, "Sample sheet file")
-        return validate_sample_sheet(sample_sheet, data_type)
+        return validate_sample_sheet(sample_sheet, cast(str, data_type))
     if samples:
         return samples
     raise SampleConfigurationNotFoundError(

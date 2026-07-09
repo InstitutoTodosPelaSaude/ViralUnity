@@ -1,0 +1,64 @@
+# Config for Illumina Metagenomics Dry-run — aggregated contig search variant.
+# Exercises combine_contig_search=true with run_diamond_contigs enabled so the
+# combine -> single search -> split DAG path resolves.
+samples:
+  META1:
+    - data/reads/META1_R1.fastq.gz
+    - data/reads/META1_R2.fastq.gz
+  META2:
+    - data/reads/META2_R1.fastq.gz
+    - data/reads/META2_R2.fastq.gz
+
+data: illumina
+output: test/dryrun_output/metagenomics_illumina_combine/
+threads: 2
+
+# Databases and paths
+kraken2_database: databases/kraken2/
+krona_database: databases/krona/taxonomy/
+taxdump: databases/taxdump/
+diamond_database: databases/diamond/nr.dmnd
+
+# Execution flags
+remove_human_reads: false
+remove_unclassified_reads: false
+host_reference: NA
+deacon_index: NA
+
+run_denovo_assembly: true
+run_kraken2_reads: true
+run_kraken2_contigs: true
+run_diamond_reads: false
+run_diamond_contigs: true
+
+# Aggregated contig search under test
+combine_contig_search: true
+
+run_reference_assembly: false
+
+# Advanced parameters
+taxids: databases/diamond/protein2taxid.tsv
+diamond_sensitivity: sensitive
+evalue: 0.001
+bleed_fraction: 0.005
+negative_controls: []
+compute_rpkm: false
+enrichment_pseudocount: 1.0
+z_score_threshold: 3.0
+log2_ratio_threshold: 1.0
+minimum_hit_group: 4
+
+# QC parameters
+adapters: NA
+minimum_length: 50
+trim_head: 0
+trim_tail: 0
+cut_front_mean_quality: 20
+cut_tail_mean_quality: 20
+cut_right_window_size: 4
+cut_right_mean_quality: 20
+
+# Alignment parameters
+af_threshold: 0.5
+af_isnv_threshold: 0.05
+run_isnv: false

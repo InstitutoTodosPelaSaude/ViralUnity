@@ -134,44 +134,72 @@ if run_denovo and run_k2_contigs:
             script:
                 "../python/add_rpkm_to_summary.py"
 
+    if run_ictv_host_filter:
+        rule apply_ictv_filter_kraken2_contigs:
+            input:
+                summary = chain_input("kraken2_contigs", "ictv")
+            output:
+                summary = chain_output("kraken2_contigs", "ictv"),
+                dropped = dropped_sidecar(chain_output("kraken2_contigs", "ictv"))
+            params:
+                allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/apply_ictv_host_filter.py"
+
+    if run_nr_validation:
+        rule harmonize_nr_kraken2_contigs:
+            input:
+                summary = chain_input("kraken2_contigs", "nr"),
+                nr = config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.tsv",
+                krona = expand(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt", sample=list(config["samples"]))
+            output:
+                summary = chain_output("kraken2_contigs", "nr"),
+                dropped = dropped_sidecar(chain_output("kraken2_contigs", "nr")),
+                flags = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_nr_flags.tsv"
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/harmonize_nr_summary.py"
+
     rule apply_bleed_filter_kraken2_contigs:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.tsv"
+            chain_input("kraken2_contigs", "bleed")
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv"
+            chain_output("kraken2_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
-            rpm_floor = 1.0,
+            rpm_floor = config.get("bleed_rpm_floor", 1.0),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule add_negative_control_enrichment_kraken2_contigs:
-        input:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv"
-        output:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.neg.tsv"
-        params:
-            negatives = config.get("negative_controls", []),
-            pseudocount = config.get("enrichment_pseudocount", 1.0),
-            z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
-        conda:
-            "../envs/utils.yaml"
-        script:
-            "../python/add_negative_control_enrichment.py"
+    if has_negative_controls:
+        rule add_negative_control_enrichment_kraken2_contigs:
+            input:
+                chain_input("kraken2_contigs", "neg")
+            output:
+                chain_output("kraken2_contigs", "neg")
+            params:
+                negatives = config.get("negative_controls", []),
+                pseudocount = config.get("enrichment_pseudocount", 1.0),
+                z_score_threshold = config.get("z_score_threshold", 3.0),
+                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_kraken2_contigs:
         input:
-            summary = (
-                config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.neg.tsv"
-                if has_negative_controls else
-                config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv"
-            ),
+            summary = final_summary("kraken2_contigs"),
             krona_input = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.filtered.krona.txt"

@@ -1,27 +1,20 @@
 import pandas as pd
 import os
 
-# Reference selection reads the post-filter summary tables so it is not
-# triggered by taxa the cross-sample filters flagged as contamination: the
-# negative-control-filtered table when negative controls are declared, else the
-# bleed-filtered table. Mirrors the make_filtered_krona_input_* rules.
-def _ref_summary_suffix():
-    return "_RPM.bleed.neg" if config.get("negative_controls") else "_RPM.bleed"
-
+# Reference selection reads the fully-filtered summary table for each track (the
+# last file in the cumulative chain, via final_summary) so it is not triggered by
+# taxa the filters flagged as contamination or non-viral. Mirrors the
+# make_filtered_krona_input_* rules.
 def get_checkpoint_inputs(wildcards):
-    suffix = _ref_summary_suffix()
-    def _summary(classifier):
-        return (config["output"] + "metagenomics/taxonomic_assignments/"
-                + classifier + "/" + classifier + "_taxa_summary" + suffix + ".tsv")
     targets = []
     if config.get("run_kraken2_reads", True):
-        targets.append(_summary("kraken2_reads"))
+        targets.append(final_summary("kraken2_reads"))
     if config.get("run_denovo_assembly", False) and config.get("run_kraken2_contigs", True):
-        targets.append(_summary("kraken2_contigs"))
+        targets.append(final_summary("kraken2_contigs"))
     if config.get("run_diamond_reads", False):
-        targets.append(_summary("diamond_reads"))
+        targets.append(final_summary("diamond_reads"))
     if config.get("run_denovo_assembly", False) and config.get("run_diamond_contigs", False):
-        targets.append(_summary("diamond_contigs"))
+        targets.append(final_summary("diamond_contigs"))
     return targets
 
 checkpoint select_references_meta:
@@ -33,7 +26,6 @@ checkpoint select_references_meta:
         "../envs/genome_selection.yaml"
     params:
         summary_dir = config["output"] + "metagenomics/taxonomic_assignments/",
-        summary_suffix = _ref_summary_suffix(),
         method = config.get("ref_assembly_method", "kraken2"),
         source = config.get("ref_assembly_source", "reads"),
         reads_count = config.get("ref_assembly_reads_count", 100),
@@ -142,6 +134,8 @@ rule collect_reference_assemblies:
         get_all_reference_assemblies
     output:
         config["output"] + "reference_assembly_done.txt"
+    conda:
+        "../envs/utils.yaml"
     log:
         config["output"] + "logs/collect_reference_assemblies.log"
     benchmark:

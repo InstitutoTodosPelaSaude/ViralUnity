@@ -148,6 +148,68 @@ _COMMON_META_OPTIONS = [
         help="Max-RPM bleed filter fraction.",
     ),
     click.option(
+        "--run-ictv-host-filter/--no-ictv-host-filter",
+        default=False,
+        show_default=True,
+        help=(
+            "Drop non-vertebrate-infecting viruses (bacteriophages, plant/fungal/"
+            "algal/invertebrate-only viruses) using the ICTV-derived allowlist. "
+            "Applied before the bleed/negative-control filters."
+        ),
+    ),
+    click.option(
+        "--ictv-vertebrate-taxids-file",
+        default="NA",
+        show_default=True,
+        help=(
+            "Path to the vertebrate-virus taxid allowlist (built by "
+            "build_ictv_vertebrate_taxids.py). Required with --run-ictv-host-filter."
+        ),
+    ),
+    click.option(
+        "--run-nr-validation/--no-nr-validation",
+        default=False,
+        show_default=True,
+        help=(
+            "Re-search de novo viral contigs against NCBI nr and keep only contigs "
+            "an LCA consensus confirms as viral. Contig tracks only; requires "
+            "--run-denovo-assembly and --run-diamond-contigs."
+        ),
+    ),
+    click.option(
+        "--nr-diamond-database",
+        default="NA",
+        show_default=True,
+        help="nr database for NR validation: a BLAST+ nr db (via diamond prepdb) or a .dmnd.",
+    ),
+    click.option(
+        "--nr-evalue",
+        default=1e-10,
+        show_default=True,
+        type=float,
+        help="E-value threshold for the NR DIAMOND search.",
+    ),
+    click.option(
+        "--nr-max-target-seqs",
+        default=10,
+        show_default=True,
+        type=int,
+        help="Top hits kept per contig for the NR LCA consensus (>=10 recommended).",
+    ),
+    click.option(
+        "--nr-sensitivity",
+        default="fast",
+        show_default=True,
+        help="DIAMOND sensitivity for the NR search.",
+    ),
+    click.option(
+        "--nr-consensus-threshold",
+        default=0.5,
+        show_default=True,
+        type=float,
+        help="Fraction of a contig's hits that must agree at a rank for the LCA consensus.",
+    ),
+    click.option(
         "--negative-controls",
         default="",
         show_default=True,

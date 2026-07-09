@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Filter a per-sample krona_input.tsv (query<TAB>leaf_taxid) using the per-sample
-'Pass' set extracted from a `*_taxa_summary_RPM.bleed[.neg].tsv` table.
+'Pass' set extracted from the fully-filtered taxa-summary table (the last file in
+the cumulative chain, e.g. `*_taxa_summary_RPM.bleed[.neg][.ictv].tsv`).
 
 Matching is *lineage-aware*: a krona_input row is kept iff any ancestor of its
 leaf taxid whose rank is family/genus/species appears in the Pass set built for
@@ -54,7 +55,7 @@ def build_pass_taxids(
     mode: str,
 ) -> Set[str]:
     """
-    Extract the per-sample pass-set of taxids from a `_RPM.bleed[.neg].tsv` file.
+    Extract the per-sample pass-set of taxids from the fully-filtered summary file.
 
     - Always requires bleed_pass == True.
     - If a `neg_pass` column is present, only drop explicit False; NA (taxon
@@ -176,10 +177,10 @@ def run_cli() -> None:
     ap = argparse.ArgumentParser(
         description=(
             "Filter a krona_input.tsv by the per-sample Pass set extracted from "
-            "a _RPM.bleed[.neg].tsv summary, using lineage-aware matching."
+            "the fully-filtered taxa-summary table, using lineage-aware matching."
         )
     )
-    ap.add_argument("--summary", required=True, help="Path to *_RPM.bleed[.neg].tsv.")
+    ap.add_argument("--summary", required=True, help="Path to the fully-filtered summary TSV.")
     ap.add_argument("--krona-input", required=True, help="Per-sample krona_input.tsv.")
     ap.add_argument("--out", required=True, help="Output filtered krona_input.tsv.")
     ap.add_argument(

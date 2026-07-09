@@ -1,42 +1,106 @@
 if run_denovo and run_diamond_contigs:
-    rule run_diamond_contigs:
-        input:
-            fasta = get_final_contigs,
-            db = diamond_db_file
-        output:
-            tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
-        threads: config.get("run_diamond_contigs_cpus", 2)
-        resources:
-            mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
-        log:
-            config["output"] + "logs/diamond_contigs/{sample}.log"
-        benchmark:
-            config["output"] + "logs/diamond_contigs/{sample}.benchmark.txt"
-        params:
-            sensitivity = config.get("diamond_sensitivity", "sensitive"),
-            evalue = config.get("evalue", 0.001),
-            max_target_seqs = config.get("diamond_max_target_seqs", 1)
-        conda:
-            "../envs/taxonomy.yaml"
-        shell:
-            r"""
-            set -euo pipefail
-            if [ ! -s {input.fasta} ]; then
-                echo "WARNING: {input.fasta} empty. Creating dummy DIAMOND contigs output." >> {log}
-                touch {output.tsv}
-            else
-                diamond blastx --db {input.db} --query {input.fasta} \
-                    --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
-                    --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
-                    --{params.sensitivity} --threads {threads} 2> {log}
-            fi
-            """
+    # Contig DIAMOND search: either one search per sample (default) or a single
+    # aggregated search over all samples' contigs (sample-prefixed headers) that
+    # is split back per sample. Toggled by config["combine_contig_search"].
+    if combine_contig_search:
+        rule combine_diamond_contigs_query:
+            input:
+                fastas = all_classification_contigs()
+            output:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.contigs.fasta"
+            params:
+                samples = list(config["samples"])
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/combine_contigs.py"
+
+        rule run_diamond_contigs_combined:
+            input:
+                fasta = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.contigs.fasta",
+                db = diamond_db_file
+            output:
+                tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.diamond.tsv"
+            threads: config.get("run_diamond_contigs_cpus", 2)
+            resources:
+                mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
+            log:
+                config["output"] + "logs/diamond_contigs/_combined.log"
+            benchmark:
+                config["output"] + "logs/diamond_contigs/_combined.benchmark.txt"
+            params:
+                sensitivity = config.get("diamond_sensitivity", "sensitive"),
+                evalue = config.get("evalue", 0.001),
+                max_target_seqs = config.get("diamond_max_target_seqs", 1)
+            conda:
+                "../envs/taxonomy.yaml"
+            shell:
+                r"""
+                set -euo pipefail
+                if [ ! -s {input.fasta} ]; then
+                    echo "WARNING: {input.fasta} empty. Creating dummy combined DIAMOND output." >> {log}
+                    touch {output.tsv}
+                else
+                    diamond blastx --db {input.db} --query {input.fasta} \
+                        --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
+                        --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
+                        --{params.sensitivity} --threads {threads} 2> {log}
+                fi
+                """
+
+        rule split_diamond_contigs:
+            input:
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/_combined.diamond.tsv"
+            output:
+                expand(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv", sample=list(config["samples"]))
+            params:
+                samples = list(config["samples"])
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/split_search_output.py"
+    else:
+        rule run_diamond_contigs:
+            input:
+                fasta = get_final_contigs,
+                db = diamond_db_file
+            output:
+                tsv = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
+            threads: config.get("run_diamond_contigs_cpus", 2)
+            resources:
+                mem_mb = config.get("run_diamond_contigs_ram", 4) * 1024
+            log:
+                config["output"] + "logs/diamond_contigs/{sample}.log"
+            benchmark:
+                config["output"] + "logs/diamond_contigs/{sample}.benchmark.txt"
+            params:
+                sensitivity = config.get("diamond_sensitivity", "sensitive"),
+                evalue = config.get("evalue", 0.001),
+                max_target_seqs = config.get("diamond_max_target_seqs", 1)
+            conda:
+                "../envs/taxonomy.yaml"
+            shell:
+                r"""
+                set -euo pipefail
+                if [ ! -s {input.fasta} ]; then
+                    echo "WARNING: {input.fasta} empty. Creating dummy DIAMOND contigs output." >> {log}
+                    touch {output.tsv}
+                else
+                    diamond blastx --db {input.db} --query {input.fasta} \
+                        --out {output.tsv} --outfmt 6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qcovhsp qlen slen qseq qseq_translated full_qseq sseq full_sseq \
+                        --max-target-seqs {params.max_target_seqs} --evalue {params.evalue} \
+                        --{params.sensitivity} --threads {threads} 2> {log}
+                fi
+                """
 
     rule extract_viral_contigs:
         input:
             contigs = get_final_contigs,
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
         output:
+            # NOT temp(): remap_reads_to_viral_contigs reuses this id list
+            # downstream (see rules.extract_viral_contigs.output.ids), so unlike
+            # the Illumina track it must persist for the rest of the DAG.
             ids = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral.ids.txt",
             fasta = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral_contigs.fa"
         threads: 1
@@ -159,7 +223,7 @@ if run_denovo and run_diamond_contigs:
         output:
             filtered = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tsv"
         params:
-            min_mapped = 1
+            min_mapped = config.get("diamond_min_mapped", 1)
         log:
             config["output"] + "logs/diamond_filter/{sample}.log"
         benchmark:
@@ -303,44 +367,72 @@ if run_denovo and run_diamond_contigs:
             script:
                 "../python/add_rpkm_to_summary.py"
 
+    if run_ictv_host_filter:
+        rule apply_ictv_filter_diamond_contigs:
+            input:
+                summary = chain_input("diamond_contigs", "ictv")
+            output:
+                summary = chain_output("diamond_contigs", "ictv"),
+                dropped = dropped_sidecar(chain_output("diamond_contigs", "ictv"))
+            params:
+                allowlist = config.get("ictv_vertebrate_taxids_file", "NA"),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/apply_ictv_host_filter.py"
+
+    if run_nr_validation:
+        rule harmonize_nr_diamond_contigs:
+            input:
+                summary = chain_input("diamond_contigs", "nr"),
+                nr = config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.tsv",
+                krona = expand(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv", sample=list(config["samples"]))
+            output:
+                summary = chain_output("diamond_contigs", "nr"),
+                dropped = dropped_sidecar(chain_output("diamond_contigs", "nr")),
+                flags = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_nr_flags.tsv"
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/harmonize_nr_summary.py"
+
     rule apply_bleed_filter_diamond_contigs:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPKM.tsv"
-            if compute_rpkm else
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv"
+            chain_input("diamond_contigs", "bleed")
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
+            chain_output("diamond_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
-            rpm_floor = 1.0,
+            rpm_floor = config.get("bleed_rpm_floor", 1.0),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"
         script:
             "../python/apply_max_rpm_bleed_filter.py"
 
-    rule add_negative_control_enrichment_diamond_contigs:
-        input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
-        output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv"
-        params:
-            negatives = config.get("negative_controls", []),
-            pseudocount = config.get("enrichment_pseudocount", 1.0),
-            z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
-        conda:
-            "../envs/utils.yaml"
-        script:
-            "../python/add_negative_control_enrichment.py"
+    if has_negative_controls:
+        rule add_negative_control_enrichment_diamond_contigs:
+            input:
+                chain_input("diamond_contigs", "neg")
+            output:
+                chain_output("diamond_contigs", "neg")
+            params:
+                negatives = config.get("negative_controls", []),
+                pseudocount = config.get("enrichment_pseudocount", 1.0),
+                z_score_threshold = config.get("z_score_threshold", 3.0),
+                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_negative_control_enrichment.py"
 
     rule make_filtered_krona_input_diamond_contigs:
         input:
-            summary = (
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv"
-                if has_negative_controls else
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv"
-            ),
+            summary = final_summary("diamond_contigs"),
             krona_input = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv"
         output:
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.filtered.krona_input.tsv"

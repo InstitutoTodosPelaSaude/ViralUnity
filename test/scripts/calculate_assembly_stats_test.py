@@ -15,6 +15,13 @@ from viralunity.scripts.python.calculate_assembly_stats import (
 # Two records (each with a "+" separator line on line 3 of 4).
 _FASTQ_TEXT = "@r1\nACGT\n+\n!!!!\n@r2\nACGT\n+\n!!!!\n"
 
+# Two records whose separator carries the read id ("+<id>"), which is spec-legal.
+_FASTQ_PLUS_ID = "@r1\nACGT\n+r1\n!!!!\n@r2\nACGT\n+r2\n!!!!\n"
+
+# One record whose single-base quality char is "+" (Phred 10), so BOTH the
+# separator line and the quality line equal "+".
+_FASTQ_PLUS_QUAL = "@r1\nA\n+\n+\n"
+
 
 class TestGetNumberOfReads(unittest.TestCase):
     @patch(
@@ -31,6 +38,16 @@ class TestGetNumberOfReads(unittest.TestCase):
         result = get_number_of_reads("sample.fastq")
         mock_open.assert_called_once_with("sample.fastq", "rt")
         self.assertEqual(result, 2)
+
+    @patch("builtins.open", return_value=io.StringIO(_FASTQ_PLUS_ID))
+    def test_counts_separator_lines_carrying_read_id(self, mock_open):
+        # "+r1"/"+r2" separators must not zero the count.
+        self.assertEqual(get_number_of_reads("sample.fastq"), 2)
+
+    @patch("builtins.open", return_value=io.StringIO(_FASTQ_PLUS_QUAL))
+    def test_does_not_double_count_plus_quality_char(self, mock_open):
+        # A "+" quality line must not be miscounted as a second record.
+        self.assertEqual(get_number_of_reads("sample.fastq"), 1)
 
 
 class TestGetNumberOfMappedReads(unittest.TestCase):

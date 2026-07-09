@@ -53,8 +53,18 @@ class ConfigKeys:
     MINIMUM_HIT_GROUP = "minimum_hit_group"
     DIAMOND_MAX_TARGET_SEQS = "diamond_max_target_seqs"
     KRAKEN2_EXTRA_FLAGS = "kraken2_extra_flags"
+    COMBINE_CONTIG_SEARCH = "combine_contig_search"
     MINIMAP2_CONSENSUS_ALIGN_FLAGS = "minimap2_consensus_align_flags"
     BLEED_FRACTION = "bleed_fraction"
+    # Taxonomic false-positive filters (run before bleed/negative-control)
+    RUN_ICTV_HOST_FILTER = "run_ictv_host_filter"
+    ICTV_VERTEBRATE_TAXIDS_FILE = "ictv_vertebrate_taxids_file"
+    RUN_NR_VALIDATION = "run_nr_validation"
+    NR_DIAMOND_DATABASE = "nr_diamond_database"
+    NR_EVALUE = "nr_evalue"
+    NR_MAX_TARGET_SEQS = "nr_max_target_seqs"
+    NR_SENSITIVITY = "nr_sensitivity"
+    NR_CONSENSUS_THRESHOLD = "nr_consensus_threshold"
     NEGATIVE_CONTROLS = "negative_controls"
     NEGATIVE_P_THRESHOLD = "negative_p_threshold"  # kept for backwards-compat config reading
     COMPUTE_RPKM = "compute_rpkm"
@@ -137,6 +147,7 @@ class ResourceDefaults:
         "index_viral_contigs",
         "remap_reads_to_viral_contigs",
         "bam_sort_index_idxstats_from_medaka",
+        "run_diamond_nr",
     ]
 
     # Metagenomics pipeline — Illumina-specific computational rules

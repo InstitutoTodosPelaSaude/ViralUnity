@@ -18,9 +18,11 @@ from viralunity.validators import (
     META_PATH_ARG_KEYS,
     get_samples_from_args,
     resolve_path_args,
+    sanitize_identifier,
     validate_illumina_requirements,
     validate_metagenomics_requirements,
     validate_nanopore_requirements,
+    validate_numeric_parameters,
 )
 
 # Set up logging
@@ -40,6 +42,14 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
         ValidationError: If validation fails
     """
     logger.info("Validating pipeline arguments")
+
+    # Reject unsafe run names before they become output-path / DAG components
+    # (run_name is spliced into config["output"] and every rule's output path).
+    if args.get("run_name"):
+        sanitize_identifier(args["run_name"], "run_name")
+
+    # Range-check numeric parameters (threads, thresholds, e-value, ...).
+    validate_numeric_parameters(args)
 
     # Get and validate samples
     samples = get_samples_from_args(args)
@@ -126,6 +136,15 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         minimum_hit_group=args.get("minimum_hit_group", 4),
         diamond_max_target_seqs=args.get("diamond_max_target_seqs", 1),
         kraken2_extra_flags=args.get("kraken2_extra_flags", "--report-minimizer-data"),
+        combine_contig_search=args.get("combine_contig_search", False),
+        run_ictv_host_filter=args.get("run_ictv_host_filter", False),
+        ictv_vertebrate_taxids_file=args.get("ictv_vertebrate_taxids_file", "NA"),
+        run_nr_validation=args.get("run_nr_validation", False),
+        nr_diamond_database=args.get("nr_diamond_database", "NA"),
+        nr_evalue=args.get("nr_evalue", 1e-10),
+        nr_max_target_seqs=args.get("nr_max_target_seqs", 10),
+        nr_sensitivity=args.get("nr_sensitivity", "fast"),
+        nr_consensus_threshold=args.get("nr_consensus_threshold", 0.5),
         compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
         enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
         z_score_threshold=args.get("z_score_threshold", 3.0),

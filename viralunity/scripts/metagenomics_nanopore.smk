@@ -1,3 +1,17 @@
+wildcard_constraints:
+    sample=r"[^/]+",
+    segment=r"[^/]+",
+    ref_key=r"[^/]+",
+
+
+onsuccess:
+    print("ViralUnity: workflow completed successfully.")
+
+
+onerror:
+    print(f"ViralUnity: workflow FAILED - see the Snakemake log: {log}")
+
+
 def get_exclude_taxids():
     """TaxIDs to exclude from classification outputs (e.g. human 9606, unclassified 0)."""
     exclude = []
@@ -31,6 +45,9 @@ run_diamond_reads = config.get("run_diamond_reads", False)
 run_diamond_contigs = config.get("run_diamond_contigs", False)
 has_negative_controls = bool(config.get("negative_controls", []))
 compute_rpkm = bool(config.get("compute_rpkm", False))
+combine_contig_search = bool(config.get("combine_contig_search", False))
+run_ictv_host_filter = bool(config.get("run_ictv_host_filter", False))
+run_nr_validation = bool(config.get("run_nr_validation", False))
 
 diamond_db_input_path = config.get("diamond_database", "NA")
 if diamond_db_input_path != "NA":
@@ -40,15 +57,24 @@ else:
     diamond_db_is_ready = False
     diamond_db_file = "NA"
 
+def _classification_contigs_name():
+    if run_polish_medaka:
+        return "polished.fasta"
+    if run_polish_racon:
+        return "racon.fasta"
+    return "final.contigs.fa"
+
 def get_final_contigs(wildcards):
     """Path to contigs used for classification (polished, racon, or raw MEGAHIT)."""
     base = config["output"] + "denovo_assembly/megahit/{sample}/"
-    s = wildcards.sample
-    if run_polish_medaka:
-        return base.format(sample=s) + "polished.fasta"
-    if run_polish_racon:
-        return base.format(sample=s) + "racon.fasta"
-    return base.format(sample=s) + "final.contigs.fa"
+    return base.format(sample=wildcards.sample) + _classification_contigs_name()
+
+def all_classification_contigs():
+    """Per-sample classification-contig paths, in config['samples'] order, for the
+    aggregated combined search."""
+    base = config["output"] + "denovo_assembly/megahit/{sample}/"
+    name = _classification_contigs_name()
+    return [base.format(sample=s) + name for s in config["samples"]]
 
 def get_medaka_assembly_input(wildcards):
     """Assembly input for Medaka (racon output or MEGAHIT)."""
@@ -58,46 +84,83 @@ def get_medaka_assembly_input(wildcards):
         return base.format(sample=s) + "racon.fasta"
     return base.format(sample=s) + "final.contigs.fa"
 
+def _summary_stem(track):
+    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + track + "_taxa_summary"
+
+def _summary_base(track):
+    return _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
+
+def _chain_steps(track):
+    """Ordered post-metric processing steps enabled for this track.
+
+    The taxa summary flows through one cumulative chain:
+    base -> _RPM/_RPKM -> [.nr] -> .bleed -> [.neg] -> [.ictv]. Each enabled step
+    appends exactly one filename suffix. NR validation applies to contig tracks
+    only; bleed is always on; neg runs when negative controls are present; the
+    ICTV host filter applies to all tracks and runs last.
+    """
+    steps = []
+    if run_nr_validation and track.endswith("contigs"):
+        steps.append("nr")
+    steps.append("bleed")
+    if has_negative_controls:
+        steps.append("neg")
+    if run_ictv_host_filter:
+        steps.append("ictv")
+    return steps
+
+def _chain_path(track, upto):
+    """Active-metric base + '.'-joined step suffixes up to index ``upto`` (-1 = base only)."""
+    steps = _chain_steps(track)
+    return _summary_base(track) + "".join("." + s for s in steps[: upto + 1]) + ".tsv"
+
+def chain_input(track, step):
+    """Summary a chain step consumes (the prior step's output, or the metric base)."""
+    return _chain_path(track, _chain_steps(track).index(step) - 1)
+
+def chain_output(track, step):
+    """Summary a chain step produces (base + suffixes up to and including it)."""
+    return _chain_path(track, _chain_steps(track).index(step))
+
+def dropped_sidecar(path):
+    """Audit path for rows a row-removing step dropped: '<x>.tsv' -> '<x>.dropped.tsv'."""
+    return path[:-4] + ".dropped.tsv" if path.endswith(".tsv") else path + ".dropped.tsv"
+
+def final_summary(track):
+    """The last file in the chain for a track (the fully-filtered summary)."""
+    return _chain_path(track, len(_chain_steps(track)) - 1)
+
 def _all_inputs():
     targets = [
         config["output"] + "benchmark.tsv"
     ]
     if run_k2_reads:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("kraken2_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_k2_contigs:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("kraken2_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_diamond_reads:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("diamond_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/reports/{sample}.diamond.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_diamond_contigs:
-        if has_negative_controls:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv")
-        else:
-            targets.append(config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv")
+        targets.append(final_summary("diamond_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/reports/{sample}.diamond.supported.filtered.krona.html",
             sample=config["samples"],
         ))
+
+    if run_denovo and run_diamond_contigs and run_nr_validation:
+        targets.append(config["output"] + "metagenomics/nr_validation/nr_query.nr.top_species_hit_lca.viruses_only.tsv")
 
     if config.get("run_reference_assembly", False):
         targets.append(config["output"] + "reference_assembly_done.txt")
@@ -132,6 +195,7 @@ include: "rules/metagenomics_diamond_reads_nanopore.smk"
 include: "rules/metagenomics_assembly_nanopore.smk"
 include: "rules/metagenomics_kraken2_contigs_nanopore.smk"
 include: "rules/metagenomics_diamond_contigs_nanopore.smk"
+include: "rules/metagenomics_nr_validation_nanopore.smk"
 if config.get("run_reference_assembly", False):
     include: "rules/metagenomics_reference_assembly.smk"
 
@@ -153,10 +217,10 @@ rule organize_files:
         diamond_contigs_tsv = expand(rules.run_diamond_contigs.output.tsv, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
         diamond_contigs_krona = expand(rules.create_krona_report_diamond_contigs.output, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
         diamond_contigs_filtered_krona = expand(rules.create_filtered_krona_report_diamond_contigs.output, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
-        summary_k2_reads = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv" if run_k2_reads else [],
-        summary_diamond_reads = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv" if run_diamond_reads else [],
-        summary_k2_contigs = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/kraken2_contigs_taxa_summary_RPM.bleed.tsv" if run_denovo and run_k2_contigs else [],
-        summary_diamond_contigs = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.bleed.tsv" if run_denovo and run_diamond_contigs else [],
+        summary_k2_reads = final_summary("kraken2_reads") if run_k2_reads else [],
+        summary_diamond_reads = final_summary("diamond_reads") if run_diamond_reads else [],
+        summary_k2_contigs = final_summary("kraken2_contigs") if run_denovo and run_k2_contigs else [],
+        summary_diamond_contigs = final_summary("diamond_contigs") if run_denovo and run_diamond_contigs else [],
     output:
         benchmark = config["output"] + "benchmark.tsv"
     params:

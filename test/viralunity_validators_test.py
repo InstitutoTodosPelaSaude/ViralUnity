@@ -15,8 +15,46 @@ from viralunity.validators import (
     ensure_within_base,
     sanitize_identifier,
     validate_metagenomics_requirements,
+    validate_numeric_parameters,
     validate_sample_sheet,
 )
+
+
+class TestValidateNumericParameters(unittest.TestCase):
+    def test_valid_values_pass(self):
+        args = {
+            "threads": 4,
+            "threads_total": 8,
+            "af_threshold": 0.5,
+            "evalue": 0.001,
+            "bleed_fraction": 0.005,
+            "minimum_coverage": 20,
+        }
+        # Should not raise.
+        self.assertIsNone(validate_numeric_parameters(args))
+
+    def test_absent_keys_pass(self):
+        self.assertIsNone(validate_numeric_parameters({"data_type": "illumina"}))
+
+    def test_zero_threads_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"threads": 0})
+
+    def test_negative_threads_total_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"threads_total": -1})
+
+    def test_af_threshold_above_one_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"af_threshold": 5.0})
+
+    def test_evalue_zero_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"evalue": 0.0})
+
+    def test_bleed_fraction_above_one_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"bleed_fraction": 1.5})
 
 
 def _touch(path: str) -> str:
@@ -77,6 +115,51 @@ class Test_RPKM_Validation(unittest.TestCase):
 
     def test_viral_genomes_with_taxids_is_ok(self):
         args = {**self.base_args, "viral_genomes": self.genomes, "viral_taxids": self.g2t}
+        validate_metagenomics_requirements(args)
+
+
+class Test_ICTV_HostFilter_Validation(unittest.TestCase):
+    """run_ictv_host_filter requires an existing vertebrate-virus taxids file."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.base_args = {
+            "run_denovo_assembly": False,
+            "run_kraken2_reads": False,
+            "run_kraken2_contigs": False,
+            "run_diamond_reads": False,
+            "run_diamond_contigs": False,
+            "run_reference_assembly": False,
+        }
+        self.allowlist = _touch(os.path.join(self.tmp, "vertebrate_virus_taxids.txt"))
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_filter_off_needs_no_file(self):
+        validate_metagenomics_requirements({**self.base_args, "run_ictv_host_filter": False})
+
+    def test_filter_on_without_file_raises(self):
+        args = {**self.base_args, "run_ictv_host_filter": True, "ictv_vertebrate_taxids_file": "NA"}
+        with self.assertRaises(ValidationError):
+            validate_metagenomics_requirements(args)
+
+    def test_filter_on_with_missing_file_raises(self):
+        args = {
+            **self.base_args,
+            "run_ictv_host_filter": True,
+            "ictv_vertebrate_taxids_file": os.path.join(self.tmp, "nope.txt"),
+        }
+        with self.assertRaises(ViralUnityFileNotFoundError):
+            validate_metagenomics_requirements(args)
+
+    def test_filter_on_with_existing_file_is_ok(self):
+        args = {
+            **self.base_args,
+            "run_ictv_host_filter": True,
+            "ictv_vertebrate_taxids_file": self.allowlist,
+        }
         validate_metagenomics_requirements(args)
 
 
