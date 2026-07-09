@@ -98,6 +98,9 @@ if run_denovo and run_diamond_contigs:
             contigs = config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa",
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv"
         output:
+            # temp(): the Illumina track does not reuse the id list after
+            # extraction (unlike Nanopore, where remap_reads_to_viral_contigs
+            # consumes it, so there it is kept persistent).
             ids = temp(config["output"] + "denovo_assembly/viral_contigs/{sample}.viral.ids.txt"),
             fasta = config["output"] + "denovo_assembly/viral_contigs/{sample}.viral_contigs.fa"
         threads: 1
