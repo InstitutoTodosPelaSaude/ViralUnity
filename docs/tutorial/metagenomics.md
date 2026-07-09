@@ -18,17 +18,21 @@ The full pipeline strings together up to five conceptual phases, most of them op
 raw FASTQ
   ──► [fastp QC, Illumina only]
   ──► [host depletion: Deacon  OR  minimap2 vs --host-reference]
-  ├─► Kraken2 on reads   ──► RPM ──► bleed filter ──► [neg-control filter] ──► Krona (raw + filtered)
-  ├─► [DIAMOND blastx on reads] ──► same filter chain ──► Krona (raw + filtered)
+  │
+  │   summary filter chain, applied to every classifier track:
+  │     RPM/RPKM ──► [.nr, contig tracks] ──► bleed ──► [.neg] ──► [.ictv]
+  │
+  ├─► Kraken2 on reads          ──► filter chain ──► Krona (raw + filtered)
+  ├─► [DIAMOND blastx on reads] ──► filter chain ──► Krona (raw + filtered)
   ├─► [MEGAHIT de novo assembly]
   │     ├─► [racon / medaka polish — Nanopore only]
-  │     ├─► [Kraken2 on contigs]    ──► same filter chain ──► Krona pair
-  │     └─► [DIAMOND on contigs]    ──► idxstats support filter ──► same filter chain ──► Krona pair
+  │     ├─► [Kraken2 on contigs] ──► filter chain ──► Krona pair
+  │     └─► [DIAMOND on contigs] ──► idxstats support filter ──► [NR validation] ──► filter chain ──► Krona pair
   ├─► [reference-assembly checkpoint] ──► per-(family, accession) consensus FASTA
   └─► MultiQC report (Illumina only)
 ```
 
-The output of every classifier — reads or contigs — flows through the same cross-sample summary stack: a raw count table, an RPM-normalised table (and optionally RPKM), a bleed-filtered table, and (if you declare negative controls) an enrichment-filtered table with fold-enrichment, log2-ratio, and z-scores. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the cross-sample filters.
+The output of every classifier — reads or contigs — flows through the same cumulative cross-sample summary stack: a raw count table, an RPM-normalised table (and optionally RPKM), optionally an NR-validated table (contig tracks), a bleed-filtered table, optionally a negative-control-enrichment table, and optionally an ICTV vertebrate-virus table. Each step appends one suffix to a single growing filename — `…_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv` — so the longest-named file is the fully filtered summary. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the filters.
 
 ## Decision matrix — what to turn on
 
@@ -41,6 +45,8 @@ The output of every classifier — reads or contigs — flows through the same c
 | Automatic per-virus consensus genome from any hit family                            | `--run-reference-assembly --method … --source … --families … --viral-genomes … --viral-taxids …`              |
 | Remove host reads first (recommended)                                              | `--deacon-index databases/deacon_indexes/panhuman-1.idx` (or `--host-reference host.fasta`)                    |
 | Suppress lab/blank background                                                       | `--negative-controls blank1,blank2`                                                                            |
+| Keep only vertebrate-infecting viruses (drop phages, plant/fungal/invertebrate-only) | `--run-ictv-host-filter --ictv-vertebrate-taxids-file databases/ictv/vertebrate_virus_taxids.txt`             |
+| Confirm de novo viral contigs against the full NCBI nr database                     | `--run-nr-validation --nr-diamond-database … ` (needs `--run-denovo-assembly --run-diamond-contigs`)          |
 
 ## Worked example — Illumina, built up incrementally
 
@@ -144,7 +150,7 @@ If you want the protein-level signal but only on contigs (and not on reads), dro
 
 This is the headline feature that makes the meta pipeline more than a classifier. When `--run-reference-assembly` is on, a Snakemake checkpoint reads the post-filter taxa tables, picks one or more reference genomes per sample, and runs reference-guided consensus assembly automatically — the same alignment/consensus rules used by `viralunity consensus`.
 
-The checkpoint reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when you declare `--negative-controls`, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`); taxa that explicitly fail `bleed_pass` or `neg_pass` are dropped before selection (NA is kept). So contaminants suppressed by the cross-sample filters do **not** trigger reference assembly. (Older outputs that lack these tables fall back to the raw counts table.)
+The checkpoint reads the **most-filtered** table in the chain — the longest-named `*_taxa_summary_*.tsv` for that track, i.e. it picks up `.nr`, `.neg`, and `.ictv` automatically when those steps ran; taxa that explicitly fail `bleed_pass` or `neg_pass` are dropped before selection (NA is kept). So contaminants suppressed by the cross-sample filters do **not** trigger reference assembly. (Older outputs that lack these tables fall back to the raw counts table.)
 
 ```bash
 viralunity meta illumina \
@@ -224,15 +230,20 @@ Outputs follow the same layout as the Illumina full run; the differences are the
 
 Real metagenomic data is noisy. Without cross-sample filtering, every sample looks like it contains thirty different viruses — most of them index-hopping, kit contamination, or extremely low-level cross-sample bleed during sequencing. ViralUnity's filtering chain is designed to suppress those signals while preserving real positives.
 
-Each `*_taxa_summary*.tsv` file is one step in the chain:
+The taxa summary is a single filename that grows one suffix per step —
+`<classifier>_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv` — so the
+longest-named file for a track is its fully-filtered summary. Each step:
 
-| File                                                    | What it adds                                                                                                  |
-|---------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| `<classifier>_taxa_summary.tsv`                         | Raw counts, one row per `(sample, rank, taxid)`.                                                              |
-| `<classifier>_taxa_summary_RPM.tsv`                     | Adds `total_reads` (host-filtered read count for the sample) and `rpm` = `count / total_reads × 1e6`.         |
-| `<classifier>_taxa_summary_RPKM.tsv`                    | Adds `genome_length_bp`, `n_genomes`, `rpkm`. Only when `--viral-genomes` is configured.                      |
-| `<classifier>_taxa_summary_RPM.bleed.tsv`               | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
-| `<classifier>_taxa_summary_RPM.bleed.neg.tsv`           | Adds enrichment statistics (`neg_metric`, `fold_enrichment`, `log2_ratio`, `z_score`, `neg_pass`, etc.). Only when `--negative-controls` was set. |
+| Suffix (cumulative)   | What it adds                                                                                                  |
+|-----------------------|---------------------------------------------------------------------------------------------------------------|
+| `_taxa_summary.tsv`   | Raw counts, one row per `(sample, tool, mode, rank, taxid)`.                                                   |
+| `…_RPM` / `…_RPKM`     | The normalisation base (one or the other). `_RPM` adds `total_reads` + `rpm`; `_RPKM` also adds `genome_length_bp`, `n_genomes`, `rpkm` (only when `--viral-genomes`/`--viral-taxids` are set). |
+| `….nr`                | **Contig tracks only, `--run-nr-validation`.** Adds `nr_pass`; contigs the NR LCA calls non-viral are removed (see below). |
+| `….bleed`             | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
+| `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log2_ratio`, `z_score`, `neg_pass`, …). |
+| `….ictv`              | `--run-ictv-host-filter` only. Removes taxa outside the ICTV vertebrate-infecting-virus allowlist (see below). |
+
+Row-removing steps (`.nr`, `.ictv`) also write a `*.dropped.tsv` sidecar listing what they removed, for audit.
 
 ### RPM normalisation
 
@@ -287,9 +298,23 @@ The sample IDs must match the sample sheet exactly (no `sample-` prefix). For ea
 | ≥ 2 | `z_score ≥ threshold` | `--z-score-threshold` (default 3.0) |
 | ≥ 2, SD = 0 | falls back to log2-ratio | — |
 
-`log2_ratio = log2((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*_RPM.bleed.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
+`log2_ratio = log2((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
+
+Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log2-ratio.
 
 The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from the control rows are given a zero background — they pass the enrichment gate easily (conservative choice).
+
+### NR validation (optional, contig tracks)
+
+`--run-nr-validation` adds a confirmation step for de novo **viral contigs** (contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`). All samples' candidate viral contigs are combined and searched once with `diamond blastx` against a full NCBI **nr** database (`--nr-diamond-database` — a BLAST+ nr db read via `diamond prepdb`, or a native `.dmnd`). Each contig gets an LCA consensus across its hits; it is kept only if at least a fraction `--nr-consensus-threshold` (default `0.5`) of its hits agree it is viral. The verdict is written into the contig tracks as an `nr_pass` column at the `.nr` step, and failing contigs are removed (logged to a `*.dropped.tsv` sidecar). Tune with `--nr-evalue`, `--nr-max-target-seqs`, `--nr-sensitivity` (default `fast`).
+
+This catches the common false positive where a de novo contig gets a viral hit from the (smaller) viral DIAMOND database but is really host/bacterial/vector sequence that only the full nr database can disambiguate.
+
+### ICTV vertebrate-virus filter (optional)
+
+`--run-ictv-host-filter` drops taxa outside a curated allowlist of vertebrate-infecting virus lineages — phages, plant/fungal/algal/invertebrate-only viruses, and giant viruses. It applies to **all four tracks** and is the last step in the chain (`.ictv`). The allowlist is a taxid file passed with `--ictv-vertebrate-taxids-file`, built from the ICTV Virus Metadata Resource (VMR) by `viralunity get-databases ictv-vertebrate-taxids` (which wraps `build_ictv_vertebrate_taxids.py`). Matching is lineage-aware: a taxon is kept when any ancestor in its lineage is on the allowlist, so strain- and species-level hits under an allowed genus/family survive. Removed rows are logged to a `*.dropped.tsv` sidecar.
+
+Use it when your samples are vertebrate (clinical/animal) and you want to suppress the large background of environmental phages and non-vertebrate viruses that classifiers surface.
 
 ### Filtered Krona plots
 
@@ -297,7 +322,7 @@ Every classifier produces two Krona HTMLs per sample — `*.krona.html` (built d
 
 ## Reference assembly under the hood
 
-When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the post-filter TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. It reads the negative-control-filtered table (`*_RPM.bleed.neg.tsv`) when `--negative-controls` is set, otherwise the bleed-filtered table (`*_RPM.bleed.tsv`), and only considers taxa that did not explicitly fail `bleed_pass`/`neg_pass`. Two strategies are available:
+When you turn on `--run-reference-assembly`, a Snakemake checkpoint inspects the post-filter TSV for the source you chose (`--method` × `--source` selects one of the four classifier/level combinations) and decides per sample which reference genomes to assemble against. It reads the most-filtered table in that track's chain (the longest-named `*_taxa_summary_*.tsv`, including `.nr`/`.neg`/`.ictv` when enabled), and only considers taxa that did not explicitly fail `bleed_pass`/`neg_pass`. Two strategies are available:
 
 - **`taxid` (default)** — for each passing taxon assigned to a target family, look up the taxid directly in `viral_taxids` (`genome2taxid.tsv`). If the exact taxid is not present (often the classifier picked a strain that is below species in the NCBI taxonomy), resolve to the species-level ancestor via `taxdump` and retry. Fast and deterministic; assumes your classifier database and your `viral_genomes` database came from compatible RefSeq releases.
 
@@ -321,6 +346,11 @@ DIAMOND tuning:
 
 - **`--evalue`** (`1e-10`) — tighter = fewer false homologies.
 - **`--diamond-sensitivity`** (`sensitive`) — `mid-sensitive`, `more-sensitive`, `ultra-sensitive` trade compute time for sensitivity to divergent hits.
+
+Taxonomic false-positive filters:
+
+- **`--run-ictv-host-filter`** + **`--ictv-vertebrate-taxids-file`** — keep only vertebrate-infecting viruses (drops phages, plant/fungal/invertebrate-only viruses). Applies to all four tracks; see [ICTV vertebrate-virus filter](#ictv-vertebrate-virus-filter-optional).
+- **`--run-nr-validation`** + **`--nr-diamond-database`** — confirm de novo viral contigs against NCBI nr (contig tracks; needs `--run-denovo-assembly --run-diamond-contigs`). Tune with **`--nr-consensus-threshold`** (`0.5`), **`--nr-evalue`**, **`--nr-max-target-seqs`**, **`--nr-sensitivity`** (`fast`).
 
 Reference-assembly triggering:
 
