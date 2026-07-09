@@ -82,7 +82,19 @@ def _read_vmr_rows(vmr_path: str) -> List[dict]:
     import pandas as pd
 
     if vmr_path.lower().endswith((".xlsx", ".xls")):
-        df = pd.read_excel(vmr_path)
+        # The VMR workbook has several sheets (Version, the data sheet named per
+        # release e.g. "VMR MSL41", Column definitions, ...). Pick the sheet that
+        # actually carries the taxonomy + host columns rather than assuming sheet 0.
+        xl = pd.ExcelFile(vmr_path)
+        chosen = None
+        for sheet in xl.sheet_names:
+            cols = {
+                str(c).strip().lower() for c in pd.read_excel(xl, sheet_name=sheet, nrows=0).columns
+            }
+            if "host source" in cols and "family" in cols:
+                chosen = sheet
+                break
+        df = pd.read_excel(xl, sheet_name=chosen if chosen is not None else 0)
     else:
         df = pd.read_csv(vmr_path, sep=None, engine="python")
     rename = {}
