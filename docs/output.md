@@ -57,26 +57,27 @@ After a successful run, the output directory is organised as follows:
 │       ├── kraken2_reads/                      # when --run-kraken2-reads
 │       │   ├── results/{sample}.report.txt
 │       │   ├── results/{sample}.output.krona.html
-│       │   ├── kraken2_reads_taxa_summary.tsv
-│       │   ├── kraken2_reads_taxa_summary_RPM.tsv
-│       │   ├── kraken2_reads_taxa_summary_RPKM.tsv  # when --viral-genomes is set
-│       │   └── kraken2_reads_taxa_summary_RPM.bleed.tsv
+│       │   ├── kraken2_reads_taxa_summary.tsv                                  # raw counts
+│       │   ├── kraken2_reads_taxa_summary_RPM.tsv                              # + RPM
+│       │   ├── kraken2_reads_taxa_summary_RPKM.tsv                             # + RPKM, when --viral-genomes is set
+│       │   └── kraken2_reads_taxa_summary_{RPM|RPKM}.bleed[.neg][.ictv].tsv    # cumulative filter chain (see below)
 │       ├── kraken2_contigs/                    # when --run-denovo-assembly + --run-kraken2-contigs
 │       │   ├── results/{sample}.report.txt
 │       │   ├── results/{sample}.output.krona.html
-│       │   └── kraken2_contigs_taxa_summary.tsv
+│       │   ├── kraken2_contigs_taxa_summary.tsv
+│       │   └── kraken2_contigs_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv   # cumulative filter chain
 │       ├── diamond_reads/                      # when --run-diamond-reads
 │       │   ├── results/{sample}.diamond.tsv
 │       │   ├── results/{sample}.diamond.krona.html
 │       │   ├── diamond_reads_taxa_summary.tsv
 │       │   ├── diamond_reads_taxa_summary_RPM.tsv
 │       │   ├── diamond_reads_taxa_summary_RPKM.tsv  # when --viral-genomes is set
-│       │   └── diamond_reads_taxa_summary_RPM.bleed.tsv
+│       │   └── diamond_reads_taxa_summary_{RPM|RPKM}.bleed[.neg][.ictv].tsv    # cumulative filter chain
 │       └── diamond_contigs/                    # when --run-denovo-assembly + --run-diamond-contigs
 │           ├── results/{sample}.diamond.supported.tsv
 │           ├── results/{sample}.diamond.supported.krona.html
 │           ├── diamond_contigs_taxa_summary.tsv
-│           └── diamond_contigs_taxa_summary_RPM.bleed.tsv
+│           └── diamond_contigs_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv   # cumulative filter chain
 ├── denovo_assembly/                            # when --run-denovo-assembly
 │   ├── megahit/{sample}/final.contigs.fa
 │   └── viral_contigs/{sample}.viral_contigs.fa
@@ -107,15 +108,38 @@ After a successful run, the output directory is organised as follows:
 └── benchmark.tsv                               # runtime and resources per task
 ```
 
+### The taxa-summary filename chain
+
+Each track writes its taxa summary through **one cumulative chain**: every enabled
+step appends exactly one suffix, so the *fully-filtered* table is always the file
+with the longest name, and disabled options never appear.
+
+```
+<track>_taxa_summary.tsv                 raw counts
+  └─ _RPM.tsv                            + reads-per-million
+       └─ _RPKM.tsv                      + RPKM            (only with --viral-genomes)
+            └─ .nr                       NR validation     (contig tracks only; --run-nr-validation)
+                 └─ .bleed               max-RPM bleed filter (always; adds bleed_pass)
+                      └─ .neg            negative-control enrichment (with negative controls; adds neg_pass)
+                           └─ .ictv      ICTV vertebrate-host filter (--run-ictv-host-filter)
+```
+
+The active metric token is `_RPKM` when `--viral-genomes` is set, else `_RPM`, and it
+is carried consistently through the whole chain. Row-removing steps (`.nr`, `.ictv`)
+also write a `*.dropped.tsv` audit sidecar; `.bleed`/`.neg` add pass columns rather
+than removing rows. Example fully-filtered names: contigs
+`diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`; reads
+`kraken2_reads_taxa_summary_RPKM.bleed.neg.ictv.tsv`.
+
 ### Key files
 
 | File | Description |
 |------|-------------|
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv` | Kraken2 (reads) taxa table with RPM normalisation |
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv` | Kraken2 (reads) taxa table with RPKM (when `--viral-genomes` is set) |
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv` | After max-RPM bleed filter (`bleed_pass` column) |
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.neg.tsv` | After negative-control enrichment filter (`neg_pass`, `log2_ratio`, `z_score`, etc.) |
-| `metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv` | DIAMOND (reads) taxa table with RPM normalisation and bleed filter |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary.tsv` | Raw per-taxon counts (base table) |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_RPM.tsv` | + RPM normalisation |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_RPKM.tsv` | + RPKM (when `--viral-genomes` is set) |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_{RPM\|RPKM}[.nr].bleed[.neg][.ictv].tsv` | The cumulative filter chain; the longest-named file is the fully-filtered summary. `.nr` is contig-tracks only. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
+| `metagenomics/taxonomic_assignments/<track>/*.dropped.tsv` | Rows removed by a row-removing step (`.nr`, `.ictv`), for audit |
 | `reference_targets.tsv` | Maps each sample × ref_key to the selected reference accession |
 | `assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta` | Reference-guided consensus sequence per sample and ref_key |
 | `samples/{sample}/` | Symlinks to every per-sample output for convenience |

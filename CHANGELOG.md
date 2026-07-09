@@ -139,6 +139,20 @@ The release process is documented in [RELEASING.md](RELEASING.md).
 
 ### Changed
 
+- **Taxa-summary output filenames now form one cumulative chain**
+  (`viralunity meta`). Every enabled post-normalisation step appends exactly one
+  suffix, in the order `_RPM`/`_RPKM` → `.nr` → `.bleed` → `.neg` → `.ictv`, so
+  the fully-filtered table is always the file with the longest name (e.g.
+  `diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`) and disabled options
+  never appear. The active metric token (`_RPM`/`_RPKM`) is now carried
+  consistently through the whole chain — previously the bleed/negative-control
+  outputs were mislabelled `_RPM.bleed[.neg]` even when they were derived from the
+  RPKM, NR-filtered table. This is a **user-facing output-filename change**: paths
+  like `*_RPM.bleed.neg.tsv` are replaced by the cumulative names. The reorder
+  (NR before bleed, ICTV last) is result-neutral — `.bleed`/`.neg` only add
+  per-taxon `bleed_pass`/`neg_pass` columns and never remove rows, so the surviving
+  taxa and all values are unchanged. Downstream consumers (filtered Krona,
+  reference assembly) resolve the fully-filtered table automatically.
 - `environment.yml`: pinned `conda` and `conda-libmamba-solver` to
   `>=24,<26` with an inline comment naming the lift condition (bioconda
   publishes shards OR conda's shards path tolerates 404s gracefully).

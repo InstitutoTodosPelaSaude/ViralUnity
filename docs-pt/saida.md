@@ -57,24 +57,27 @@ O diretório de saída é organizado da seguinte forma após uma execução bem-
 │       ├── kraken2_reads/                      # quando --run-kraken2-reads
 │       │   ├── results/{amostra}.report.txt
 │       │   ├── results/{amostra}.output.krona.html
-│       │   ├── kraken2_reads_taxa_summary.tsv
-│       │   ├── kraken2_reads_taxa_summary_RPM.tsv
-│       │   └── kraken2_reads_taxa_summary_RPM.bleed.tsv
+│       │   ├── kraken2_reads_taxa_summary.tsv                                  # contagens brutas
+│       │   ├── kraken2_reads_taxa_summary_RPM.tsv                              # + RPM
+│       │   ├── kraken2_reads_taxa_summary_RPKM.tsv                             # + RPKM, quando --viral-genomes está definido
+│       │   └── kraken2_reads_taxa_summary_{RPM|RPKM}.bleed[.neg][.ictv].tsv    # cadeia cumulativa de filtros (veja abaixo)
 │       ├── kraken2_contigs/                    # quando --run-denovo-assembly + --run-kraken2-contigs
 │       │   ├── results/{amostra}.report.txt
 │       │   ├── results/{amostra}.output.krona.html
-│       │   └── kraken2_contigs_taxa_summary.tsv
+│       │   ├── kraken2_contigs_taxa_summary.tsv
+│       │   └── kraken2_contigs_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv   # cadeia cumulativa de filtros
 │       ├── diamond_reads/                      # quando --run-diamond-reads
 │       │   ├── results/{amostra}.diamond.tsv
 │       │   ├── results/{amostra}.diamond.krona.html
 │       │   ├── diamond_reads_taxa_summary.tsv
 │       │   ├── diamond_reads_taxa_summary_RPM.tsv
-│       │   └── diamond_reads_taxa_summary_RPM.bleed.tsv
+│       │   ├── diamond_reads_taxa_summary_RPKM.tsv  # quando --viral-genomes está definido
+│       │   └── diamond_reads_taxa_summary_{RPM|RPKM}.bleed[.neg][.ictv].tsv    # cadeia cumulativa de filtros
 │       └── diamond_contigs/                    # quando --run-denovo-assembly + --run-diamond-contigs
 │           ├── results/{amostra}.diamond.supported.tsv
 │           ├── results/{amostra}.diamond.supported.krona.html
 │           ├── diamond_contigs_taxa_summary.tsv
-│           └── diamond_contigs_taxa_summary_RPM.bleed.tsv
+│           └── diamond_contigs_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv   # cadeia cumulativa de filtros
 ├── denovo_assembly/                            # quando --run-denovo-assembly
 │   ├── megahit/{amostra}/final.contigs.fa
 │   └── viral_contigs/{amostra}.viral_contigs.fa
@@ -105,12 +108,25 @@ O diretório de saída é organizado da seguinte forma após uma execução bem-
 └── benchmark.tsv                               # tempo de execução e recursos por tarefa
 ```
 
+### A cadeia de nomes do taxa-summary
+
+Cada track escreve seu resumo de táxons por meio de **uma única cadeia cumulativa**:
+cada etapa ativada acrescenta exatamente um sufixo, na ordem
+`_RPM`/`_RPKM` → `.nr` → `.bleed` → `.neg` → `.ictv`. Assim, a tabela *totalmente
+filtrada* é sempre o arquivo com o nome mais longo, e as opções desativadas nunca
+aparecem. O token de métrica é `_RPKM` quando `--viral-genomes` está definido, senão
+`_RPM`, e é mantido de forma consistente por toda a cadeia. `.nr` é exclusivo dos
+tracks de contigs; a ICTV se aplica a todos. As etapas que removem linhas (`.nr`,
+`.ictv`) também escrevem um `*.dropped.tsv` de auditoria; `.bleed`/`.neg` adicionam
+colunas de aprovação em vez de remover linhas.
+
 ### Arquivos principais
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.bleed.tsv` | Tabela de táxons Kraken2 (reads) com normalização RPM e filtro de bleed |
-| `metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.bleed.tsv` | Tabela de táxons Diamond (reads) com normalização RPM e filtro de bleed |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary.tsv` | Contagens brutas por táxon (tabela base) |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_{RPM\|RPKM}[.nr].bleed[.neg][.ictv].tsv` | A cadeia cumulativa de filtros; o arquivo de nome mais longo é o resumo totalmente filtrado. `.nr` só em tracks de contigs |
+| `metagenomics/taxonomic_assignments/<track>/*.dropped.tsv` | Linhas removidas por uma etapa de remoção (`.nr`, `.ictv`), para auditoria |
 | `reference_targets.tsv` | Mapeia cada amostra × ref_key para o accession de referência selecionado |
 | `assembly/{ref_key}/consensus/final_consensus/{amostra}.consensus.fasta` | Sequência de consenso guiada por referência por amostra e ref_key |
 | `samples/{amostra}/` | Links simbólicos para todos os arquivos de saída por amostra |

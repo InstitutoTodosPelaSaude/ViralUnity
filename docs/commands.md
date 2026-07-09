@@ -410,7 +410,7 @@ viralunity meta nanopore \
 For every classifier/mode that runs, the pipeline emits two Krona HTMLs per sample:
 
 - `samples/<sample>/<classifier>_<mode>.krona.html` — built directly from the per-sample taxonomic classification before any cross-sample filtering. This is the raw view of what the classifier reported.
-- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the cross-sample filters in the `_taxa_summary_RPM.bleed[.neg].tsv` table for that `(sample, tool, mode)`.
+- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the filters recorded in the fully-filtered taxa-summary table (the longest-named file in the cumulative chain, e.g. `_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`) for that `(sample, tool, mode)`.
 
 Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its leaf taxid at the `family`, `genus`, or `species` rank passes `bleed_pass` (and, when negative controls are configured, also `neg_pass`). This is the inverse of how `summarize_krona_taxa.py` aggregates rows up the lineage, so the filtered Krona shows exactly the contigs/reads that contributed to a passing rank-row. Strain and sub-species hits whose species/genus/family passes are preserved; rows with `taxid==0` are dropped.
 
@@ -420,13 +420,13 @@ Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its lea
 - `neg_pass = True/False` with `neg_decision = "z_score"` — two or more controls; gate is `z_score ≥ --z-score-threshold`.
 - `neg_pass = True/False` with `neg_decision = "log2_ratio_fallback"` — two or more controls but all identical (SD = 0); falls back to the log2-ratio gate.
 
-Additional diagnostic columns in `*_RPM.bleed.neg.tsv`: `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log2_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log2_ratio_threshold_used`, `n_negative_controls`.
+Additional diagnostic columns added by the negative-control step (the `.neg` suffix): `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log2_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log2_ratio_threshold_used`, `n_negative_controls`.
 
 `viralunity/scripts/python/filter_krona_by_pass_taxids.py` also exposes a CLI for standalone use:
 
 ```bash
 python viralunity/scripts/python/filter_krona_by_pass_taxids.py \
-    --summary path/to/diamond_contigs_taxa_summary_RPM.bleed.neg.tsv \
+    --summary path/to/diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv \
     --krona-input path/to/{sample}.diamond.supported.krona_input.tsv \
     --out path/to/{sample}.diamond.supported.filtered.krona_input.tsv \
     --sample {sample} --tool diamond --mode contigs \
@@ -441,11 +441,21 @@ retroviruses, and bacterial/eukaryal contigs mislabelled as viral. Three optiona
 remove these. They are **off by default**, and each writes a `*.dropped.tsv` audit sidecar next to
 its output listing the removed rows and why.
 
-**Order.** Taxonomic filters run **before** the bleed and negative-control filters
-(`taxonomic → bleed → cn`), so those cross-sample statistics are computed only on
-taxonomically-valid taxa. Enabled filters append suffixes to the summary filename in this order,
-e.g. `..._taxa_summary_RPM.ictv.min.nr.bleed.neg.tsv`. With every filter off the chain is
-byte-identical to before (`..._RPM.bleed[.neg].tsv`).
+**Order.** The taxa summary flows through **one cumulative chain**; each enabled step appends
+exactly one suffix, in this order:
+
+```
+_RPM/_RPKM → .nr → .bleed → .neg → .ictv
+```
+
+so a fully-loaded contig track ends at `..._taxa_summary_RPKM.nr.bleed.neg.ictv.tsv` and the
+*fully-filtered* table is always the file with the longest name. NR validation is contig-tracks
+only; the ICTV host filter applies to all tracks. The order is **result-neutral** with respect to
+the surviving taxa: `.bleed` and `.neg` only add per-taxon `bleed_pass`/`neg_pass` columns (they
+never remove rows and don't depend on which other taxa are present), while the row-removing steps
+(`.nr`, `.ictv`) use criteria independent of those columns. With every filter off the chain is just
+`..._RPM.bleed.tsv` (or `_RPKM.bleed.tsv` with `--viral-genomes`), byte-identical in content to
+before. Row-removing steps write a `*.dropped.tsv` audit sidecar.
 
 | Filter | Flag | Scope | What it drops |
 |--------|------|-------|---------------|
