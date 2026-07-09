@@ -93,7 +93,7 @@ rule generate_vcf_consensus:
                 -sen
 
             bgzip -f $out_prefix.vcf
-            tabix -p vcf {output.vcf} || touch {output.vcf_index}
+            tabix -p vcf {output.vcf}
             rm -f $out_prefix.maf
         else
             echo "Warning: Consensus sequence for {wildcards.sample} is empty. Creating a mock VCF." >&2
