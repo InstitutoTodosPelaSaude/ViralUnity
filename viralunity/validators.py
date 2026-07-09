@@ -3,7 +3,7 @@
 import csv
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from viralunity.constants import DataType
 from viralunity.exceptions import (
@@ -331,7 +331,7 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
                 raise ReferenceNotFoundError(str(e)) from e
     else:
         try:
-            validate_file_exists(reference, "Reference sequence file")
+            validate_file_exists(cast(str, reference), "Reference sequence file")
         except ViralUnityFileNotFoundError as e:
             raise ReferenceNotFoundError(f"Reference sequence file does not exist: {e}") from e
 
@@ -631,7 +631,7 @@ def _is_path_sentinel(value: Any) -> bool:
 def resolve_path_args(
     args: Dict[str, Any],
     keys,
-    base_dir: str = None,
+    base_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Rewrite path-typed argument values to absolute paths in place.
 
@@ -702,7 +702,7 @@ def get_samples_from_args(args: Dict[str, Any]) -> Dict[str, List[str]]:
         # `samples`, which would report a misleading "nothing provided" error
         # when the real problem is a mistyped or missing sample-sheet path.
         validate_file_exists(sample_sheet, "Sample sheet file")
-        return validate_sample_sheet(sample_sheet, data_type)
+        return validate_sample_sheet(sample_sheet, cast(str, data_type))
     if samples:
         return samples
     raise SampleConfigurationNotFoundError(

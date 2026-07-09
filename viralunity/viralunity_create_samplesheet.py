@@ -11,7 +11,7 @@ import csv
 import glob
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import click
 
@@ -125,7 +125,7 @@ def extract_sample_name(path: str, separator: str) -> str:
     return sanitize_identifier(basename.split(separator)[0], "sample name")
 
 
-def find_files_in_directory(directory: str, pattern: str = None) -> List[str]:
+def find_files_in_directory(directory: str, pattern: Optional[str] = None) -> List[str]:
     """Find files in a directory, optionally matching a pattern.
 
     Args:

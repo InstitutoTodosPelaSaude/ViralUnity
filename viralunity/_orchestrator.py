@@ -73,7 +73,7 @@ def run_workflow(workflow_path: str, args: Dict[str, Any]) -> bool:
 def run_pipeline(
     args: Dict[str, Any],
     *,
-    resolve_paths: Callable[[Dict[str, Any]], None],
+    resolve_paths: Callable[[Dict[str, Any]], object],
     validate: Callable[[Dict[str, Any]], Optional[Dict[str, list]]],
     generate_config: Callable[[Dict[str, list], Dict[str, Any]], None],
     run_workflow_fn: Callable[[Dict[str, Any]], bool],
@@ -105,6 +105,11 @@ def run_pipeline(
         if skip_when_no_samples and (samples is None or len(samples) == 0):
             logger.warning("No samples were provided.")
             return 0
+
+        # ``validate`` is typed as returning Optional; narrow for the type
+        # checker (consensus always returns a dict; meta returns early above).
+        if samples is None:
+            samples = {}
 
         generate_config(samples, args)
 

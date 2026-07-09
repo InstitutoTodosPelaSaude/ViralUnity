@@ -18,7 +18,7 @@ import datetime
 import hashlib
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from viralunity import __version__
 
@@ -47,7 +47,7 @@ def _describe_input(path: str) -> Dict[str, Any]:
 
 def build_run_manifest(
     args: Dict[str, Any],
-    samples: Dict[str, List[str]],
+    samples: Dict[str, list],
     *,
     timestamp: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -90,7 +90,7 @@ def build_run_manifest(
 
 def write_run_manifest(
     args: Dict[str, Any],
-    samples: Dict[str, List[str]],
+    samples: Dict[str, list],
     *,
     timestamp: Optional[str] = None,
 ) -> str:

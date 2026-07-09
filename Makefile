@@ -16,9 +16,9 @@ lint: install-dev
 	black --check viralunity/ test/
 	ruff check viralunity/ test/
 
-# Advisory type check (not yet gating; ~14 known findings to clear over time).
+# Type check (gating in CI; the backlog has been cleared to 0 errors).
 typecheck: install-dev
-	mypy viralunity/ || true
+	mypy viralunity/
 
 format: install-dev
 	black viralunity/ test/
