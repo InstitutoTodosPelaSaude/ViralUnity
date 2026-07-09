@@ -15,8 +15,46 @@ from viralunity.validators import (
     ensure_within_base,
     sanitize_identifier,
     validate_metagenomics_requirements,
+    validate_numeric_parameters,
     validate_sample_sheet,
 )
+
+
+class TestValidateNumericParameters(unittest.TestCase):
+    def test_valid_values_pass(self):
+        args = {
+            "threads": 4,
+            "threads_total": 8,
+            "af_threshold": 0.5,
+            "evalue": 0.001,
+            "bleed_fraction": 0.005,
+            "minimum_coverage": 20,
+        }
+        # Should not raise.
+        self.assertIsNone(validate_numeric_parameters(args))
+
+    def test_absent_keys_pass(self):
+        self.assertIsNone(validate_numeric_parameters({"data_type": "illumina"}))
+
+    def test_zero_threads_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"threads": 0})
+
+    def test_negative_threads_total_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"threads_total": -1})
+
+    def test_af_threshold_above_one_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"af_threshold": 5.0})
+
+    def test_evalue_zero_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"evalue": 0.0})
+
+    def test_bleed_fraction_above_one_rejected(self):
+        with self.assertRaises(ValidationError):
+            validate_numeric_parameters({"bleed_fraction": 1.5})
 
 
 def _touch(path: str) -> str:

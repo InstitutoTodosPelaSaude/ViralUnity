@@ -19,6 +19,7 @@ from viralunity.validators import (
     sanitize_identifier,
     validate_consensus_requirements,
     validate_illumina_requirements,
+    validate_numeric_parameters,
 )
 
 # Set up logging
@@ -43,6 +44,9 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
     # (run_name is spliced into config["output"] and every rule's output path).
     if args.get("run_name"):
         sanitize_identifier(args["run_name"], "run_name")
+
+    # Range-check numeric parameters (threads, thresholds, coverage, ...).
+    validate_numeric_parameters(args)
 
     # Get and validate samples
     samples = get_samples_from_args(args)
