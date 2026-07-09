@@ -134,6 +134,8 @@ rule collect_reference_assemblies:
         get_all_reference_assemblies
     output:
         config["output"] + "reference_assembly_done.txt"
+    conda:
+        "../envs/utils.yaml"
     log:
         config["output"] + "logs/collect_reference_assemblies.log"
     benchmark:

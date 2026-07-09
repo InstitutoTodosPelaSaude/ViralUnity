@@ -179,7 +179,7 @@ if run_denovo and run_diamond_contigs:
         output:
             filtered = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tsv"
         params:
-            min_mapped = 1
+            min_mapped = config.get("diamond_min_mapped", 1)
         log:
             config["output"] + "logs/diamond_filter/{sample}.log"
         benchmark:
@@ -363,7 +363,7 @@ if run_denovo and run_diamond_contigs:
             chain_output("diamond_contigs", "bleed")
         params:
             fraction = config.get("bleed_fraction", 0.005),
-            rpm_floor = 1.0,
+            rpm_floor = config.get("bleed_rpm_floor", 1.0),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"

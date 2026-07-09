@@ -161,7 +161,7 @@ rule apply_bleed_filter_kraken2_reads:
         chain_output("kraken2_reads", "bleed")
     params:
         fraction = config.get("bleed_fraction", 0.005),
-        rpm_floor = 1.0,
+        rpm_floor = config.get("bleed_rpm_floor", 1.0),
         rpm_col = "rpm",
     conda:
         "../envs/utils.yaml"

@@ -374,7 +374,7 @@ def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
                 "taxids mapping file is required when running Diamond. "
                 "Set --taxids or do not use --run-diamond-reads / --run-diamond-contigs."
             )
-        if not os.path.isfile(taxids) and not (taxids.endswith(".gz") and os.path.isfile(taxids)):
+        if not os.path.isfile(taxids):
             raise DiamondDatabaseNotFoundError(f"Taxid mapping file not found: {taxids}")
 
     # Deacon index: when provided for host depletion, must exist
