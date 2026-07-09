@@ -236,7 +236,10 @@ def main(args=None):
     frames = []
     for f in summary_files:
         if os.path.exists(f):
-            frames.append(pd.read_csv(f, sep="\t"))
+            # Force taxid to str: a blank/NaN taxid in any summary would otherwise
+            # coerce the whole column to float64, stringifying "3001" as "3001.0"
+            # so it never matches the genome2taxid keys (silent empty selection).
+            frames.append(pd.read_csv(f, sep="\t", dtype={"taxid": str}))
 
     if not frames:
         pd.DataFrame(columns=["sample", "ref_key", "reference_genome"]).to_csv(
