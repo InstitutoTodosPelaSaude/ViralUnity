@@ -438,6 +438,223 @@ def get_diamond(path: str, taxon: str, refseq: bool, threads: int, skip_makedb: 
         )
 
 
+# NCBI BLAST+ database volumes ship an alias file (``<db>.pal`` for a
+# multi-volume protein db) or a single-volume index (``<db>.pin`` /
+# ``<db>.000.pin``). These are the same suffixes ``validators.py`` accepts for
+# ``--nr-diamond-database``, so a prefix that passes this check will also pass
+# metagenomics validation.
+_BLASTDB_SIDECARS = (".pal", ".pin", ".000.pin")
+
+
+def _build_update_blastdb_cmd(db_name: str, source: str, threads: int) -> list:
+    """Build the ``update_blastdb.pl`` argv to fetch and decompress a BLAST db."""
+    cmd = ["update_blastdb.pl", "--decompress", "--source", source]
+    if threads and threads > 1:
+        cmd += ["--num_threads", str(threads)]
+    cmd.append(db_name)
+    return cmd
+
+
+def _build_diamond_prepdb_cmd(db_prefix) -> list:
+    """Build the ``diamond prepdb`` argv that indexes a BLAST+ db for DIAMOND."""
+    return ["diamond", "prepdb", "--db", str(db_prefix)]
+
+
+def _build_diamond_makedb_cmd(
+    in_fasta,
+    db_out,
+    threads: int,
+    taxonmap=None,
+    taxonnodes=None,
+    taxonnames=None,
+) -> list:
+    """Build the ``diamond makedb`` argv, embedding taxonomy when provided.
+
+    ``--taxonmap`` (a ``prot.accession2taxid`` file) together with ``taxonnodes``
+    / ``taxonnames`` from an NCBI taxdump make DIAMOND emit ``staxids``, which
+    the NR-validation rule requests.
+    """
+    cmd = ["diamond", "makedb", "--in", str(in_fasta), "--db", str(db_out)]
+    if taxonmap:
+        cmd += ["--taxonmap", str(taxonmap)]
+    if taxonnodes:
+        cmd += ["--taxonnodes", str(taxonnodes)]
+    if taxonnames:
+        cmd += ["--taxonnames", str(taxonnames)]
+    if threads and threads > 1:
+        cmd += ["--threads", str(threads)]
+    return cmd
+
+
+def _verify_blastdb(db_prefix: Path) -> None:
+    """Raise if no BLAST+ index files exist for ``db_prefix``."""
+    if not any(Path(f"{db_prefix}{suffix}").is_file() for suffix in _BLASTDB_SIDECARS):
+        expected = ", ".join(f"{db_prefix.name}{s}" for s in _BLASTDB_SIDECARS)
+        raise click.ClickException(
+            f"No BLAST+ database files found for prefix {db_prefix} "
+            f"(expected one of: {expected}). The download may have failed."
+        )
+
+
+@get_databases.command("nr")
+@click.option(
+    "--path",
+    default="databases",
+    show_default=True,
+    help="Parent directory where the diamond/ subdirectory will be created.",
+)
+@click.option(
+    "--db-name",
+    default="nr",
+    show_default=True,
+    help="BLAST database name to fetch with update_blastdb.pl (e.g. 'nr', 'nr_viruses').",
+)
+@click.option(
+    "--source",
+    type=click.Choice(["ncbi", "aws", "gcp"]),
+    default="ncbi",
+    show_default=True,
+    help="Mirror update_blastdb.pl downloads from (aws/gcp are often faster than ncbi).",
+)
+@click.option(
+    "--threads",
+    default=1,
+    show_default=True,
+    type=int,
+    help="Threads for update_blastdb.pl download/decompression and diamond prepdb.",
+)
+@click.option(
+    "--skip-prepdb",
+    is_flag=True,
+    default=False,
+    help="Download only; let the pipeline run 'diamond prepdb' at runtime.",
+)
+@click.option(
+    "--from-blastdb",
+    "from_blastdb",
+    default=None,
+    type=click.Path(),
+    help="Bring-your-own: register an existing BLAST+ nr prefix instead of downloading.",
+)
+@click.option(
+    "--from-fasta",
+    "from_fasta",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Bring-your-own: build nr.dmnd from a protein FASTA via 'diamond makedb'.",
+)
+@click.option(
+    "--taxonmap",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="With --from-fasta: prot.accession2taxid(.FULL)(.gz) file, so staxids populate.",
+)
+@click.option(
+    "--taxonnodes",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="With --from-fasta: taxdump nodes.dmp (used with --taxonmap).",
+)
+@click.option(
+    "--taxonnames",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="With --from-fasta: taxdump names.dmp (used with --taxonmap).",
+)
+def get_nr(
+    path: str,
+    db_name: str,
+    source: str,
+    threads: int,
+    skip_prepdb: bool,
+    from_blastdb: Optional[str],
+    from_fasta: Optional[str],
+    taxonmap: Optional[str],
+    taxonnodes: Optional[str],
+    taxonnames: Optional[str],
+) -> None:
+    """Download and configure the NCBI nr database for DIAMOND NR validation.
+
+    By default this fetches NCBI's preformatted, md5-verified BLAST+ nr volumes
+    with the official ``update_blastdb.pl`` tool into ``{path}/diamond/`` and
+    (unless ``--skip-prepdb``) runs ``diamond prepdb`` once so DIAMOND can search
+    it directly. BLAST v5 databases carry taxonomy, so the ``staxids`` column the
+    NR-validation rule requests is populated without any extra download.
+
+    Two bring-your-own modes skip the download for HPC/air-gapped setups:
+
+    \b
+      --from-blastdb PREFIX  register an nr you already downloaded (runs prepdb)
+      --from-fasta FASTA     build nr.dmnd from a protein FASTA (diamond makedb);
+                             add --taxonmap/--taxonnodes/--taxonnames for staxids
+
+    The nr database is very large (100+ GB decompressed) and takes a long time
+    to download; ensure ample free disk. It is intentionally NOT part of
+    ``get-databases all``.
+
+    Pass the printed value to ``--nr-diamond-database`` in ``viralunity meta``.
+    """
+    if from_blastdb and from_fasta:
+        raise click.UsageError("--from-blastdb and --from-fasta are mutually exclusive.")
+    if (taxonmap or taxonnodes or taxonnames) and not from_fasta:
+        raise click.UsageError("--taxonmap/--taxonnodes/--taxonnames only apply with --from-fasta.")
+
+    db_dir = _make_db_dir(path, "diamond")
+
+    if from_fasta:
+        dmnd = db_dir / f"{db_name}.dmnd"
+        if taxonmap and not (taxonnodes and taxonnames):
+            click.echo(
+                "  WARNING: --taxonmap without --taxonnodes/--taxonnames; "
+                "staxids may not resolve. Provide taxdump nodes.dmp/names.dmp too."
+            )
+        click.echo(f"Building DIAMOND database from {from_fasta} -> {dmnd}")
+        run_command(
+            _build_diamond_makedb_cmd(from_fasta, dmnd, threads, taxonmap, taxonnodes, taxonnames)
+        )
+        if not dmnd.is_file():
+            raise click.ClickException(f"diamond makedb did not produce {dmnd}.")
+        _echo_nr_ready(dmnd)
+        return
+
+    if from_blastdb:
+        db_prefix = Path(from_blastdb)
+        _verify_blastdb(db_prefix)
+        if not skip_prepdb:
+            click.echo("Preparing database for DIAMOND (diamond prepdb)...")
+            run_command(_build_diamond_prepdb_cmd(db_prefix))
+        _echo_nr_ready(db_prefix)
+        return
+
+    # Default: download preformatted BLAST+ nr with update_blastdb.pl.
+    db_prefix = db_dir / db_name
+    click.echo(
+        f"Downloading BLAST+ '{db_name}' database via update_blastdb.pl " f"(source: {source})..."
+    )
+    click.echo(
+        "  Note: nr is very large (100+ GB decompressed); this can take hours "
+        "and needs ample free disk."
+    )
+    # update_blastdb.pl writes its volumes into the current directory.
+    run_command(_build_update_blastdb_cmd(db_name, source, threads), cwd=str(db_dir))
+
+    _verify_blastdb(db_prefix)
+
+    if not skip_prepdb:
+        click.echo("Preparing database for DIAMOND (diamond prepdb)...")
+        run_command(_build_diamond_prepdb_cmd(db_prefix))
+
+    _echo_nr_ready(db_prefix)
+
+
+def _echo_nr_ready(nr_path) -> None:
+    """Print the standard 'NR ready' block naming the --nr-diamond-database value."""
+    click.echo("\nNR database ready.")
+    click.echo(f"  Path: {nr_path}")
+    click.echo("\nUse in viralunity meta commands:")
+    click.echo(f"  --nr-diamond-database  {nr_path}")
+
+
 # Removed _parse_genome_data_report — replaced by a call to
 # _parse_data_report_jsonl with `key_extractor=_accession_from_record`.
 

@@ -35,12 +35,15 @@ Six top-level subcommands are exposed via the `viralunity` CLI:
 
 ```bash
 viralunity create-samplesheet --input <runs-dir> --output samples.csv
-viralunity get-databases all --output databases/
+viralunity get-databases all --path databases/
 viralunity setup --pipelines all                # pre-build per-rule conda envs
 viralunity consensus illumina --sample-sheet samples.csv --reference ref.fasta --output run/
 viralunity meta      illumina --sample-sheet samples.csv --kraken2-database <db> --output run/
 viralunity build-deacon-index --input host.fasta --output host.dcn
 ```
+
+`get-databases all` grabs the four common databases; large optional ones are separate
+subcommands (`virus-genome`, `deacon-index`, and `nr` for `meta --run-nr-validation`).
 
 Global options: `--log-level {DEBUG,INFO,WARNING,ERROR}` and `--json-logs`
 (e.g. `viralunity --log-level DEBUG meta ...`).

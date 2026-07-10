@@ -12,10 +12,11 @@ viralunity [--version]
 │   ├── taxdump              Download the NCBI taxdump
 │   ├── diamond              Download RefSeq viral proteins and build a Diamond DB
 │   ├── clean-protein-fasta  Strip nucleotide records from a protein FASTA
+│   ├── nr                   Download/configure the NCBI nr DB for NR validation
 │   ├── virus-genome         Download viral genomes and build a BLAST index
 │   ├── host-genome          Download a host genome using NCBI Datasets
 │   ├── deacon-index         Download a pre-built Deacon minimizer index
-│   └── all                  Run every download/index step above in sequence
+│   └── all                  Download the four common databases (kraken2, krona, taxdump, diamond)
 ├── consensus
 │   ├── illumina          Reference-based consensus assembly for Illumina data
 │   └── nanopore          Reference-based consensus assembly for Nanopore data

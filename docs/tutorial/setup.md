@@ -149,9 +149,9 @@ Plan for the download. Approximate sizes on disk after extraction:
 
 If you only plan to use Kraken2 on reads, you can skip `get-databases diamond` and only run the first three. Each subcommand is also available standalone — see `[viralunity get-databases --help](../commands.md#viralunity-get-databases)`.
 
-### Two more databases for the full meta walkthrough
+### Three more databases for the full meta walkthrough
 
-The `all` subcommand intentionally leaves out two databases that are large and only needed for specific features:
+The `all` subcommand intentionally leaves out three databases that are large and only needed for specific features:
 
 ```bash
 # Viral genomes + per-genome taxid map + BLAST index — required for --run-reference-assembly
@@ -159,9 +159,13 @@ viralunity get-databases virus-genome --path databases/
 
 # Deacon human host index — recommended for dehosting (faster than minimap2 vs a host FASTA)
 viralunity get-databases deacon-index --path databases/ --index-name panhuman-1
+
+# NCBI nr protein database — required for --run-nr-validation (false-positive reduction).
+# WARNING: 100+ GB, hours to download. aws/gcp mirrors are usually faster than ncbi.
+viralunity get-databases nr --path databases/ --source gcp --threads 8
 ```
 
-`virus-genome` ships with `viral.genomes.fasta`, `genome2taxid.tsv`, and the BLAST `.nhr`/`.nin`/`.nsq` index files (used for the `similarity` reference-selection strategy). The Deacon index lands at `databases/deacon_indexes/panhuman-1.idx`.
+`virus-genome` ships with `viral.genomes.fasta`, `genome2taxid.tsv`, and the BLAST `.nhr`/`.nin`/`.nsq` index files (used for the `similarity` reference-selection strategy). The Deacon index lands at `databases/deacon_indexes/panhuman-1.idx`. `nr` downloads NCBI's preformatted BLAST+ nr into `databases/diamond/nr.*` and prepares it for DIAMOND; pass `--nr-diamond-database databases/diamond/nr`. If you already have nr (or work air-gapped), use `--from-blastdb <prefix>` or `--from-fasta <nr.faa>` instead of downloading — see `[commands.md](../commands.md#nr--ncbi-nr-database-for-nr-validation)`.
 
 ```{tip}
 If you want to dehost against a non-human genome, use `viralunity get-databases host-genome --accession <NCBI accession>` to download a host FASTA, then either pass it directly via `--host-reference` (minimap2 dehosting) or build a Deacon index with `viralunity build-deacon-index --input <fasta>` for a faster path.

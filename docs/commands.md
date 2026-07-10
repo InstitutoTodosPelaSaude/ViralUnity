@@ -595,6 +595,44 @@ diamond makedb \
     --threads 4
 ```
 
+### `nr` — NCBI nr database for NR validation
+
+Downloads and configures the full NCBI **nr** protein database used by
+`meta --run-nr-validation` (`--nr-diamond-database`). By default it fetches
+NCBI's preformatted, md5-verified BLAST+ nr volumes with the official
+`update_blastdb.pl` tool and runs `diamond prepdb` so DIAMOND can search them
+directly; BLAST v5 databases carry taxonomy, so the `staxids` the NR-validation
+step needs are populated with no extra download.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--path` | `databases` | Parent directory; creates/uses `{path}/diamond/`. |
+| `--db-name` | `nr` | BLAST database name to fetch with `update_blastdb.pl`. |
+| `--source` | `ncbi` | Download mirror (`ncbi`, `aws`, `gcp`; aws/gcp are often faster). |
+| `--threads` | `1` | Threads for `update_blastdb.pl` and `diamond prepdb`. |
+| `--skip-prepdb` | off | Download only; let the pipeline run `diamond prepdb` at runtime. |
+| `--from-blastdb` | *(none)* | Bring-your-own: register an existing BLAST+ nr prefix; skip download. |
+| `--from-fasta` | *(none)* | Bring-your-own: build `nr.dmnd` from a protein FASTA via `diamond makedb`. |
+| `--taxonmap` / `--taxonnodes` / `--taxonnames` | *(none)* | With `--from-fasta`: `prot.accession2taxid` + taxdump `nodes.dmp`/`names.dmp` so `staxids` populate. |
+
+> **nr is very large** (100+ GB decompressed) and can take hours to download.
+> It is intentionally **not** part of `get-databases all`.
+
+```bash
+# Default: download preformatted BLAST+ nr and prepare it for DIAMOND
+viralunity get-databases nr --path databases/ --source gcp --threads 8
+# use: --nr-diamond-database databases/diamond/nr
+
+# Bring-your-own: register an nr you already downloaded
+viralunity get-databases nr --from-blastdb /data/blast/nr
+
+# Bring-your-own: build a native .dmnd from a FASTA (with taxonomy for staxids)
+viralunity get-databases nr --from-fasta nr.faa \
+    --taxonmap prot.accession2taxid.FULL.gz \
+    --taxonnodes taxdump/nodes.dmp --taxonnames taxdump/names.dmp
+# use: --nr-diamond-database databases/diamond/nr.dmnd
+```
+
 ### `virus-genome` — Viral genomes database
 
 | Option | Default | Description |

@@ -7,6 +7,21 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.3.1] - 2026-07-10
+
+### Added
+
+- **`viralunity get-databases nr`** — download and configure the NCBI **nr** protein
+  database used by `meta --run-nr-validation`, closing the one remaining bring-your-own
+  gap in `get-databases`. By default it fetches NCBI's preformatted, md5-verified BLAST+
+  nr volumes with the official `update_blastdb.pl` tool and runs `diamond prepdb` so
+  DIAMOND (and its `staxids`) are ready. Two bring-your-own modes cover HPC/air-gapped
+  setups: `--from-blastdb <prefix>` registers an existing nr, and `--from-fasta <faa>`
+  builds a native `nr.dmnd` via `diamond makedb` (with optional
+  `--taxonmap`/`--taxonnodes`/`--taxonnames` for taxonomy). Also supports `--source`
+  (ncbi/aws/gcp), `--threads`, and `--skip-prepdb`. nr is intentionally left out of
+  `get-databases all` because of its size (100+ GB).
+
 ## [1.3.0] - 2026-07-09
 
 ### Added
