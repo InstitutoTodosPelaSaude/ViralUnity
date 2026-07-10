@@ -35,7 +35,7 @@ Six top-level subcommands are exposed via the `viralunity` CLI:
 
 ```bash
 viralunity create-samplesheet --input <runs-dir> --output samples.csv
-viralunity get-databases all --output databases/
+viralunity get-databases all --path databases/
 viralunity setup --pipelines all                # pre-build per-rule conda envs
 viralunity consensus illumina --sample-sheet samples.csv --reference ref.fasta --output run/
 viralunity meta      illumina --sample-sheet samples.csv --kraken2-database <db> --output run/
