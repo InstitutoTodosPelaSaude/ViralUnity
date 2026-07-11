@@ -408,6 +408,7 @@ if run_denovo and run_diamond_contigs:
         params:
             fraction = config.get("bleed_fraction", 0.005),
             rpm_floor = config.get("bleed_rpm_floor", 1.0),
+            rpkm_floor = config.get("bleed_rpkm_floor", 0.1),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"

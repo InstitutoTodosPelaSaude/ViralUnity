@@ -239,7 +239,7 @@ longest-named file for a track is its fully-filtered summary. Each step:
 | `_taxa_summary.tsv`   | Raw counts, one row per `(sample, tool, mode, rank, taxid)`.                                                   |
 | `…_RPM` / `…_RPKM`     | The normalisation base (one or the other). `_RPM` adds `total_reads` + `rpm`; `_RPKM` also adds `genome_length_bp`, `n_genomes`, `rpkm` (only when `--viral-genomes`/`--viral-taxids` are set). |
 | `….nr`                | **Contig tracks only, `--run-nr-validation`.** Adds `nr_pass`; contigs the NR LCA calls non-viral are removed (see below). |
-| `….bleed`             | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
+| `….bleed`             | Adds `bleed_metric`, `bleed_max`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)         |
 | `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log10_ratio`, `z_score`, `neg_pass`, …). |
 | `….ictv`              | `--run-ictv-host-filter` only. Removes taxa outside the ICTV vertebrate-infecting-virus allowlist (see below). |
 
@@ -263,23 +263,25 @@ RPKM at genus and family level is approximate (based on the median genome length
 
 ### Bleed filter
 
-For each taxon, the pipeline looks at its maximum RPM across all samples, and sets a threshold at a small fraction of that maximum:
+For each taxon, the pipeline looks at its maximum value across all samples, and sets a threshold at a small fraction of that maximum:
 
 ```text
-bleed_threshold = max_rpm * bleed_fraction      # bleed_fraction = 0.005 by default
-bleed_pass      = rpm >= bleed_threshold
+bleed_threshold = bleed_max * bleed_fraction    # bleed_fraction = 0.005 by default
+bleed_pass      = value >= bleed_threshold
 ```
+
+The comparison metric (`bleed_metric` column) is **RPKM when `--viral-genomes` is supplied and the taxon has a genome length, otherwise RPM** — chosen per taxon. Because the bleed test is a *within-taxon* ratio across samples, and a taxon's genome length is constant, switching RPM→RPKM rescales every value in the group by the same factor and leaves `bleed_pass` unchanged; the only thing it changes is the floor gate below (RPKM values sit on a different scale).
 
 For example, if *Coronaviridae* hits 1000 RPM in sample A and 0.2 RPM in sample B:
 
-- `max_rpm` = 1000
+- `bleed_max` = 1000
 - `bleed_threshold` = 1000 × 0.005 = 5 RPM
-- Sample A's row passes (`rpm=1000 ≥ 5`).
-- Sample B's row fails (`rpm=0.2 < 5`) — flagged as likely cross-sample bleed.
+- Sample A's row passes (`value=1000 ≥ 5`).
+- Sample B's row fails (`value=0.2 < 5`) — flagged as likely cross-sample bleed.
 
-If `max_rpm` is itself very small (`< rpm_floor`, currently 1.0), the filter is a no-op and `bleed_applied` is `False` — there is no reliable signal to filter against, so every row is preserved.
+If `bleed_max` is itself very small (below the metric's floor — `bleed_rpm_floor`, default 1.0, or `bleed_rpkm_floor`, default 0.1), the filter is a no-op and `bleed_applied` is `False` — there is no reliable signal to filter against, so every row is preserved.
 
-Tune the strictness with `--bleed-fraction` (default `0.005`). Lower values (`0.001`) are stricter; higher values (`0.01`) are more permissive.
+Tune the strictness with `--bleed-fraction` (default `0.005`). Lower values (`0.001`) are stricter; higher values (`0.01`) are more permissive. The floors are YAML-only knobs (`bleed_rpm_floor`, `bleed_rpkm_floor`); edit the generated config and rerun Snakemake to change them.
 
 ### Negative-control enrichment filter
 

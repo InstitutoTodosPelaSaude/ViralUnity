@@ -40,17 +40,32 @@ def infer_group_cols(df: pd.DataFrame, extra_group_cols: Optional[List[str]] = N
 def apply_bleed_filter(
     df: pd.DataFrame,
     rpm_col: str = "rpm",
+    rpkm_col: str = "rpkm",
     fraction: float = 0.005,
     rpm_floor: float = 1.0,
+    rpkm_floor: float = 0.1,
+    metric: str = "auto",
     group_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    Add max-RPM bleed-through filter columns.
+    Add max-metric bleed-through filter columns.
 
-    - max_rpm: maximum RPM for the group across samples
-    - bleed_threshold: fraction * max_rpm (only when max_rpm >= rpm_floor)
-    - bleed_pass: True if rpm >= bleed_threshold OR max_rpm < rpm_floor (not applied)
-    - bleed_applied: True/False indicating whether filter was applied for that taxon
+    The comparison metric is chosen per taxon group: ``rpkm`` when the ``rpkm``
+    column is present and the group has a non-NA value, else ``rpm`` (this is
+    the ``metric="auto"`` default; ``"rpm"``/``"rpkm"`` force one). Because the
+    bleed test is a WITHIN-taxon ratio (``value >= fraction * max`` across
+    samples of the *same* taxid), and genome length is constant within a taxon,
+    switching rpm→rpkm rescales every value in a group by the same constant and
+    leaves the pass/fail decision unchanged. What differs is the *floor* gate:
+    ``rpkm`` values sit on a different scale, so a metric-appropriate floor
+    (``rpkm_floor`` vs ``rpm_floor``) decides whether the filter is applied.
+
+    Columns added:
+    - bleed_metric: "rpkm" or "rpm" — the metric used for that taxon group
+    - bleed_max: maximum metric value for the group across samples
+    - bleed_threshold: fraction * bleed_max (only when bleed_max >= floor)
+    - bleed_applied: whether the filter was applied for that taxon
+    - bleed_pass: True if value >= bleed_threshold OR the filter was not applied
     """
     if "sample" not in df.columns:
         raise ValueError("Input must contain 'sample' column.")
@@ -58,34 +73,56 @@ def apply_bleed_filter(
         raise ValueError(
             f"Input missing RPM column '{rpm_col}'. Did you run add_RPM_to_summary first?"
         )
+    if metric not in ("auto", "rpm", "rpkm"):
+        raise ValueError(f"metric must be 'auto', 'rpm', or 'rpkm'; got {metric!r}.")
 
     out = df.copy()
     if group_cols is None:
         group_cols = infer_group_cols(out)
 
-    # Compute max rpm per taxon group
-    max_rpm = (
-        out.groupby(group_cols, dropna=False)[rpm_col]
-        .max()
-        .reset_index()
-        .rename(columns={rpm_col: "max_rpm"})
+    has_rpkm = rpkm_col in out.columns
+    if metric == "rpkm":
+        if not has_rpkm:
+            raise ValueError(f"metric='rpkm' but no '{rpkm_col}' column present.")
+        out["bleed_metric"] = "rpkm"
+    elif metric == "rpm":
+        out["bleed_metric"] = "rpm"
+    elif has_rpkm:
+        # auto: rpkm when the group has any non-NA rpkm, else rpm.
+        out["bleed_metric"] = out.groupby(group_cols, dropna=False)[rpkm_col].transform(
+            lambda s: "rpkm" if s.notna().any() else "rpm"
+        )
+    else:
+        out["bleed_metric"] = "rpm"
+
+    def _metric_value(row):
+        if row["bleed_metric"] == "rpkm" and has_rpkm:
+            val = row[rpkm_col]
+            if pd.notna(val):
+                return float(val)
+        return float(row[rpm_col])
+
+    out["_bleed_val"] = out.apply(_metric_value, axis=1)
+    out["_bleed_floor"] = out["bleed_metric"].map(
+        {"rpkm": float(rpkm_floor), "rpm": float(rpm_floor)}
     )
-    out = out.merge(max_rpm, on=group_cols, how="left")
 
-    # Determine threshold and pass/fail
-    out["bleed_applied"] = out["max_rpm"] >= float(rpm_floor)
+    # Max metric value per taxon group across samples.
+    out["bleed_max"] = out.groupby(group_cols, dropna=False)["_bleed_val"].transform("max")
 
-    # Default threshold is 0 (so everything passes) when not applied; but keep explicit threshold column too
+    out["bleed_applied"] = out["bleed_max"] >= out["_bleed_floor"]
+
     out["bleed_threshold"] = 0.0
     mask = out["bleed_applied"]
-    out.loc[mask, "bleed_threshold"] = out.loc[mask, "max_rpm"].astype(float) * float(fraction)
+    out.loc[mask, "bleed_threshold"] = out.loc[mask, "bleed_max"].astype(float) * float(fraction)
 
-    # Pass if above threshold, OR if not applied (max_rpm below floor)
+    # Pass if above threshold, OR if not applied (bleed_max below floor).
     out["bleed_pass"] = True
-    out.loc[mask, "bleed_pass"] = out.loc[mask, rpm_col].astype(float) >= out.loc[
+    out.loc[mask, "bleed_pass"] = out.loc[mask, "_bleed_val"].astype(float) >= out.loc[
         mask, "bleed_threshold"
     ].astype(float)
 
+    out = out.drop(columns=["_bleed_val", "_bleed_floor"], errors="ignore")
     return out
 
 
@@ -101,17 +138,30 @@ def run_cli():
     )
     ap.add_argument("--out", required=True, help="Output TSV with bleed filter columns added.")
     ap.add_argument("--rpm-col", default="rpm", help="Name of RPM column (default: rpm).")
+    ap.add_argument("--rpkm-col", default="rpkm", help="Name of RPKM column (default: rpkm).")
+    ap.add_argument(
+        "--metric",
+        default="auto",
+        choices=["auto", "rpm", "rpkm"],
+        help="Metric to bleed-filter on (default: auto = rpkm when available per group, else rpm).",
+    )
     ap.add_argument(
         "--fraction",
         type=float,
         default=0.005,
-        help="Threshold fraction of max_rpm (default: 0.005).",
+        help="Threshold fraction of the group's max metric (default: 0.005).",
     )
     ap.add_argument(
         "--rpm-floor",
         type=float,
         default=1.0,
-        help="If max_rpm < this floor, do NOT apply bleed filter for that taxon (default: 1.0).",
+        help="If a rpm-metric group's max < this floor, do NOT apply the filter (default: 1.0).",
+    )
+    ap.add_argument(
+        "--rpkm-floor",
+        type=float,
+        default=0.1,
+        help="If a rpkm-metric group's max < this floor, do NOT apply the filter (default: 0.1).",
     )
     ap.add_argument(
         "--group-cols",
@@ -129,8 +179,11 @@ def run_cli():
     out = apply_bleed_filter(
         df,
         rpm_col=args.rpm_col,
+        rpkm_col=args.rpkm_col,
         fraction=args.fraction,
         rpm_floor=args.rpm_floor,
+        rpkm_floor=args.rpkm_floor,
+        metric=args.metric,
         group_cols=group_cols,
     )
     out.to_csv(args.out, sep="\t", index=False)
@@ -141,8 +194,11 @@ def run_snakemake():
     outp = str(snakemake.output[0])
 
     rpm_col = getattr(snakemake.params, "rpm_col", "rpm")
+    rpkm_col = getattr(snakemake.params, "rpkm_col", "rpkm")
+    metric = getattr(snakemake.params, "metric", "auto")
     fraction = float(getattr(snakemake.params, "fraction", 0.005))
     rpm_floor = float(getattr(snakemake.params, "rpm_floor", 1.0))
+    rpkm_floor = float(getattr(snakemake.params, "rpkm_floor", 0.1))
 
     group_cols = getattr(snakemake.params, "group_cols", None)
     if group_cols is not None:
@@ -158,8 +214,11 @@ def run_snakemake():
     out = apply_bleed_filter(
         df,
         rpm_col=rpm_col,
+        rpkm_col=rpkm_col,
         fraction=fraction,
         rpm_floor=rpm_floor,
+        rpkm_floor=rpkm_floor,
+        metric=metric,
         group_cols=group_cols,
     )
     out.to_csv(outp, sep="\t", index=False)
