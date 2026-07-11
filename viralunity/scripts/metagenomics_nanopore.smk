@@ -102,6 +102,10 @@ def _chain_steps(track):
     steps = []
     if run_nr_validation and track.endswith("contigs"):
         steps.append("nr")
+    # Largest-contig size + median depth: diamond_contigs only (it is the track
+    # with a viral read-remap BAM), and only when RPKM/--viral-genomes is on.
+    if compute_rpkm and track == "diamond_contigs":
+        steps.append("ctgstats")
     steps.append("bleed")
     if has_negative_controls:
         steps.append("neg")

@@ -118,17 +118,18 @@ with the longest name, and disabled options never appear.
 <track>_taxa_summary.tsv                 raw counts
   └─ _RPM.tsv                            + reads-per-million
        └─ _RPKM.tsv                      + RPKM            (only with --viral-genomes)
-            └─ .nr                       NR validation     (contig tracks only; --run-nr-validation)
-                 └─ .bleed               max-RPM bleed filter (always; adds bleed_pass)
-                      └─ .neg            negative-control enrichment (with negative controls; adds neg_pass)
-                           └─ .ictv      ICTV vertebrate-host filter (--run-ictv-host-filter)
+            └─ .nr                  NR validation     (contig tracks only; --run-nr-validation)
+              └─ .ctgstats          largest-contig size + median depth (diamond_contigs only, with --viral-genomes)
+                └─ .bleed           max bleed filter (always; adds bleed_pass)
+                  └─ .neg           negative-control enrichment (with negative controls; adds neg_pass)
+                    └─ .ictv        ICTV vertebrate-host filter (--run-ictv-host-filter)
 ```
 
 The active metric token is `_RPKM` when `--viral-genomes` is set, else `_RPM`, and it
 is carried consistently through the whole chain. Row-removing steps (`.nr`, `.ictv`)
-also write a `*.dropped.tsv` audit sidecar; `.bleed`/`.neg` add pass columns rather
+also write a `*.dropped.tsv` audit sidecar; `.bleed`/`.neg`/`.ctgstats` add columns rather
 than removing rows. Example fully-filtered names: contigs
-`diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`; reads
+`diamond_contigs_taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv`; reads
 `kraken2_reads_taxa_summary_RPKM.bleed.neg.ictv.tsv`.
 
 ### Key files
@@ -138,7 +139,7 @@ than removing rows. Example fully-filtered names: contigs
 | `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary.tsv` | Raw per-taxon counts (base table) |
 | `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_RPM.tsv` | + RPM normalisation |
 | `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_RPKM.tsv` | + RPKM (when `--viral-genomes` is set) |
-| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_{RPM\|RPKM}[.nr].bleed[.neg][.ictv].tsv` | The cumulative filter chain; the longest-named file is the fully-filtered summary. `.nr` is contig-tracks only. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
+| `metagenomics/taxonomic_assignments/<track>/<track>_taxa_summary_{RPM\|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` | The cumulative filter chain; the longest-named file is the fully-filtered summary. `.nr` is contig-tracks only; `.ctgstats` (largest_contig_bp + largest_contig_median_depth) is diamond_contigs-only and requires `--viral-genomes`. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
 | `metagenomics/taxonomic_assignments/<track>/*.dropped.tsv` | Rows removed by a row-removing step (`.nr`, `.ictv`), for audit |
 | `reference_targets.tsv` | Maps each sample × ref_key to the selected reference accession |
 | `assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta` | Reference-guided consensus sequence per sample and ref_key |

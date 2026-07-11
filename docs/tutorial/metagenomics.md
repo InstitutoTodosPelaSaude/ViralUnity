@@ -314,6 +314,10 @@ The bleed and negative filters compose: a row appears as a *call* only if it has
 
 This catches the common false positive where a de novo contig gets a viral hit from the (smaller) viral DIAMOND database but is really host/bacterial/vector sequence that only the full nr database can disambiguate.
 
+### Largest-contig statistics (diamond_contigs, with `--viral-genomes`)
+
+When `--viral-genomes` is supplied, the **diamond_contigs** track adds two cheap columns per taxon (the `.ctgstats` chain step): `largest_contig_bp` — the length of the largest de novo viral contig assigned to that taxon — and `largest_contig_median_depth` — that contig's median per-position depth from the viral read-remap BAM (`samtools depth -a`). Together they are a quick proxy for how much of the genome assembled and how deeply it was covered: e.g. a 5,000 bp contig at 1,000× median depth for a 10 kb virus suggests at least half the genome is well covered without any extra heavy compute. *Caveat:* contig length is a proxy for, not a direct measure of, the fraction of the reference genome covered (a long contig can still be partial or chimeric). This is diamond_contigs-only because that is the track with a viral read-remap BAM; kraken2_contigs does not carry these columns.
+
 Alongside `nr_pass`, the `.nr` step appends `nr_is_virus`, `nr_species_correct`, `nr_correct_species` (NR's corrected species name where it confidently disagreed with the original call), and `final_species`. `final_species` is the confirmed species call — NR's correction when NR disagreed, otherwise the original `name` — so a single column carries the best available taxonomy for every row.
 
 ### ICTV vertebrate-virus filter (optional)

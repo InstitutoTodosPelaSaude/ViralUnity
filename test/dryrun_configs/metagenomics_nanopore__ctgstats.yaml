@@ -1,0 +1,46 @@
+# Config for Nanopore Metagenomics Dry-run — diamond_contigs + RPKM.
+# Exercises the diamond_contigs-only contig-stats step (the `.ctgstats` chain
+# suffix: largest_contig_bp + largest_contig_median_depth from samtools depth on
+# the viral remap BAM), which only exists when run_diamond_contigs and
+# compute_rpkm are both on.
+samples:
+  META_NP: data/reads/META_NP.fastq.gz
+  NEG_NP: data/reads/SAMPLE_NP.fastq.gz
+
+data: nanopore
+output: test/dryrun_output/metagenomics_nanopore_ctgstats/
+threads: 2
+
+kraken2_database: databases/kraken2/
+krona_database: databases/krona/taxonomy/
+taxdump: databases/taxdump/
+diamond_database: databases/diamond/nr.dmnd
+taxids: databases/diamond/protein2taxid.tsv
+
+remove_human_reads: false
+remove_unclassified_reads: false
+host_reference: NA
+deacon_index: NA
+
+run_denovo_assembly: true
+run_polish_racon: false
+run_polish_medaka: false
+run_kraken2_reads: false
+run_kraken2_contigs: false
+run_diamond_reads: false
+run_diamond_contigs: true
+
+run_reference_assembly: false
+viral_genomes: databases/virus_genomes/viral.genomes.fasta
+viral_taxids: databases/virus_genomes/genome2taxid.tsv
+
+diamond_sensitivity: sensitive
+evalue: 0.001
+bleed_fraction: 0.005
+negative_controls:
+  - NEG_NP
+compute_rpkm: true
+enrichment_pseudocount: 1.0
+z_score_threshold: 3.0
+log10_ratio_threshold: 1.0
+minimum_hit_group: 4

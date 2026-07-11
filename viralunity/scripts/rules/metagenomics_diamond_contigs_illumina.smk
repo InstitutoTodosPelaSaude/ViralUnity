@@ -175,6 +175,27 @@ if run_denovo and run_diamond_contigs:
             fi
             """
 
+    rule depth_of_viral_contigs:
+        input:
+            bam = config["output"] + "mapping/viral/{sample}.viral.bam",
+            bai = config["output"] + "mapping/viral/{sample}.viral.bam.bai"
+        output:
+            depth = config["output"] + "mapping/viral/{sample}.viral.depth.txt"
+        log:
+            config["output"] + "logs/remap_viral/{sample}.depth.log"
+        conda:
+            "../envs/alignment.yaml"
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p $(dirname {output.depth}) $(dirname {log})
+            if [ ! -s {input.bam} ]; then
+                : > {output.depth}
+            else
+                samtools depth -a {input.bam} > {output.depth} 2> {log}
+            fi
+            """
+
     rule diamond_filter_by_idxstats:
         input:
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv",
@@ -325,6 +346,27 @@ if run_denovo and run_diamond_contigs:
                 "../envs/utils.yaml"
             script:
                 "../python/add_rpkm_to_summary.py"
+
+        rule add_contig_stats_diamond_contigs:
+            input:
+                summary = chain_input("diamond_contigs", "ctgstats"),
+                depth = expand(
+                    config["output"] + "mapping/viral/{sample}.viral.depth.txt",
+                    sample=list(config["samples"])
+                ),
+                krona = expand(
+                    config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv",
+                    sample=list(config["samples"])
+                )
+            output:
+                summary = chain_output("diamond_contigs", "ctgstats")
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_contig_stats_to_summary.py"
 
     if run_ictv_host_filter:
         rule apply_ictv_filter_diamond_contigs:
