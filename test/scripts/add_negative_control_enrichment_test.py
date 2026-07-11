@@ -400,6 +400,10 @@ class TestOutputSchema(unittest.TestCase):
         "log10_ratio_threshold_used",
         "neg_decision",
         "neg_pass",
+        "fold_enrichment_10x_pass",
+        "fold_enrichment_100x_pass",
+        "neg_pass_5",
+        "neg_pass_10",
     }
 
     def _out(self, negatives=None):
@@ -557,6 +561,70 @@ class TestZeroFillControlStatistics(unittest.TestCase):
         # With zero-fill the control vector is [30, 0, 0] (SD > 0), so the
         # decision uses the z-score, not the log10-ratio fallback.
         self.assertEqual(row["neg_decision"], "z_score")
+
+
+class TestPassFlagColumns(unittest.TestCase):
+    """fold_enrichment_10x/100x_pass and neg_pass_5/10: >= inclusive, NA stays NA."""
+
+    def setUp(self):
+        # Controls [1, 2, 3] -> mean 2, sd 1 (with pseudocount 1).
+        self.df = _df(
+            _row("CTRL1", "3001", rpm=1.0),
+            _row("CTRL2", "3001", rpm=2.0),
+            _row("CTRL3", "3001", rpm=3.0),
+            _row("S_mid", "3001", rpm=8.0),  # fold 3, z 6
+            _row("S_hi", "3001", rpm=2000.0),  # fold 667, z 1998
+            _row("S_fold_bnd", "3001", rpm=29.0),  # fold exactly 10.0
+            _row("S_z_bnd", "3001", rpm=7.0),  # z exactly 5.0
+        )
+        self.out = apply_negative_control_enrichment(
+            self.df, negatives=["CTRL1", "CTRL2", "CTRL3"], pseudocount=1.0
+        )
+
+    def _pick(self, sample):
+        return self.out[self.out["sample"] == sample].iloc[0]
+
+    def test_mid_sample_flags(self):
+        r = self._pick("S_mid")
+        self.assertFalse(bool(r["fold_enrichment_10x_pass"]))
+        self.assertFalse(bool(r["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(r["neg_pass_5"]))  # z 6 >= 5
+        self.assertFalse(bool(r["neg_pass_10"]))  # z 6 < 10
+
+    def test_high_sample_flags(self):
+        r = self._pick("S_hi")
+        self.assertTrue(bool(r["fold_enrichment_10x_pass"]))
+        self.assertTrue(bool(r["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(r["neg_pass_5"]))
+        self.assertTrue(bool(r["neg_pass_10"]))
+
+    def test_fold_threshold_is_inclusive(self):
+        r = self._pick("S_fold_bnd")
+        self.assertAlmostEqual(float(r["fold_enrichment"]), 10.0, places=6)
+        self.assertTrue(bool(r["fold_enrichment_10x_pass"]))  # >= is inclusive
+
+    def test_zscore_threshold_is_inclusive(self):
+        r = self._pick("S_z_bnd")
+        self.assertAlmostEqual(float(r["z_score"]), 5.0, places=6)
+        self.assertTrue(bool(r["neg_pass_5"]))  # >= is inclusive
+        self.assertFalse(bool(r["neg_pass_10"]))
+
+    def test_control_rows_have_na_zscore_flags(self):
+        # z_score is NA for control rows, so its derived flags are NA (not False).
+        r = self._pick("CTRL1")
+        self.assertTrue(pd.isna(r["neg_pass_5"]))
+        self.assertTrue(pd.isna(r["neg_pass_10"]))
+
+    def test_zero_controls_all_flags_na(self):
+        df = _df(_row("S1", "3001", rpm=100.0), _row("S2", "3001", rpm=200.0))
+        out = apply_negative_control_enrichment(df, negatives=[])
+        for col in (
+            "fold_enrichment_10x_pass",
+            "fold_enrichment_100x_pass",
+            "neg_pass_5",
+            "neg_pass_10",
+        ):
+            self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
 
 
 if __name__ == "__main__":

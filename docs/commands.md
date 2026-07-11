@@ -422,6 +422,8 @@ Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its lea
 
 Additional diagnostic columns added by the negative-control step (the `.neg` suffix): `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log10_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log10_ratio_threshold_used`, `n_negative_controls`.
 
+Convenience pass/fail flags are also emitted (`>=` inclusive; NA where the underlying statistic is NA): `fold_enrichment_10x_pass` (`fold_enrichment >= 10`), `fold_enrichment_100x_pass` (`fold_enrichment >= 100`), `neg_pass_5` (`z_score >= 5`) and `neg_pass_10` (`z_score >= 10`).
+
 `viralunity/scripts/python/filter_krona_by_pass_taxids.py` also exposes a CLI for standalone use:
 
 ```bash

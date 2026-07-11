@@ -35,7 +35,8 @@ Output column additions:
   is_negative_control, n_negative_controls, neg_metric, control_mean,
   control_sd, control_median, control_max, fold_enrichment, log10_ratio,
   z_score, log10_ratio_threshold_used, z_score_threshold_used,
-  enrichment_pseudocount, neg_decision, neg_pass
+  enrichment_pseudocount, neg_decision, neg_pass, fold_enrichment_10x_pass,
+  fold_enrichment_100x_pass, neg_pass_5, neg_pass_10
 """
 
 import argparse
@@ -166,6 +167,32 @@ def _add_na_enrichment_cols(
     out["neg_pass"] = pd.NA
 
 
+def _threshold_flag(series: pd.Series, threshold: float) -> pd.Series:
+    """Return a nullable-boolean ``series >= threshold`` flag.
+
+    Comparison is ``>=`` (inclusive). Where the underlying statistic is NA the
+    flag is NA — matching the ``neg_pass`` NA-as-keep contract, so a flag never
+    turns an undefined statistic into a hard fail.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    flag = numeric >= float(threshold)
+    return flag.where(numeric.notna(), pd.NA).astype("boolean")
+
+
+def _add_pass_flag_columns(out: pd.DataFrame) -> None:
+    """In-place: add convenience pass/fail flags derived from the enrichment stats.
+
+    * ``fold_enrichment_10x_pass``  — fold_enrichment >= 10
+    * ``fold_enrichment_100x_pass`` — fold_enrichment >= 100
+    * ``neg_pass_5``                — z_score >= 5
+    * ``neg_pass_10``               — z_score >= 10
+    """
+    out["fold_enrichment_10x_pass"] = _threshold_flag(out["fold_enrichment"], 10.0)
+    out["fold_enrichment_100x_pass"] = _threshold_flag(out["fold_enrichment"], 100.0)
+    out["neg_pass_5"] = _threshold_flag(out["z_score"], 5.0)
+    out["neg_pass_10"] = _threshold_flag(out["z_score"], 10.0)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main enrichment logic
 # ─────────────────────────────────────────────────────────────────────────────
@@ -235,6 +262,7 @@ def apply_negative_control_enrichment(
     # ── No negative controls ──────────────────────────────────────────────────
     if not negatives:
         _add_na_enrichment_cols(out, pseudocount, z_score_threshold, log10_ratio_threshold)
+        _add_pass_flag_columns(out)
         out = out.drop(columns=["_metric"], errors="ignore")
         return out
 
@@ -321,6 +349,9 @@ def apply_negative_control_enrichment(
             l2r = out.at[idx, "log10_ratio"]
             out.at[idx, "neg_decision"] = "log10_ratio"
             out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
+
+    # Convenience pass/fail flags derived from the enrichment stats.
+    _add_pass_flag_columns(out)
 
     # Tidy up internal columns
     out = out.drop(columns=["_metric", "_ctrl_vals"], errors="ignore")
