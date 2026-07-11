@@ -134,6 +134,73 @@ if run_denovo and run_k2_contigs:
             script:
                 "../python/add_rpkm_to_summary.py"
 
+        rule extract_viral_contigs_kraken2:
+            input:
+                contigs = config["output"] + "denovo_assembly/megahit/{sample}/final.contigs.fa",
+                krona = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt"
+            output:
+                fasta = config["output"] + "denovo_assembly/viral_contigs_kraken2/{sample}.viral_contigs.fa",
+                ids = temp(config["output"] + "denovo_assembly/viral_contigs_kraken2/{sample}.viral.ids.txt")
+            params:
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/extract_viral_contigs.py"
+
+        rule remap_and_depth_viral_contigs_kraken2:
+            input:
+                fasta = config["output"] + "denovo_assembly/viral_contigs_kraken2/{sample}.viral_contigs.fa",
+                R1 = rules.remove_host_reads.output.filtered_R1,
+                R2 = rules.remove_host_reads.output.filtered_R2
+            output:
+                bam = config["output"] + "mapping/viral_kraken2/{sample}.viral.bam",
+                bai = config["output"] + "mapping/viral_kraken2/{sample}.viral.bam.bai",
+                depth = config["output"] + "mapping/viral_kraken2/{sample}.viral.depth.txt"
+            threads: config.get("remap_reads_to_viral_contigs_cpus", 2)
+            resources:
+                mem_mb = config.get("remap_reads_to_viral_contigs_ram", 4) * 1024
+            log:
+                config["output"] + "logs/remap_viral_kraken2/{sample}.log"
+            conda:
+                "../envs/alignment.yaml"
+            shell:
+                r"""
+                set -euo pipefail
+                mkdir -p $(dirname {output.bam}) $(dirname {log})
+                if [ ! -s {input.fasta} ]; then
+                    echo "No viral kraken2 contigs for {wildcards.sample}; skipping remap." >> {log}
+                    touch {output.bam} {output.bai}
+                    : > {output.depth}
+                else
+                    minimap2 -t {threads} -ax sr {input.fasta} {input.R1} {input.R2} | \
+                        samtools sort -@ {threads} -o {output.bam} -
+                    samtools index -@ {threads} {output.bam}
+                    samtools depth -a {output.bam} > {output.depth}
+                fi
+                """
+
+        rule add_contig_stats_kraken2_contigs:
+            input:
+                summary = chain_input("kraken2_contigs", "ctgstats"),
+                depth = expand(
+                    config["output"] + "mapping/viral_kraken2/{sample}.viral.depth.txt",
+                    sample=list(config["samples"])
+                ),
+                krona = expand(
+                    config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt",
+                    sample=list(config["samples"])
+                )
+            output:
+                summary = chain_output("kraken2_contigs", "ctgstats")
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_contig_stats_to_summary.py"
+
     if run_ictv_host_filter:
         rule apply_ictv_filter_kraken2_contigs:
             input:

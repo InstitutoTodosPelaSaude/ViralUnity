@@ -43,9 +43,12 @@ across negative controls).
 - **Convenience pass-flag columns** — `fold_enrichment_10x_pass`,
   `fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10` (`>=` inclusive; NA
   where the underlying statistic is NA).
-- **Largest-contig statistics** (`diamond_contigs` only, with `--viral-genomes`):
+- **Largest-contig statistics** (both contig tracks, with `--viral-genomes`):
   `largest_contig_bp` and `largest_contig_median_depth`, a cheap
-  genome-fraction/coverage proxy from the viral read-remap BAM.
+  genome-fraction/coverage proxy. Each contig track remaps the host-filtered
+  reads to its own viral contigs and runs `samtools depth -a` for per-contig
+  depth (kraken2_contigs extracts its viral contigs by lineage; diamond_contigs
+  reuses its existing viral remap).
 
 ### Changed
 

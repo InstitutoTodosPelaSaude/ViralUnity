@@ -26,7 +26,7 @@ run_denovo_assembly: true
 run_polish_racon: false
 run_polish_medaka: false
 run_kraken2_reads: false
-run_kraken2_contigs: false
+run_kraken2_contigs: true
 run_diamond_reads: false
 run_diamond_contigs: true
 

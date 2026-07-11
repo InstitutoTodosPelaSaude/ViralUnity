@@ -16,7 +16,7 @@ All eight scientific/output decisions were signed off by the PI before coding. O
 | 3 | Pass-flag columns | `fold_enrichment_10x_pass`, `fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10`; `>=` inclusive; **NA stays NA**. |
 | 4 | log2 → log10 | Rename everywhere; default log10-ratio threshold **1.0 (=10× fold)** — accepted as ~5× stricter than the old log2 default of 1.0 (=2×). |
 | 5 | `final_species` | `coalesce(nr_correct_species, name)` for all rows, immediately right of `nr_correct_species`. |
-| 6 | Contig filter | `largest_contig_bp` + `largest_contig_median_depth` (true `samtools depth`, median over the single largest contig for the taxon); gated on `--viral-genomes`. |
+| 6 | Contig filter | `largest_contig_bp` + `largest_contig_median_depth` (true `samtools depth`, median over the single largest contig for the taxon); gated on `--viral-genomes`. **Updated 2026-07-11 (PI reversed the earlier diamond-only scope): now on BOTH contig tracks** — kraken2_contigs extracts its viral contigs by lineage (taxid 10239) and remaps reads for its own depth BAM; diamond_contigs reuses its existing viral remap. |
 | 7 | Output reorg | **Clean break** to a per-method/per-rank tree; combined user-facing file removed; family/genus names propagated down; `select_reference_genomes.py` + krona filter rewired. |
 | 8 | Remove `source` column | Confirmed no consumer; drop it. |
 

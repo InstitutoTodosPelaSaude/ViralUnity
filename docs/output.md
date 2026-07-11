@@ -117,7 +117,7 @@ with the longest name, and disabled options never appear.
   └─ _RPM.tsv                            + reads-per-million
        └─ _RPKM.tsv                      + RPKM            (only with --viral-genomes)
             └─ .nr                  NR validation     (contig tracks only; --run-nr-validation)
-              └─ .ctgstats          largest-contig size + median depth (diamond_contigs only, with --viral-genomes)
+              └─ .ctgstats          largest-contig size + median depth (contig tracks, with --viral-genomes)
                 └─ .bleed           max bleed filter (always; adds bleed_pass)
                   └─ .neg           negative-control enrichment (with negative controls; adds neg_pass)
                     └─ .ictv        ICTV vertebrate-host filter (--run-ictv-host-filter)
@@ -136,7 +136,7 @@ than removing rows. Example fully-filtered names: contigs
 |------|-------------|
 | `metagenomics/taxonomic_assignments/<track>/{family,genus,species}/<track>_<rank>_taxa_summary_<chain>.tsv` | **User-facing deliverable**: per-rank tables with higher-rank names propagated down (species gains `family`+`genus`; genus gains `family`). Most users want `species/`. |
 | `metagenomics/taxonomic_assignments/<track>/chain/<track>_taxa_summary.tsv` | Internal: raw per-taxon counts (base of the chain) |
-| `metagenomics/taxonomic_assignments/<track>/chain/<track>_taxa_summary_{RPM\|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` | Internal: the cumulative filter chain; the longest-named file is the fully-filtered combined summary that the per-rank tables are split from. `.nr` is contig-tracks only; `.ctgstats` (largest_contig_bp + largest_contig_median_depth) is diamond_contigs-only and requires `--viral-genomes`. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
+| `metagenomics/taxonomic_assignments/<track>/chain/<track>_taxa_summary_{RPM\|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` | Internal: the cumulative filter chain; the longest-named file is the fully-filtered combined summary that the per-rank tables are split from. `.nr` is contig-tracks only; `.ctgstats` (largest_contig_bp + largest_contig_median_depth) is on both contig tracks and requires `--viral-genomes`. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
 | `metagenomics/taxonomic_assignments/<track>/chain/*.dropped.tsv` | Rows removed by a row-removing step (`.nr`, `.ictv`), for audit |
 | `reference_targets.tsv` | Maps each sample × ref_key to the selected reference accession |
 | `assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta` | Reference-guided consensus sequence per sample and ref_key |
