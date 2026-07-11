@@ -310,6 +310,8 @@ The bleed and negative filters compose: a row appears as a *call* only if it has
 
 This catches the common false positive where a de novo contig gets a viral hit from the (smaller) viral DIAMOND database but is really host/bacterial/vector sequence that only the full nr database can disambiguate.
 
+Alongside `nr_pass`, the `.nr` step appends `nr_is_virus`, `nr_species_correct`, `nr_correct_species` (NR's corrected species name where it confidently disagreed with the original call), and `final_species`. `final_species` is the confirmed species call — NR's correction when NR disagreed, otherwise the original `name` — so a single column carries the best available taxonomy for every row.
+
 ### ICTV vertebrate-virus filter (optional)
 
 `--run-ictv-host-filter` drops taxa outside a curated allowlist of vertebrate-infecting virus lineages — phages, plant/fungal/algal/invertebrate-only viruses, and giant viruses. It applies to **all four tracks** and is the last step in the chain (`.ictv`). The allowlist is a taxid file passed with `--ictv-vertebrate-taxids-file`, built from the ICTV Virus Metadata Resource (VMR) by `viralunity get-databases ictv-vertebrate-taxids` (which wraps `build_ictv_vertebrate_taxids.py`). Matching is lineage-aware: a taxon is kept when any ancestor in its lineage is on the allowlist, so strain- and species-level hits under an allowed genus/family survive. Removed rows are logged to a `*.dropped.tsv` sidecar.

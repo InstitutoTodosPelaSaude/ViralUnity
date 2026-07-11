@@ -12,7 +12,10 @@ Refactored from the REVISA nr_validation prototype for in-pipeline use:
   downstream bleed/negative-control statistics see only NR-validated taxa. Rows
   that are ambiguous / have no NR data, and all non-species rows, are kept
   (``nr_pass = NA``). The informational columns ``nr_is_virus``,
-  ``nr_species_correct``, ``nr_correct_species`` are appended to every row.
+  ``nr_species_correct``, ``nr_correct_species`` are appended to every row,
+  followed by ``final_species`` = coalesce(nr_correct_species, name) — the
+  confirmed species call (NR's correction where it disagreed, else the
+  original name).
 
 Species-level RefSeq-vs-NR disagreements are surfaced (not filtered) in a
 separate ``*_nr_flags.tsv`` (reason ``misid_novel`` / ``misid_known``).
@@ -169,6 +172,32 @@ def _nr_pass(nr_is_virus: str):
     return NA
 
 
+def _add_final_species(df: pd.DataFrame) -> pd.DataFrame:
+    """Return *df* with a ``final_species`` column = coalesce(nr_correct_species, name).
+
+    NR's corrected species wins whenever NR confidently disagreed with the
+    original call (``nr_correct_species`` is populated); otherwise the original
+    ``name`` is used. Applied to every row (family/genus rows just echo their
+    own name). The column is positioned immediately to the right of
+    ``nr_correct_species`` so the confirmed taxonomy sits next to the evidence.
+    """
+
+    def _coalesce(row):
+        cs = row["nr_correct_species"]
+        if cs is not None and str(cs) not in ("", NA):
+            return cs
+        return row["name"]
+
+    df = df.copy()
+    df["final_species"] = df.apply(_coalesce, axis=1)
+
+    cols = list(df.columns)
+    cols.remove("final_species")
+    insert_at = cols.index("nr_correct_species") + 1
+    cols.insert(insert_at, "final_species")
+    return df[cols]
+
+
 def harmonize(
     summary_path: str,
     nr_table_path: str,
@@ -230,6 +259,8 @@ def harmonize(
     df["nr_species_correct"] = sc_col
     df["nr_correct_species"] = cs_col
     df["nr_pass"] = pass_col
+
+    df = _add_final_species(df)
 
     keep_mask = df["nr_pass"] != "False"
     kept = df[keep_mask]
