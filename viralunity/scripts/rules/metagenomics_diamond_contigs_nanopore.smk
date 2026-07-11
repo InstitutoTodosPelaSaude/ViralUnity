@@ -346,7 +346,7 @@ if run_denovo and run_diamond_contigs:
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/chain/diamond_contigs_taxa_summary.tsv"
         conda:
             "../envs/utils.yaml"
         shell:
@@ -361,13 +361,13 @@ if run_denovo and run_diamond_contigs:
 
     rule add_RPM_to_diamond_contigs_summary:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/chain/diamond_contigs_taxa_summary.tsv",
             merged_fastqs = expand(
                 config["output"] + "host_filtered/{sample}.filtered.fastq.gz",
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/chain/diamond_contigs_taxa_summary_RPM.tsv"
         params:
             sample_to_fastq = get_sample_to_fastq(),
             reads_col = "mapped_reads"
@@ -379,10 +379,10 @@ if run_denovo and run_diamond_contigs:
     if compute_rpkm:
         rule add_rpkm_to_diamond_contigs_summary:
             input:
-                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv",
+                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/chain/diamond_contigs_taxa_summary_RPM.tsv",
                 genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
             output:
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPKM.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/chain/diamond_contigs_taxa_summary_RPKM.tsv",
             conda:
                 "../envs/utils.yaml"
             script:

@@ -144,12 +144,21 @@ def resolve_summary_file(summary_dir, classifier, suffix=None):
     for backward compatibility and ignored. Audit sidecars (``*.dropped.tsv``,
     ``*_nr_flags.tsv``) are never selected.
     """
-    pattern = os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary*.tsv")
-    candidates = [
-        p
-        for p in glob.glob(pattern)
-        if not any(tok in os.path.basename(p) for tok in _NON_SUMMARY_TOKENS)
+    # The combined chain lives under <classifier>/chain/ (v1.3.2+); fall back to
+    # the flat <classifier>/ layout for outputs produced by older versions.
+    patterns = [
+        os.path.join(summary_dir, classifier, "chain", f"{classifier}_taxa_summary*.tsv"),
+        os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary*.tsv"),
     ]
+    candidates = []
+    for pattern in patterns:
+        candidates = [
+            p
+            for p in glob.glob(pattern)
+            if not any(tok in os.path.basename(p) for tok in _NON_SUMMARY_TOKENS)
+        ]
+        if candidates:
+            break
     if not candidates:
         return None
     # Most-filtered first: most chain steps, then longest name (RPKM/RPM over base).

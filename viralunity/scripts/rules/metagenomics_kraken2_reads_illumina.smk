@@ -96,7 +96,7 @@ rule summarize_taxa_kraken2_reads_all:
             sample=config["samples"]
         )
     output:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv"
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/chain/kraken2_reads_taxa_summary.tsv"
     conda:
         "../envs/utils.yaml"
     shell:
@@ -111,13 +111,13 @@ rule summarize_taxa_kraken2_reads_all:
 
 rule add_RPM_to_kraken2_reads_summary:
     input:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv",
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/chain/kraken2_reads_taxa_summary.tsv",
         merged_fastqs = expand(
             config["output"] + "host_filtered/{sample}.merged.fastq.gz",
             sample=config["samples"]
         )
     output:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv"
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/chain/kraken2_reads_taxa_summary_RPM.tsv"
     params:
         sample_to_fastq = get_sample_to_fastq(),
         reads_col = "count"
@@ -129,10 +129,10 @@ rule add_RPM_to_kraken2_reads_summary:
 if compute_rpkm:
     rule add_rpkm_to_kraken2_reads_summary:
         input:
-            summary = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv",
+            summary = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/chain/kraken2_reads_taxa_summary_RPM.tsv",
             genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/chain/kraken2_reads_taxa_summary_RPKM.tsv",
         conda:
             "../envs/utils.yaml"
         script:

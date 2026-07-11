@@ -85,7 +85,7 @@ def get_medaka_assembly_input(wildcards):
     return base.format(sample=s) + "final.contigs.fa"
 
 def _summary_stem(track):
-    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + track + "_taxa_summary"
+    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/chain/" + track + "_taxa_summary"
 
 def _summary_base(track):
     return _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
@@ -131,33 +131,52 @@ def dropped_sidecar(path):
     return path[:-4] + ".dropped.tsv" if path.endswith(".tsv") else path + ".dropped.tsv"
 
 def final_summary(track):
-    """The last file in the chain for a track (the fully-filtered summary)."""
+    """The last file in the chain for a track (the fully-filtered summary).
+
+    Internal, non-user-facing: lives under <track>/chain/. Consumers are the
+    per-rank split, the lineage-aware Krona filter, and reference selection.
+    """
     return _chain_path(track, len(_chain_steps(track)) - 1)
+
+_USER_RANKS = ("family", "genus", "species")
+
+def _chain_tail(track):
+    """The '_RPKM.nr.ctgstats.bleed.neg.ictv'-style tail of the fully-filtered name."""
+    metric = "_RPKM" if compute_rpkm else "_RPM"
+    return metric + "".join("." + s for s in _chain_steps(track))
+
+def per_rank_summary(track, rank):
+    """User-facing per-rank summary path (the browsable deliverable)."""
+    return (config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + rank
+            + "/" + track + "_" + rank + "_taxa_summary" + _chain_tail(track) + ".tsv")
+
+def per_rank_summaries(track):
+    return [per_rank_summary(track, r) for r in _USER_RANKS]
 
 def _all_inputs():
     targets = [
         config["output"] + "benchmark.tsv"
     ]
     if run_k2_reads:
-        targets.append(final_summary("kraken2_reads"))
+        targets.extend(per_rank_summaries("kraken2_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_k2_contigs:
-        targets.append(final_summary("kraken2_contigs"))
+        targets.extend(per_rank_summaries("kraken2_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/reports/{sample}.output.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_diamond_reads:
-        targets.append(final_summary("diamond_reads"))
+        targets.extend(per_rank_summaries("diamond_reads"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/reports/{sample}.diamond.filtered.krona.html",
             sample=config["samples"],
         ))
     if run_denovo and run_diamond_contigs:
-        targets.append(final_summary("diamond_contigs"))
+        targets.extend(per_rank_summaries("diamond_contigs"))
         targets.extend(expand(
             config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/reports/{sample}.diamond.supported.filtered.krona.html",
             sample=config["samples"],
@@ -202,6 +221,70 @@ include: "rules/metagenomics_diamond_contigs_nanopore.smk"
 include: "rules/metagenomics_nr_validation_nanopore.smk"
 if config.get("run_reference_assembly", False):
     include: "rules/metagenomics_reference_assembly.smk"
+
+
+# ── Terminal per-rank split (the user-facing deliverable) ─────────────────────
+# The combined chain lives under <track>/chain/; these split the fully-filtered
+# table into <track>/{family,genus,species}/ with higher-rank names propagated.
+if run_k2_reads:
+    rule split_kraken2_reads_by_rank:
+        input:
+            summary = final_summary("kraken2_reads")
+        output:
+            family = per_rank_summary("kraken2_reads", "family"),
+            genus = per_rank_summary("kraken2_reads", "genus"),
+            species = per_rank_summary("kraken2_reads", "species")
+        params:
+            taxdump = config["taxdump"]
+        conda:
+            "envs/utils.yaml"
+        script:
+            "python/split_summary_by_rank.py"
+
+if run_denovo and run_k2_contigs:
+    rule split_kraken2_contigs_by_rank:
+        input:
+            summary = final_summary("kraken2_contigs")
+        output:
+            family = per_rank_summary("kraken2_contigs", "family"),
+            genus = per_rank_summary("kraken2_contigs", "genus"),
+            species = per_rank_summary("kraken2_contigs", "species")
+        params:
+            taxdump = config["taxdump"]
+        conda:
+            "envs/utils.yaml"
+        script:
+            "python/split_summary_by_rank.py"
+
+if run_diamond_reads:
+    rule split_diamond_reads_by_rank:
+        input:
+            summary = final_summary("diamond_reads")
+        output:
+            family = per_rank_summary("diamond_reads", "family"),
+            genus = per_rank_summary("diamond_reads", "genus"),
+            species = per_rank_summary("diamond_reads", "species")
+        params:
+            taxdump = config["taxdump"]
+        conda:
+            "envs/utils.yaml"
+        script:
+            "python/split_summary_by_rank.py"
+
+if run_denovo and run_diamond_contigs:
+    rule split_diamond_contigs_by_rank:
+        input:
+            summary = final_summary("diamond_contigs")
+        output:
+            family = per_rank_summary("diamond_contigs", "family"),
+            genus = per_rank_summary("diamond_contigs", "genus"),
+            species = per_rank_summary("diamond_contigs", "species")
+        params:
+            taxdump = config["taxdump"]
+        conda:
+            "envs/utils.yaml"
+        script:
+            "python/split_summary_by_rank.py"
 
 rule organize_files:
     conda:
