@@ -424,6 +424,8 @@ Additional diagnostic columns added by the negative-control step (the `.neg` suf
 
 Convenience pass/fail flags are also emitted (`>=` inclusive; NA where the underlying statistic is NA): `fold_enrichment_10x_pass` (`fold_enrichment >= 10`), `fold_enrichment_100x_pass` (`fold_enrichment >= 100`), `neg_pass_5` (`z_score >= 5`) and `neg_pass_10` (`z_score >= 10`).
 
+A complementary **aggregate (pooled) control** view is also emitted (diagnostic only — it does not change `neg_pass`): `pooled_control_metric` treats all controls as one pooled library (raw reads pooled, i.e. each control weighted by its library size; absent controls contribute 0), plus `agg_fold_enrichment`, `agg_log10_ratio`, and `agg_fold_enrichment_10x_pass`/`agg_fold_enrichment_100x_pass`. This catches widespread, high-variance contamination that inflates per-control SD and drags the z-score down.
+
 `viralunity/scripts/python/filter_krona_by_pass_taxids.py` also exposes a CLI for standalone use:
 
 ```bash

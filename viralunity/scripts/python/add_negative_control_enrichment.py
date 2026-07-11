@@ -36,7 +36,9 @@ Output column additions:
   control_sd, control_median, control_max, fold_enrichment, log10_ratio,
   z_score, log10_ratio_threshold_used, z_score_threshold_used,
   enrichment_pseudocount, neg_decision, neg_pass, fold_enrichment_10x_pass,
-  fold_enrichment_100x_pass, neg_pass_5, neg_pass_10
+  fold_enrichment_100x_pass, neg_pass_5, neg_pass_10, pooled_control_metric,
+  agg_fold_enrichment, agg_log10_ratio, agg_fold_enrichment_10x_pass,
+  agg_fold_enrichment_100x_pass
 """
 
 import argparse
@@ -165,6 +167,11 @@ def _add_na_enrichment_cols(
     out["log10_ratio_threshold_used"] = l2r_thresh
     out["neg_decision"] = "none"
     out["neg_pass"] = pd.NA
+    out["pooled_control_metric"] = pd.NA
+    out["agg_fold_enrichment"] = pd.NA
+    out["agg_log10_ratio"] = pd.NA
+    out["agg_fold_enrichment_10x_pass"] = pd.NA
+    out["agg_fold_enrichment_100x_pass"] = pd.NA
 
 
 def _threshold_flag(series: pd.Series, threshold: float) -> pd.Series:
@@ -191,6 +198,74 @@ def _add_pass_flag_columns(out: pd.DataFrame) -> None:
     out["fold_enrichment_100x_pass"] = _threshold_flag(out["fold_enrichment"], 100.0)
     out["neg_pass_5"] = _threshold_flag(out["z_score"], 5.0)
     out["neg_pass_10"] = _threshold_flag(out["z_score"], 10.0)
+
+
+def _add_aggregate_control(
+    out: pd.DataFrame,
+    control_rows: pd.DataFrame,
+    group_cols: List[str],
+    neg_samples: List[str],
+    pseudocount: float,
+    non_ctrl_mask: pd.Series,
+) -> None:
+    """In-place: add the pooled ("aggregate") negative-control complement.
+
+    All negative controls are treated as one pooled library:
+
+        pooled_metric = Σ_c (metric_c · w_c) / Σ_c w_c
+
+    where ``w_c`` is control *c*'s ``total_reads`` (library size) when the column
+    is present, else 1 (equal weight). A taxon absent from a control contributes
+    metric 0 (zero-fill). Pooling raw reads — i.e. weighting each control's
+    metric by its depth — is deliberately *not* a plain average: a
+    deeply-sequenced control legitimately counts more, which is what catches the
+    high-variance widespread contamination that inflates per-control SD and
+    drags the z-score down.
+
+    This is a *complement* to the z-score; it does not touch ``neg_pass``. Adds
+    ``pooled_control_metric``, ``agg_fold_enrichment``, ``agg_log10_ratio`` and
+    the aggregate fold-enrichment pass flags.
+    """
+    has_total_reads = "total_reads" in out.columns
+    weights: Dict[str, float] = {}
+    for s in neg_samples:
+        rows_s = control_rows[control_rows["sample"] == s]
+        w = 1.0
+        if has_total_reads and len(rows_s):
+            try:
+                w = float(rows_s["total_reads"].iloc[0])
+            except (TypeError, ValueError):
+                w = 1.0
+        weights[s] = w if w > 0 else 1.0
+    total_w = sum(weights.values())
+
+    pooled_num: Dict[tuple, float] = defaultdict(float)
+    for _, row in control_rows.iterrows():
+        val = row["_metric"]
+        if isinstance(val, float) and math.isnan(val):
+            continue
+        key = tuple(row[c] for c in group_cols)
+        pooled_num[key] += float(val) * weights.get(row["sample"], 1.0)
+
+    def _pooled(row):
+        if total_w <= 0:
+            return 0.0
+        return pooled_num.get(tuple(row[c] for c in group_cols), 0.0) / total_w
+
+    out["pooled_control_metric"] = out.apply(_pooled, axis=1)
+
+    out["agg_fold_enrichment"] = pd.NA
+    out["agg_log10_ratio"] = pd.NA
+    for idx in out[non_ctrl_mask].index:
+        sample_metric = float(out.at[idx, "_metric"])
+        pooled = float(out.at[idx, "pooled_control_metric"])
+        out.at[idx, "agg_fold_enrichment"] = calculate_fold_enrichment(
+            sample_metric, pooled, pseudocount
+        )
+        out.at[idx, "agg_log10_ratio"] = calculate_log10_ratio(sample_metric, pooled, pseudocount)
+
+    out["agg_fold_enrichment_10x_pass"] = _threshold_flag(out["agg_fold_enrichment"], 10.0)
+    out["agg_fold_enrichment_100x_pass"] = _threshold_flag(out["agg_fold_enrichment"], 100.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -349,6 +424,11 @@ def apply_negative_control_enrichment(
             l2r = out.at[idx, "log10_ratio"]
             out.at[idx, "neg_decision"] = "log10_ratio"
             out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
+
+    # Aggregate (pooled) negative-control complement to the per-control z-score.
+    _add_aggregate_control(
+        out, control_rows, group_cols, neg_samples_present, pseudocount, non_ctrl_mask
+    )
 
     # Convenience pass/fail flags derived from the enrichment stats.
     _add_pass_flag_columns(out)

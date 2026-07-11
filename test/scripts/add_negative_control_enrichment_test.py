@@ -404,6 +404,11 @@ class TestOutputSchema(unittest.TestCase):
         "fold_enrichment_100x_pass",
         "neg_pass_5",
         "neg_pass_10",
+        "pooled_control_metric",
+        "agg_fold_enrichment",
+        "agg_log10_ratio",
+        "agg_fold_enrichment_10x_pass",
+        "agg_fold_enrichment_100x_pass",
     }
 
     def _out(self, negatives=None):
@@ -623,6 +628,81 @@ class TestPassFlagColumns(unittest.TestCase):
             "fold_enrichment_100x_pass",
             "neg_pass_5",
             "neg_pass_10",
+        ):
+            self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
+
+
+class TestAggregatePooledControl(unittest.TestCase):
+    """Pooled-control complement: raw-read (library-size weighted) pooling,
+    grounded in the REVISA high-variance contamination scenario."""
+
+    def test_deep_control_dominates_pooled_metric(self):
+        # A deep control with low rpm vs a shallow control with high rpm. Raw
+        # pooling weights by library size, so the deep control counts more.
+        df = _df(
+            _row("CTRL_deep", "3001", rpm=200.0, total_reads=10_000_000),
+            _row("CTRL_shallow", "3001", rpm=2000.0, total_reads=1_000_000),
+            _row("S1", "3001", rpm=5000.0, total_reads=1_000_000),
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL_deep", "CTRL_shallow"], pseudocount=1.0
+        )
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        # plain zero-filled mean = (200 + 2000) / 2 = 1100
+        self.assertAlmostEqual(float(s1["control_mean"]), 1100.0, places=3)
+        # library-size-weighted pool = (200*1e7 + 2000*1e6) / 1.1e7 ≈ 363.6
+        pooled = 4e9 / 1.1e7
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), pooled, places=2)
+        # pool differs from the plain mean -> the deep low-rpm control drags it down
+        self.assertNotAlmostEqual(
+            float(s1["pooled_control_metric"]), float(s1["control_mean"]), places=1
+        )
+        expected_agg = (5000.0 + 1.0) / (pooled + 1.0)
+        self.assertAlmostEqual(float(s1["agg_fold_enrichment"]), expected_agg, places=3)
+        self.assertTrue(bool(s1["agg_fold_enrichment_10x_pass"]))  # ≈13.7 >= 10
+        self.assertFalse(bool(s1["agg_fold_enrichment_100x_pass"]))
+
+    def test_absent_controls_zero_fill_via_denominator(self):
+        # HIV-like spread across 4 of 6 controls (equal library sizes) -> the
+        # pool is the plain zero-filled mean over all six controls.
+        rows = [
+            _row("C1", "3001", rpm=276.0),
+            _row("C2", "3001", rpm=1988.0),
+            _row("C3", "3001", rpm=1991.0),
+            _row("C4", "3001", rpm=17144.0),
+            # C5/C6 present via another taxon -> still controls, zero for 3001
+            _row("C5", "9999", rpm=5.0),
+            _row("C6", "9999", rpm=5.0),
+            _row("S1", "3001", rpm=5000.0),
+        ]
+        out = apply_negative_control_enrichment(
+            _df(*rows), negatives=["C1", "C2", "C3", "C4", "C5", "C6"], pseudocount=1.0
+        )
+        s1 = out[(out["sample"] == "S1") & (out["taxid"] == "3001")].iloc[0]
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), 21399.0 / 6, places=3)
+
+    def test_complementary_populates_agg_and_keeps_neg_pass(self):
+        df = _df(
+            _row("C1", "3001", rpm=4.0),
+            _row("C2", "3001", rpm=6.0),
+            _row("S1", "3001", rpm=500.0),
+        )
+        out = apply_negative_control_enrichment(df, negatives=["C1", "C2"])
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        # neg_pass is still driven by the z-score / log10 gate, not the pool
+        self.assertIn(s1["neg_decision"], ("z_score", "log10_ratio_fallback"))
+        self.assertFalse(pd.isna(s1["pooled_control_metric"]))
+        self.assertFalse(pd.isna(s1["agg_log10_ratio"]))
+
+    def test_zero_controls_agg_cols_all_na(self):
+        df = _df(_row("S1", "3001", rpm=100.0))
+        out = apply_negative_control_enrichment(df, negatives=[])
+        for col in (
+            "pooled_control_metric",
+            "agg_fold_enrichment",
+            "agg_log10_ratio",
+            "agg_fold_enrichment_10x_pass",
+            "agg_fold_enrichment_100x_pass",
         ):
             self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
 
