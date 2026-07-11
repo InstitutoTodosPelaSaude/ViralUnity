@@ -7,6 +7,55 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.3.2] - 2026-07-11
+
+Empirically-motivated refinements to the metagenomics contamination filters,
+grounded in the REVISA lab-contamination episode (mayaro + HIV libraries seen
+across negative controls).
+
+### Changed (breaking)
+
+- **Per-rank output layout.** Each track's taxa summary is now split into one
+  table per taxonomic rank under `taxonomic_assignments/<track>/{family,genus,species}/`,
+  with higher-rank names propagated down (species tables gain `family`+`genus`
+  columns; genus tables gain `family`). The combined cumulative filter chain now
+  lives internally under `<track>/chain/`. Downstream scripts that read the old
+  flat `<track>/<track>_taxa_summary_*.tsv` path must switch to `<track>/species/`
+  (or `<track>/chain/` for the combined table).
+- **Negative-control log-ratio is now log10, not log2.** The `log2_ratio` column,
+  `neg_decision` values, `--log2-ratio-threshold` flag and config key are renamed
+  to their `log10` equivalents. The default threshold stays `1.0` but now marks a
+  **10-fold** enrichment over controls (log10 = 1) rather than the old 2-fold
+  (log2 = 1) — i.e. the negative-control gate is stricter by default.
+- **Removed the `source` column** from taxa summaries (it held an internal
+  krona-input path of no user interest).
+
+### Added
+
+- **`final_species` column** — the confirmed species call, coalescing
+  `nr_correct_species` (NR's correction where it disagreed) with the original
+  `name`; present on every track.
+- **Aggregate (pooled) negative-control filter** — treats all controls as one
+  pooled library (raw reads pooled, weighting each control by its library size)
+  and reports `pooled_control_metric`, `agg_fold_enrichment`, `agg_log10_ratio`,
+  and `agg_fold_enrichment_10x/100x_pass`. Complementary to the z-score; catches
+  widespread, high-variance contamination that inflates per-control SD.
+- **Convenience pass-flag columns** — `fold_enrichment_10x_pass`,
+  `fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10` (`>=` inclusive; NA
+  where the underlying statistic is NA).
+- **Largest-contig statistics** (`diamond_contigs` only, with `--viral-genomes`):
+  `largest_contig_bp` and `largest_contig_median_depth`, a cheap
+  genome-fraction/coverage proxy from the viral read-remap BAM.
+
+### Changed
+
+- **Bleed filter is metric-aware.** It now uses RPKM when `--viral-genomes` is
+  supplied (per taxon), else RPM, recorded in a new `bleed_metric` column; the
+  group-max column `max_rpm` is renamed `bleed_max`. Because bleed is a
+  within-taxon ratio the pass/fail is unchanged by the metric; the application
+  floor is now metric-specific (`bleed_rpm_floor` 1.0, new `bleed_rpkm_floor`
+  0.1 — both YAML-only).
+
 ## [1.3.1] - 2026-07-10
 
 ### Added
