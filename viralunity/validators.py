@@ -108,7 +108,7 @@ def ensure_within_base(path: str, base: str) -> str:
 # Objective validity bounds for numeric parameters. These are correctness
 # constraints (a thread count must be >= 1; an allele frequency is a fraction in
 # [0, 1]), NOT scientific tuning choices — analysis knobs such as
-# z_score_threshold / log2_ratio_threshold are intentionally left unbounded.
+# z_score_threshold / log10_ratio_threshold are intentionally left unbounded.
 _NUMERIC_BOUNDS = {
     "threads": (1, None),
     "threads_total": (1, None),

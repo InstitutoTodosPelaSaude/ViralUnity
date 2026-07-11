@@ -240,7 +240,7 @@ longest-named file for a track is its fully-filtered summary. Each step:
 | `…_RPM` / `…_RPKM`     | The normalisation base (one or the other). `_RPM` adds `total_reads` + `rpm`; `_RPKM` also adds `genome_length_bp`, `n_genomes`, `rpkm` (only when `--viral-genomes`/`--viral-taxids` are set). |
 | `….nr`                | **Contig tracks only, `--run-nr-validation`.** Adds `nr_pass`; contigs the NR LCA calls non-viral are removed (see below). |
 | `….bleed`             | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
-| `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log2_ratio`, `z_score`, `neg_pass`, …). |
+| `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log10_ratio`, `z_score`, `neg_pass`, …). |
 | `….ictv`              | `--run-ictv-host-filter` only. Removes taxa outside the ICTV vertebrate-infecting-virus allowlist (see below). |
 
 Row-removing steps (`.nr`, `.ictv`) also write a `*.dropped.tsv` sidecar listing what they removed, for audit.
@@ -294,13 +294,13 @@ The sample IDs must match the sample sheet exactly (no `sample-` prefix). For ea
 | Controls | Gate | Option |
 |---|---|---|
 | 0 | no filter (`neg_pass = NA`) | — |
-| 1 | `log2_ratio ≥ threshold` | `--log2-ratio-threshold` (default 1.0, i.e. 2-fold) |
+| 1 | `log10_ratio ≥ threshold` | `--log10-ratio-threshold` (default 1.0, i.e. 10-fold) |
 | ≥ 2 | `z_score ≥ threshold` | `--z-score-threshold` (default 3.0) |
-| ≥ 2, SD = 0 | falls back to log2-ratio | — |
+| ≥ 2, SD = 0 | falls back to log10-ratio | — |
 
-`log2_ratio = log2((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
+`log10_ratio = log10((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log10_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
 
-Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log2-ratio.
+Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log10-ratio.
 
 The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from the control rows are given a zero background — they pass the enrichment gate easily (conservative choice).
 
@@ -338,8 +338,8 @@ Sensitivity / specificity of detection:
 
 - **`--bleed-fraction`** (`0.005`) — lower = stricter cross-sample bleed filter.
 - **`--z-score-threshold`** (`3.0`) — negative-control gate with ≥ 2 controls; higher = stricter (see [Negative-control enrichment filter](#negative-control-enrichment-filter)).
-- **`--log2-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
-- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log2-ratio.
+- **`--log10-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
+- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log10-ratio.
 - **`--minimum-hit-group`** (`4`) — Kraken2's hit-group threshold; raising it makes Kraken2 more conservative.
 
 DIAMOND tuning:

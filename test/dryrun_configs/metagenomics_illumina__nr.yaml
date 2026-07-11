@@ -47,7 +47,7 @@ negative_controls: []
 compute_rpkm: false
 enrichment_pseudocount: 1.0
 z_score_threshold: 3.0
-log2_ratio_threshold: 1.0
+log10_ratio_threshold: 1.0
 minimum_hit_group: 4
 
 adapters: NA

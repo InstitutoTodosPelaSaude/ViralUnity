@@ -70,7 +70,7 @@ class ConfigKeys:
     COMPUTE_RPKM = "compute_rpkm"
     ENRICHMENT_PSEUDOCOUNT = "enrichment_pseudocount"
     Z_SCORE_THRESHOLD = "z_score_threshold"
-    LOG2_RATIO_THRESHOLD = "log2_ratio_threshold"
+    LOG10_RATIO_THRESHOLD = "log10_ratio_threshold"
     # Nanopore polishing
     RUN_POLISH_RACON = "run_polish_racon"
     RUN_POLISH_MEDAKA = "run_polish_medaka"

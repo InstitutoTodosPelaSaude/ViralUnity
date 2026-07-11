@@ -148,7 +148,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
         compute_rpkm=args.get("viral_genomes", "NA") not in ("NA", "", None),
         enrichment_pseudocount=args.get("enrichment_pseudocount", 1.0),
         z_score_threshold=args.get("z_score_threshold", 3.0),
-        log2_ratio_threshold=args.get("log2_ratio_threshold", 1.0),
+        log10_ratio_threshold=args.get("log10_ratio_threshold", 1.0),
     )
 
     generator.add_reference_assembly_settings(

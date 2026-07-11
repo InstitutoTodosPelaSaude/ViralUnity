@@ -226,7 +226,7 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 3. **Read classification** — [Kraken2](https://github.com/DerrickWood/kraken2) and/or [DIAMOND](https://github.com/bbuchfink/diamond) blastx on reads (optional each).
 4. **Optional de novo assembly** — [MEGAHIT](https://github.com/voutcn/megahit) on host-filtered pairs.
 5. **Contig classification** — Kraken2 and/or Diamond on contigs (when assembly is run).
-6. **Summaries and filters** — Per-sample taxa tables, RPM normalisation (and RPKM when `--viral-genomes` is supplied), optional max-RPM bleed filter, and negative-control enrichment filter (fold-enrichment, log2-ratio, z-score; replaces the old Poisson filter). [Krona](https://github.com/marbl/Krona) plots (both a raw `*.krona.html` and a post-filter `*.filtered.krona.html` per sample/classifier/mode) and [MultiQC](https://multiqc.info) reports.
+6. **Summaries and filters** — Per-sample taxa tables, RPM normalisation (and RPKM when `--viral-genomes` is supplied), optional max-RPM bleed filter, and negative-control enrichment filter (fold-enrichment, log10-ratio, z-score; replaces the old Poisson filter). [Krona](https://github.com/marbl/Krona) plots (both a raw `*.krona.html` and a post-filter `*.filtered.krona.html` per sample/classifier/mode) and [MultiQC](https://multiqc.info) reports.
 7. **Optional dynamic reference assembly** — Automatic reference sequence selection from taxonomic hits and subsequent consensus assembly.
 
 ### Pipeline overview (Nanopore)
@@ -265,9 +265,9 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--evalue` | `0.001` | Diamond E-value threshold. |
 | `--bleed-fraction` | `0.005` | Max-RPM bleed filter fraction. |
 | `--negative-controls` | (empty) | Comma-separated sample IDs used as negative controls. |
-| `--enrichment-pseudocount` | `1.0` | Pseudocount for fold-enrichment and log2-ratio vs negative controls. |
+| `--enrichment-pseudocount` | `1.0` | Pseudocount for fold-enrichment and log10-ratio vs negative controls. |
 | `--z-score-threshold` | `3.0` | Z-score threshold for `neg_pass` (used when ≥2 negative controls are present). |
-| `--log2-ratio-threshold` | `1.0` | Log2-ratio threshold for `neg_pass` (used when exactly 1 negative control is present, or when z-score is undefined due to zero control variance). |
+| `--log10-ratio-threshold` | `1.0` | Log10-ratio threshold for `neg_pass`; the default `1.0` marks a 10-fold enrichment over controls. Used when exactly 1 negative control is present, or when z-score is undefined due to zero control variance. |
 | `--minimum-hit-group` | `4` | Kraken2 minimum-hit-group parameter. |
 | `--run-ictv-host-filter`/`--no-ictv-host-filter` | off | Keep only vertebrate-infecting viruses (drop phages, plant/fungal/algal/invertebrate-only viruses). See *Taxonomic false-positive filters* below. |
 | `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by `viralunity get-databases ictv-vertebrate-taxids`). Required with `--run-ictv-host-filter`. |
@@ -416,11 +416,11 @@ Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its lea
 
 **`neg_pass` semantics** — set by the negative-control enrichment filter:
 - `neg_pass = NA` — no negative controls configured (zero-control mode); treated as *keep* by the Krona filter.
-- `neg_pass = True/False` with `neg_decision = "log2_ratio"` — one negative control; gate is `log2_ratio ≥ --log2-ratio-threshold`.
+- `neg_pass = True/False` with `neg_decision = "log10_ratio"` — one negative control; gate is `log10_ratio ≥ --log10-ratio-threshold`.
 - `neg_pass = True/False` with `neg_decision = "z_score"` — two or more controls; gate is `z_score ≥ --z-score-threshold`.
-- `neg_pass = True/False` with `neg_decision = "log2_ratio_fallback"` — two or more controls but all identical (SD = 0); falls back to the log2-ratio gate.
+- `neg_pass = True/False` with `neg_decision = "log10_ratio_fallback"` — two or more controls but all identical (SD = 0); falls back to the log10-ratio gate.
 
-Additional diagnostic columns added by the negative-control step (the `.neg` suffix): `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log2_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log2_ratio_threshold_used`, `n_negative_controls`.
+Additional diagnostic columns added by the negative-control step (the `.neg` suffix): `neg_metric` (`rpkm` or `rpm`), `control_mean`, `control_sd`, `control_median`, `control_max`, `fold_enrichment`, `log10_ratio`, `z_score`, `enrichment_pseudocount`, `z_score_threshold_used`, `log10_ratio_threshold_used`, `n_negative_controls`.
 
 `viralunity/scripts/python/filter_krona_by_pass_taxids.py` also exposes a CLI for standalone use:
 

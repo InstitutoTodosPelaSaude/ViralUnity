@@ -6,7 +6,7 @@ with interpretable statistics that are valid for overdispersed, batch-specific
 viral contamination:
 
   * fold_enrichment  = (sample_metric + pc) / (control_mean + pc)
-  * log2_ratio       = log2((sample_metric + pc) / (control_mean + pc))
+  * log10_ratio       = log10((sample_metric + pc) / (control_mean + pc))
   * z_score          = (sample_metric - control_mean) / control_sd
                        [only when n_controls >= 2 AND control_sd > 0]
 
@@ -16,8 +16,8 @@ the taxon, else ``rpm``.  This is recorded in the ``neg_metric`` column.
 Pass/fail logic (``neg_pass``):
   * n_controls == 0  → neg_pass = NA  (no filter; bleed-only mode)
   * n_controls >= 2  → neg_pass = (z_score >= z_score_threshold);
-                       if control_sd == 0, falls back to log2_ratio gate
-  * n_controls == 1  → neg_pass = (log2_ratio >= log2_ratio_threshold)
+                       if control_sd == 0, falls back to log10_ratio gate
+  * n_controls == 1  → neg_pass = (log10_ratio >= log10_ratio_threshold)
   * taxa absent from controls → control_mean = 0, computed against pseudocount
 
 Control statistics use *zero-fill*: a taxon not detected in a given control
@@ -33,8 +33,8 @@ preserved.
 
 Output column additions:
   is_negative_control, n_negative_controls, neg_metric, control_mean,
-  control_sd, control_median, control_max, fold_enrichment, log2_ratio,
-  z_score, log2_ratio_threshold_used, z_score_threshold_used,
+  control_sd, control_median, control_max, fold_enrichment, log10_ratio,
+  z_score, log10_ratio_threshold_used, z_score_threshold_used,
   enrichment_pseudocount, neg_decision, neg_pass
 """
 
@@ -68,15 +68,15 @@ def calculate_fold_enrichment(
     return (sample_metric + pseudocount) / (control_mean + pseudocount)
 
 
-def calculate_log2_ratio(
+def calculate_log10_ratio(
     sample_metric: float,
     control_mean: float,
     pseudocount: float = 1.0,
 ) -> float:
-    """Return log2((sample + pc) / (control_mean + pc))."""
+    """Return log10((sample + pc) / (control_mean + pc))."""
     numerator = sample_metric + pseudocount
     denominator = control_mean + pseudocount
-    return math.log2(numerator / denominator)
+    return math.log10(numerator / denominator)
 
 
 def calculate_z_score(
@@ -157,11 +157,11 @@ def _add_na_enrichment_cols(
     out["control_median"] = pd.NA
     out["control_max"] = pd.NA
     out["fold_enrichment"] = pd.NA
-    out["log2_ratio"] = pd.NA
+    out["log10_ratio"] = pd.NA
     out["z_score"] = pd.NA
     out["enrichment_pseudocount"] = pseudocount
     out["z_score_threshold_used"] = z_thresh
-    out["log2_ratio_threshold_used"] = l2r_thresh
+    out["log10_ratio_threshold_used"] = l2r_thresh
     out["neg_decision"] = "none"
     out["neg_pass"] = pd.NA
 
@@ -176,10 +176,10 @@ def apply_negative_control_enrichment(
     negatives: List[str],
     pseudocount: float = 1.0,
     z_score_threshold: float = 3.0,
-    log2_ratio_threshold: float = 1.0,
+    log10_ratio_threshold: float = 1.0,
     group_cols: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """Add enrichment, log2-ratio, z-score, and neg_pass columns to *df*.
+    """Add enrichment, log10-ratio, z-score, and neg_pass columns to *df*.
 
     Parameters
     ----------
@@ -190,12 +190,12 @@ def apply_negative_control_enrichment(
     negatives:
         List of sample IDs to treat as negative controls.
     pseudocount:
-        Additive pseudocount for fold-enrichment and log2-ratio.
+        Additive pseudocount for fold-enrichment and log10-ratio.
     z_score_threshold:
         Minimum z-score required for ``neg_pass = True`` when
         ``n_negative_controls >= 2``.
-    log2_ratio_threshold:
-        Minimum log2-ratio required for ``neg_pass = True`` when
+    log10_ratio_threshold:
+        Minimum log10-ratio required for ``neg_pass = True`` when
         ``n_negative_controls == 1`` or z-score is undefined.
     group_cols:
         Columns that define a unique taxon group. Defaults to the standard
@@ -234,7 +234,7 @@ def apply_negative_control_enrichment(
 
     # ── No negative controls ──────────────────────────────────────────────────
     if not negatives:
-        _add_na_enrichment_cols(out, pseudocount, z_score_threshold, log2_ratio_threshold)
+        _add_na_enrichment_cols(out, pseudocount, z_score_threshold, log10_ratio_threshold)
         out = out.drop(columns=["_metric"], errors="ignore")
         return out
 
@@ -257,7 +257,7 @@ def apply_negative_control_enrichment(
 
     # Attach control statistics to each row via explicit lookup. A taxon absent
     # from *all* controls has n_controls zeros: mean/median 0 and (for >= 2
-    # controls) SD 0, which routes it to the log2-ratio fallback below.
+    # controls) SD 0, which routes it to the log10-ratio fallback below.
     out["control_mean"] = 0.0
     out["control_sd"] = 0.0 if n_controls >= 2 else pd.NA
     out["control_median"] = 0.0
@@ -277,14 +277,14 @@ def apply_negative_control_enrichment(
     # ── Enrichment metrics ────────────────────────────────────────────────────
     out["enrichment_pseudocount"] = pseudocount
     out["z_score_threshold_used"] = z_score_threshold
-    out["log2_ratio_threshold_used"] = log2_ratio_threshold
+    out["log10_ratio_threshold_used"] = log10_ratio_threshold
 
     out["fold_enrichment"] = out.apply(
         lambda r: calculate_fold_enrichment(r["_metric"], r["control_mean"], pseudocount),
         axis=1,
     )
-    out["log2_ratio"] = out.apply(
-        lambda r: calculate_log2_ratio(r["_metric"], r["control_mean"], pseudocount),
+    out["log10_ratio"] = out.apply(
+        lambda r: calculate_log10_ratio(r["_metric"], r["control_mean"], pseudocount),
         axis=1,
     )
 
@@ -312,15 +312,15 @@ def apply_negative_control_enrichment(
                 out.at[idx, "neg_pass"] = bool(float(z) >= z_score_threshold)
             else:
                 # z undefined (control SD == 0 or taxon absent from controls)
-                l2r = out.at[idx, "log2_ratio"]
-                out.at[idx, "neg_decision"] = "log2_ratio_fallback"
-                out.at[idx, "neg_pass"] = bool(float(l2r) >= log2_ratio_threshold)
+                l2r = out.at[idx, "log10_ratio"]
+                out.at[idx, "neg_decision"] = "log10_ratio_fallback"
+                out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
     else:
-        # n_controls == 1: log2-ratio gate
+        # n_controls == 1: log10-ratio gate
         for idx in out[non_ctrl_mask].index:
-            l2r = out.at[idx, "log2_ratio"]
-            out.at[idx, "neg_decision"] = "log2_ratio"
-            out.at[idx, "neg_pass"] = bool(float(l2r) >= log2_ratio_threshold)
+            l2r = out.at[idx, "log10_ratio"]
+            out.at[idx, "neg_decision"] = "log10_ratio"
+            out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
 
     # Tidy up internal columns
     out = out.drop(columns=["_metric", "_ctrl_vals"], errors="ignore")
@@ -336,7 +336,7 @@ def apply_negative_control_enrichment(
 def run_cli() -> None:
     ap = argparse.ArgumentParser(
         description=(
-            "Add negative-control enrichment metrics (fold-enrichment, log2-ratio, z-score) "
+            "Add negative-control enrichment metrics (fold-enrichment, log10-ratio, z-score) "
             "and a neg_pass gate to a ViralUnity taxa summary TSV."
         )
     )
@@ -353,7 +353,7 @@ def run_cli() -> None:
         "--pseudocount",
         type=float,
         default=1.0,
-        help="Pseudocount for fold-enrichment/log2-ratio (default: 1.0).",
+        help="Pseudocount for fold-enrichment/log10-ratio (default: 1.0).",
     )
     ap.add_argument(
         "--z-score-threshold",
@@ -362,10 +362,10 @@ def run_cli() -> None:
         help="Min z-score for neg_pass when n_controls >= 2 (default: 3.0).",
     )
     ap.add_argument(
-        "--log2-ratio-threshold",
+        "--log10-ratio-threshold",
         type=float,
         default=1.0,
-        help="Min log2-ratio for neg_pass when n_controls == 1 (default: 1.0).",
+        help="Min log10-ratio for neg_pass when n_controls == 1 (default: 1.0).",
     )
     ap.add_argument(
         "--group-cols",
@@ -385,7 +385,7 @@ def run_cli() -> None:
         negatives=negatives,
         pseudocount=args.pseudocount,
         z_score_threshold=args.z_score_threshold,
-        log2_ratio_threshold=args.log2_ratio_threshold,
+        log10_ratio_threshold=args.log10_ratio_threshold,
         group_cols=group_cols,
     )
     out.to_csv(args.out, sep="\t", index=False, na_rep="NA")
@@ -404,7 +404,7 @@ def run_snakemake() -> None:
 
     pseudocount = float(getattr(snakemake.params, "pseudocount", 1.0))
     z_score_threshold = float(getattr(snakemake.params, "z_score_threshold", 3.0))
-    log2_ratio_threshold = float(getattr(snakemake.params, "log2_ratio_threshold", 1.0))
+    log10_ratio_threshold = float(getattr(snakemake.params, "log10_ratio_threshold", 1.0))
 
     group_cols = getattr(snakemake.params, "group_cols", None)
     if isinstance(group_cols, str):
@@ -416,7 +416,7 @@ def run_snakemake() -> None:
         negatives=negatives,
         pseudocount=pseudocount,
         z_score_threshold=z_score_threshold,
-        log2_ratio_threshold=log2_ratio_threshold,
+        log10_ratio_threshold=log10_ratio_threshold,
         group_cols=group_cols,
     )
     out.to_csv(outp, sep="\t", index=False, na_rep="NA")

@@ -178,7 +178,7 @@ if has_negative_controls:
             negatives = config.get("negative_controls", []),
             pseudocount = config.get("enrichment_pseudocount", 1.0),
             z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            log10_ratio_threshold = config.get("log10_ratio_threshold", 1.0)
         conda:
             "../envs/utils.yaml"
         script:
