@@ -150,7 +150,7 @@ def _add_na_enrichment_cols(
     out: pd.DataFrame,
     pseudocount: float,
     z_thresh: float,
-    l2r_thresh: float,
+    log10r_thresh: float,
 ) -> None:
     """In-place: add all output columns as NA for the zero-control case."""
     out["is_negative_control"] = False
@@ -164,7 +164,7 @@ def _add_na_enrichment_cols(
     out["z_score"] = pd.NA
     out["enrichment_pseudocount"] = pseudocount
     out["z_score_threshold_used"] = z_thresh
-    out["log10_ratio_threshold_used"] = l2r_thresh
+    out["log10_ratio_threshold_used"] = log10r_thresh
     out["neg_decision"] = "none"
     out["neg_pass"] = pd.NA
     out["pooled_control_metric"] = pd.NA
@@ -415,15 +415,15 @@ def apply_negative_control_enrichment(
                 out.at[idx, "neg_pass"] = bool(float(z) >= z_score_threshold)
             else:
                 # z undefined (control SD == 0 or taxon absent from controls)
-                l2r = out.at[idx, "log10_ratio"]
+                log10r = out.at[idx, "log10_ratio"]
                 out.at[idx, "neg_decision"] = "log10_ratio_fallback"
-                out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
+                out.at[idx, "neg_pass"] = bool(float(log10r) >= log10_ratio_threshold)
     else:
         # n_controls == 1: log10-ratio gate
         for idx in out[non_ctrl_mask].index:
-            l2r = out.at[idx, "log10_ratio"]
+            log10r = out.at[idx, "log10_ratio"]
             out.at[idx, "neg_decision"] = "log10_ratio"
-            out.at[idx, "neg_pass"] = bool(float(l2r) >= log10_ratio_threshold)
+            out.at[idx, "neg_pass"] = bool(float(log10r) >= log10_ratio_threshold)
 
     # Aggregate (pooled) negative-control complement to the per-control z-score.
     _add_aggregate_control(
