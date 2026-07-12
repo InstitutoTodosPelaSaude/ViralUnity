@@ -27,6 +27,13 @@ a value above 100% means the largest contig exceeds the median reference length
 It is ``NA`` where no contig is assigned or no reference length is available, and
 is approximate at family/genus ranks (median length across a diverse node).
 
+It assumes a monopartite (non-segmented) genome. ``genome_length_bp`` is a median
+over individual RefSeq records, and each segment of a segmented virus is a
+separate record, so there it is a median *segment* length; a de novo contig
+spans at most one segment. For segmented viruses the value therefore reflects
+the largest single segment relative to the median segment (routinely > 100%) and
+is not a whole-genome completeness measure.
+
 Caveat: contig length is a proxy for, not a direct measure of, the fraction of
 the reference genome covered — a long contig can still be a partial or chimeric
 assembly. Only available when ``--viral-genomes`` (RPKM) is enabled, which is

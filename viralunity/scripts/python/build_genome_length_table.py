@@ -7,6 +7,12 @@ up the lineage and accumulated at every family/genus/species ancestor.  The fina
 output records the **median** length across all RefSeq sequences under each node,
 which is used as the representative genome length for RPKM computation.
 
+Note: the median is taken over individual FASTA *records*, so for segmented
+viruses (influenza, bunyaviruses, etc.) — whose segments are separate records
+mapped to the same taxid — ``genome_length_bp`` is a median *segment* length, not
+the summed genome length. Downstream RPKM and ``largest_contig_ref_coverage_pct``
+therefore assume a monopartite genome; see docs/tutorial/metagenomics.md.
+
 Output TSV columns:
   rank, taxid, name, genome_length_bp (median), n_genomes
 """
