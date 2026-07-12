@@ -77,7 +77,7 @@ if run_k2_reads:
             krona = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/results/{sample}.output.krona.txt",
             plot = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/reports/{sample}.output.krona.html"
         output:
-            temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summary/{sample}.taxa.tsv")
+            temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/per_sample_summaries/{sample}.taxa.tsv")
         params:
             taxdump = config["taxdump"],
             tool = "kraken2",
@@ -91,7 +91,7 @@ if run_k2_reads:
     rule summarize_taxa_kraken2_reads_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:

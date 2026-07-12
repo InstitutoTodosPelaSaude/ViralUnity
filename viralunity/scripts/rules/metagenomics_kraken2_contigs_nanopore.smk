@@ -74,7 +74,7 @@ if run_denovo and run_k2_contigs:
             krona = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/results/{sample}.output.krona.txt",
             plot = config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/reports/{sample}.output.krona.html"
         output:
-            temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/summary/{sample}.taxa.tsv")
+            temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv")
         params:
             taxdump = config["taxdump"],
             tool = "kraken2",
@@ -88,7 +88,7 @@ if run_denovo and run_k2_contigs:
     rule summarize_taxa_kraken2_contigs_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/kraken2_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:

@@ -328,7 +328,7 @@ if run_denovo and run_diamond_contigs:
             plot = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/reports/{sample}.diamond.supported.krona.html",
             annotated = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tax.tsv"
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summary/{sample}.taxa.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv"
         params:
             taxdump = config["taxdump"],
             tool = "diamond",
@@ -342,7 +342,7 @@ if run_denovo and run_diamond_contigs:
     rule summarize_taxa_diamond_contigs_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:

@@ -90,7 +90,7 @@ if run_diamond_reads:
             krona = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/results/{sample}.diamond.supported.krona_input.tsv",
             plot = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/reports/{sample}.diamond.krona.html"
         output:
-            temp(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summary/{sample}.taxa.tsv")
+            temp(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/per_sample_summaries/{sample}.taxa.tsv")
         params:
             taxdump = config["taxdump"],
             tool = "diamond",
@@ -104,7 +104,7 @@ if run_diamond_reads:
     rule summarize_taxa_diamond_reads_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:
