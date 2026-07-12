@@ -304,10 +304,6 @@ rule organize_files:
         diamond_contigs_tsv = expand(rules.run_diamond_contigs.output.tsv, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
         diamond_contigs_krona = expand(rules.create_krona_report_diamond_contigs.output, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
         diamond_contigs_filtered_krona = expand(rules.create_filtered_krona_report_diamond_contigs.output, sample=config["samples"]) if run_denovo and run_diamond_contigs else [],
-        summary_k2_reads = final_summary("kraken2_reads") if run_k2_reads else [],
-        summary_diamond_reads = final_summary("diamond_reads") if run_diamond_reads else [],
-        summary_k2_contigs = final_summary("kraken2_contigs") if run_denovo and run_k2_contigs else [],
-        summary_diamond_contigs = final_summary("diamond_contigs") if run_denovo and run_diamond_contigs else [],
     output:
         benchmark = config["output"] + "benchmark.tsv"
     params:
