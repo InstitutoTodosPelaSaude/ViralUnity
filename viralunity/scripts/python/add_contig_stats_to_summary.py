@@ -2,10 +2,12 @@
 """Add per-taxon largest-contig statistics to a diamond_contigs taxa summary.
 
 For each taxon row, report the length of the largest de novo viral contig
-assigned to that taxon and that contig's median per-position sequencing depth:
+assigned to that taxon, that contig's median per-position sequencing depth, and
+what fraction of the reference genome its length spans:
 
-  * ``largest_contig_bp``            — length (bp) of the largest assigned contig
-  * ``largest_contig_median_depth``  — median depth over that single largest contig
+  * ``largest_contig_bp``               — length (bp) of the largest assigned contig
+  * ``largest_contig_ref_coverage_pct`` — largest_contig_bp / genome_length_bp * 100
+  * ``largest_contig_median_depth``     — median depth over that single largest contig
 
 These are a cheap proxy for "how much of the genome is covered, and how well",
 reusing the viral read-remap BAM the diamond_contigs track already produces
@@ -13,6 +15,17 @@ reusing the viral read-remap BAM the diamond_contigs track already produces
 positions). A contig is assigned to a taxon by climbing its leaf taxid to the
 family/genus/species ancestor, mirroring how ``summarize_krona_taxa`` and
 ``harmonize_nr_summary`` aggregate hits up the lineage.
+
+``largest_contig_ref_coverage_pct`` is a preliminary genome-completeness estimate
+(e.g. a 7 kb largest contig for a 10 kb virus ≈ 70%), meant to help decide
+whether a reference assembly is worth attempting. It reuses the
+``genome_length_bp`` column already added by the RPKM step (the median RefSeq
+genome length per ``(rank, taxid)`` node), so it is populated on the same tracks
+and under the same ``--viral-genomes`` gate. It is reported raw and *uncapped*:
+a value above 100% means the largest contig exceeds the median reference length
+(over-assembly, a chimeric contig, or a strain longer than the RefSeq median).
+It is ``NA`` where no contig is assigned or no reference length is available, and
+is approximate at family/genus ranks (median length across a diverse node).
 
 Caveat: contig length is a proxy for, not a direct measure of, the fraction of
 the reference genome covered — a long contig can still be a partial or chimeric
@@ -35,6 +48,22 @@ except ImportError:
     from taxonomy import RANKS_OF_INTEREST, get_lineage, load_taxdump
 
 NA = "NA"
+
+
+def _ref_coverage_pct(contig_len: int, genome_length_raw) -> object:
+    """Return largest_contig_bp / genome_length_bp * 100 (raw, uncapped, 2 dp).
+
+    ``NA`` when the reference length is missing, non-numeric, NaN, or <= 0.
+    Values > 100 are legitimate (the largest contig exceeds the median reference
+    length) and are reported as-is.
+    """
+    try:
+        genome_length = float(genome_length_raw)
+    except (TypeError, ValueError):
+        return NA
+    if genome_length != genome_length or genome_length <= 0:  # NaN or non-positive
+        return NA
+    return round(contig_len / genome_length * 100.0, 2)
 
 
 def load_contig_depths(depth_path: str) -> Dict[str, Tuple[int, float]]:
@@ -116,17 +145,21 @@ def add_contig_stats(
             f"columns present: {list(summary_df.columns)}"
         )
     out = summary_df.copy()
-    lengths, depths = [], []
+    has_glen = "genome_length_bp" in out.columns
+    lengths, covs, depths = [], [], []
     for _, row in out.iterrows():
         key = (str(row["sample"]), str(row["rank"]), str(row["taxid"]))
         stat = best.get(key)
         if stat is None:
             lengths.append(NA)
+            covs.append(NA)
             depths.append(NA)
         else:
             lengths.append(stat[0])
+            covs.append(_ref_coverage_pct(stat[0], row["genome_length_bp"]) if has_glen else NA)
             depths.append(stat[1])
     out["largest_contig_bp"] = lengths
+    out["largest_contig_ref_coverage_pct"] = covs
     out["largest_contig_median_depth"] = depths
     return out
 

@@ -49,11 +49,14 @@ across negative controls).
   `fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10` (`>=` inclusive; NA
   where the underlying statistic is NA).
 - **Largest-contig statistics** (both contig tracks, with `--viral-genomes`):
-  `largest_contig_bp` and `largest_contig_median_depth`, a cheap
-  genome-fraction/coverage proxy. Each contig track remaps the host-filtered
-  reads to its own viral contigs and runs `samtools depth -a` for per-contig
-  depth (kraken2_contigs extracts its viral contigs by lineage; diamond_contigs
-  reuses its existing viral remap).
+  `largest_contig_bp`, `largest_contig_ref_coverage_pct`, and
+  `largest_contig_median_depth`, a cheap genome-fraction/coverage proxy. Each
+  contig track remaps the host-filtered reads to its own viral contigs and runs
+  `samtools depth -a` for per-contig depth (kraken2_contigs extracts its viral
+  contigs by lineage; diamond_contigs reuses its existing viral remap).
+  `largest_contig_ref_coverage_pct` = `largest_contig_bp / genome_length_bp * 100`
+  is a preliminary genome-completeness estimate (raw/uncapped, so >100% flags a
+  contig longer than the median reference; NA without a reference length).
 
 ### Changed
 
