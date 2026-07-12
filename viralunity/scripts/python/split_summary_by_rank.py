@@ -2,8 +2,8 @@
 """Split a combined taxa summary into per-rank tables (the user-facing output).
 
 The filter chain computes on one combined per-track table (kept internally under
-``<track>/chain/``). This terminal step splits that table into the browsable
-deliverable: one file per taxonomic rank under ``<track>/<rank>/``, propagating
+``<track>/summaries/full/``). This terminal step splits that table into the browsable
+deliverable: one file per taxonomic rank under ``<track>/summaries/<rank>/``, propagating
 higher-rank *names* down as columns so each table is self-contained:
 
   * species table gains ``family`` and ``genus`` columns

@@ -56,13 +56,15 @@ After a successful run, the output directory is organised as follows:
 │   └── taxonomic_assignments/
 │       └── <track>/                            # track = kraken2_reads | kraken2_contigs | diamond_reads | diamond_contigs
 │           ├── results/{sample}.*              # per-sample reports / krona / diamond hits
-│           ├── family/  <track>_family_taxa_summary_<chain>.tsv     # ── user-facing deliverable ──
-│           ├── genus/   <track>_genus_taxa_summary_<chain>.tsv        (genus table gains a family column)
-│           ├── species/ <track>_species_taxa_summary_<chain>.tsv      (species table gains family + genus columns)
-│           └── chain/                          # internal: the combined cumulative filter chain
-│               ├── <track>_taxa_summary.tsv                          # raw counts
-│               ├── <track>_taxa_summary_{RPM|RPKM}.tsv               # + RPM (RPKM with --viral-genomes)
-│               └── <track>_taxa_summary_{RPM|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv  # see below
+│           ├── reports/{sample}.*.krona.html   # per-sample Krona plots
+│           └── summaries/                      # all taxa-summary tables live here
+│               ├── family/  <track>_family_taxa_summary_<chain>.tsv     # ── user-facing deliverable ──
+│               ├── genus/   <track>_genus_taxa_summary_<chain>.tsv        (genus table gains a family column)
+│               ├── species/ <track>_species_taxa_summary_<chain>.tsv      (species table gains family + genus columns)
+│               └── full/                       # internal: the combined cumulative filter chain (all ranks)
+│                   ├── <track>_taxa_summary.tsv                          # raw counts
+│                   ├── <track>_taxa_summary_{RPM|RPKM}.tsv               # + RPM (RPKM with --viral-genomes)
+│                   └── <track>_taxa_summary_{RPM|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv  # see below
 ├── denovo_assembly/                            # when --run-denovo-assembly
 │   ├── megahit/{sample}/final.contigs.fa
 │   └── viral_contigs/{sample}.viral_contigs.fa
@@ -96,17 +98,17 @@ After a successful run, the output directory is organised as follows:
 ### Per-rank output layout
 
 The **browsable deliverable** for each track is a set of per-rank tables under
-`<track>/family/`, `<track>/genus/`, and `<track>/species/`. Higher-rank *names* are
+`<track>/summaries/family/`, `<track>/summaries/genus/`, and `<track>/summaries/species/`. Higher-rank *names* are
 propagated down as columns so each table is self-contained: the species table gains
 `family` and `genus` columns, and the genus table gains a `family` column. Most users
 want the `species/` table.
 
 The cumulative filter chain that produces these is computed on one combined per-track
-table kept **internally** under `<track>/chain/` — useful for auditing the step-by-step
+table kept **internally** under `<track>/summaries/full/` — useful for auditing the step-by-step
 filtering, but not the primary output. (This is a **breaking change** from ≤1.3.1, where
 the combined chain files sat directly under `<track>/`.)
 
-### The taxa-summary filename chain (internal, under `<track>/chain/`)
+### The taxa-summary filename chain (internal, under `<track>/summaries/full/`)
 
 Each track computes its taxa summary through **one cumulative chain**: every enabled
 step appends exactly one suffix, so the *fully-filtered* table is always the file
@@ -134,10 +136,10 @@ than removing rows. Example fully-filtered names: contigs
 
 | File | Description |
 |------|-------------|
-| `metagenomics/taxonomic_assignments/<track>/{family,genus,species}/<track>_<rank>_taxa_summary_<chain>.tsv` | **User-facing deliverable**: per-rank tables with higher-rank names propagated down (species gains `family`+`genus`; genus gains `family`). Most users want `species/`. |
-| `metagenomics/taxonomic_assignments/<track>/chain/<track>_taxa_summary.tsv` | Internal: raw per-taxon counts (base of the chain) |
-| `metagenomics/taxonomic_assignments/<track>/chain/<track>_taxa_summary_{RPM\|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` | Internal: the cumulative filter chain; the longest-named file is the fully-filtered combined summary that the per-rank tables are split from. `.nr` is contig-tracks only; `.ctgstats` (largest_contig_bp + largest_contig_median_depth) is on both contig tracks and requires `--viral-genomes`. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
-| `metagenomics/taxonomic_assignments/<track>/chain/*.dropped.tsv` | Rows removed by a row-removing step (`.nr`, `.ictv`), for audit |
+| `metagenomics/taxonomic_assignments/<track>/summaries/{family,genus,species}/<track>_<rank>_taxa_summary_<chain>.tsv` | **User-facing deliverable**: per-rank tables with higher-rank names propagated down (species gains `family`+`genus`; genus gains `family`). Most users want `species/`. |
+| `metagenomics/taxonomic_assignments/<track>/summaries/full/<track>_taxa_summary.tsv` | Internal: raw per-taxon counts (base of the chain) |
+| `metagenomics/taxonomic_assignments/<track>/summaries/full/<track>_taxa_summary_{RPM\|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` | Internal: the cumulative filter chain; the longest-named file is the fully-filtered combined summary that the per-rank tables are split from. `.nr` is contig-tracks only; `.ctgstats` (largest_contig_bp + largest_contig_median_depth) is on both contig tracks and requires `--viral-genomes`. `bleed_pass`/`neg_pass` columns flag cross-sample and negative-control status |
+| `metagenomics/taxonomic_assignments/<track>/summaries/full/*.dropped.tsv` | Rows removed by a row-removing step (`.nr`, `.ictv`), for audit |
 | `reference_targets.tsv` | Maps each sample × ref_key to the selected reference accession |
 | `assembly/{ref_key}/consensus/final_consensus/{sample}.consensus.fasta` | Reference-guided consensus sequence per sample and ref_key |
 | `samples/{sample}/` | Symlinks to every per-sample output for convenience |

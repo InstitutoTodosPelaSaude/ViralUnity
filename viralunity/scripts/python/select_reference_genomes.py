@@ -144,9 +144,12 @@ def resolve_summary_file(summary_dir, classifier, suffix=None):
     for backward compatibility and ignored. Audit sidecars (``*.dropped.tsv``,
     ``*_nr_flags.tsv``) are never selected.
     """
-    # The combined chain lives under <classifier>/chain/ (v1.3.2+); fall back to
-    # the flat <classifier>/ layout for outputs produced by older versions.
+    # The combined chain lives under <classifier>/summaries/full/ (v1.3.2+); fall
+    # back to the older <classifier>/chain/ and the flat <classifier>/ layouts.
     patterns = [
+        os.path.join(
+            summary_dir, classifier, "summaries", "full", f"{classifier}_taxa_summary*.tsv"
+        ),
         os.path.join(summary_dir, classifier, "chain", f"{classifier}_taxa_summary*.tsv"),
         os.path.join(summary_dir, classifier, f"{classifier}_taxa_summary*.tsv"),
     ]

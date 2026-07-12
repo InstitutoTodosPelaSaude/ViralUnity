@@ -60,7 +60,7 @@ else:
     diamond_db_file = "NA"
 
 def _summary_stem(track):
-    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/chain/" + track + "_taxa_summary"
+    return config["output"] + "metagenomics/taxonomic_assignments/" + track + "/summaries/full/" + track + "_taxa_summary"
 
 def _summary_base(track):
     return _summary_stem(track) + ("_RPKM" if compute_rpkm else "_RPM")
@@ -108,7 +108,7 @@ def dropped_sidecar(path):
 def final_summary(track):
     """The last file in the chain for a track (the fully-filtered summary).
 
-    Internal, non-user-facing: lives under <track>/chain/. Consumers are the
+    Internal, non-user-facing: lives under <track>/summaries/full/. Consumers are the
     per-rank split, the lineage-aware Krona filter, and reference selection.
     """
     return _chain_path(track, len(_chain_steps(track)) - 1)
@@ -122,7 +122,7 @@ def _chain_tail(track):
 
 def per_rank_summary(track, rank):
     """User-facing per-rank summary path (the browsable deliverable)."""
-    return (config["output"] + "metagenomics/taxonomic_assignments/" + track + "/" + rank
+    return (config["output"] + "metagenomics/taxonomic_assignments/" + track + "/summaries/" + rank
             + "/" + track + "_" + rank + "_taxa_summary" + _chain_tail(track) + ".tsv")
 
 def per_rank_summaries(track):
@@ -201,7 +201,7 @@ include: "rules/metagenomics_multiqc_illumina.smk"
 
 
 # ── Terminal per-rank split (the user-facing deliverable) ─────────────────────
-# The combined chain lives under <track>/chain/; these split the fully-filtered
+# The combined chain lives under <track>/summaries/full/; these split the fully-filtered
 # table into <track>/{family,genus,species}/ with higher-rank names propagated.
 if run_k2_reads:
     rule split_kraken2_reads_by_rank:
