@@ -1,197 +1,153 @@
-# Handoff — v1.3.2 metagenomics filter refinements
+# Code-review handoff — v1.3.2 metagenomics filter refinements
 
-**Branch:** `feature/filters-v1.3.2` (branched off `origin/main` @ `840ca31`, which is the
-merged 1.3.1 release). **Version bumped to `1.3.2`.** Not pushed / not PR'd / not tagged.
+**Audience:** a reviewing agent auditing all code implemented on this branch.
+**Branch:** `feature/filters-v1.3.2` (based on `origin/main` @ `840ca31` = the 1.3.1 release).
+**Status:** implemented + verified; **466 unit tests + 14 Snakemake dryruns + `black`/`ruff`
+all green**; working tree clean. **Not pushed / not PR'd / not tagged** (tagging triggers
+PyPI publish — maintainer's call).
 
-This document is a continuation point: if the session breaks, everything needed to resume,
-verify, and finish the release is here. Companion docs on the branch: `IMPLEMENTATION_PLAN.md`
-(decision record) and the planning file `/home/gevop/.claude/plans/sharded-hugging-acorn.md`.
-Source spec: `metagenomcis_filters_issue.md` (repo root, untracked, do not delete).
+## Objective
 
-## Why this work exists
+Review every code implementation on this branch for correctness, faithfulness to the design,
+and test adequacy. This doc is the map; `IMPLEMENTATION_PLAN.md` is the decision record.
 
-The REVISA project (`/home/gevop/projects/REVISA`) ran many metagenomic runs of clinical
-samples through ViralUnity. Its negative controls revealed the lab was contaminated with
-**mayaro** and **HIV** libraries from other projects, giving an empirical testbed for the
-metagenomics contamination filters. The PI proposed eight refinements; this branch
-implements them as v1.3.2. Empirical anchor found during planning: HIV
-(*Lentivirus humimdef1*) shows negative-control RPKM `[276, 1988, 1991, 17144]` — a 62×
-spread — in `REVISA/selected_sample_outputs/REVISA1_diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.tsv`.
+## Review scope & how to diff
 
-## Status
-
-- **All 8 refinements implemented + 1 later extension (kraken2 contig stats).**
-- **466 unit tests + 14 Snakemake dryruns pass; `black`/`ruff` clean.**
-- Working tree clean. **Nothing pushed/tagged** — tagging triggers the PyPI publish workflow,
-  which is the maintainer's call (see `RELEASING.md`).
-
-## Hard operational constraints (still in force)
-
-1. Work only on `feature/filters-v1.3.2`; never commit to `main`.
-2. **Do NOT launch/re-run/trigger any REVISA analysis** until the PI confirms **REVISA run 5**
-   has finished. Coding, reading existing outputs, and unit/dryrun tests are fine.
-3. After run 5 finishes **and the PI confirms**: run the test suite, then the **toy
-   sars-cov-2** end-to-end run; report real results.
-4. Only after the toy run passes **and the PI explicitly says go**: run ONLY the latest
-   summarization steps on the real REVISA data (heavy upstream compute already done — treat
-   it as precious/read-mostly; never overwrite existing results without confirming).
-
-## Commits on this branch (oldest → newest)
-
-| SHA | Commit | What |
-|-----|--------|------|
-| `2aa9af4` | docs: implementation plan | `IMPLEMENTATION_PLAN.md` (decisions + commit map) |
-| `fcb129e` | remove `source` column | dropped from `summarize_krona_taxa.py` |
-| `72fcd72` | log2 → log10 (**breaking**) | rename everywhere; default `1.0` now = **10× fold** (was 2×), i.e. stricter neg gate |
-| `6e5e025` | pass-flag columns | `fold_enrichment_10x/100x_pass`, `neg_pass_5/10` (`>=`, NA→NA) |
-| `f0bd78e` | `final_species` | coalesce(`nr_correct_species`, `name`) in NR harmonize |
-| `4514514` | bleed metric-aware | RPKM when available else RPM; `bleed_metric`; `max_rpm`→`bleed_max`; metric-specific floors |
-| `41b075f` | bleed unit test | new `apply_max_rpm_bleed_filter_test.py` (was missing) |
-| `9f69b31` | aggregate neg-control filter | pooled raw-read control; `pooled_control_metric`, `agg_*` cols |
-| `44118c3` | contig stats (diamond_contigs) | `largest_contig_bp` + `largest_contig_median_depth`; `.ctgstats` step |
-| `5e3c319` | per-rank split (**breaking**) | user-facing `<track>/{family,genus,species}/`; chain moved to `<track>/chain/` |
-| `143be79` | release: 1.3.2 | `__version__` + Dockerfile LABEL + CHANGELOG |
-| `b99df7a` | extend contig stats to kraken2_contigs | PI reversed the diamond-only scope; both contig tracks now |
-
-## The eight refinements (+ extension) and the decisions behind them
-
-Numbers below are the proposal numbers from `metagenomcis_filters_issue.md`. Each scientific
-fork was signed off by the PI (memory: `scientific-changes-need-user-signoff`).
-
-1. **Bleed filter → RPKM-aware.** *Key finding to remember:* the bleed test is a
-   **within-taxon** ratio across samples (`value >= fraction * max`, grouped by
-   `tool,mode,rank,taxid`). Genome length is constant within a taxon, so RPM→RPKM is a
-   uniform rescale and **`bleed_pass` is unchanged**. The only real effect is the
-   *application floor*. So: metric auto-selected per group (`bleed_metric` column), floors
-   are metric-specific — `bleed_rpm_floor` (1.0) and **`bleed_rpkm_floor` (0.1, OPEN — see
-   below)**, both YAML-only knobs. Column `max_rpm` renamed `bleed_max`.
-2. **Aggregate (pooled) negative-control filter.** Complementary to the z-score (does NOT
-   change `neg_pass`). Pools **raw reads** across controls: `pooled = Σ(metric·total_reads)/
-   Σ(total_reads)`, so a deeply-sequenced control counts more (falls back to equal weights if
-   `total_reads` absent). New cols: `pooled_control_metric`, `agg_fold_enrichment`,
-   `agg_log10_ratio`, `agg_fold_enrichment_10x/100x_pass`. Catches the HIV-style high-variance
-   contamination that inflates per-control SD and drags the z-score down.
-3. **Pass-flag columns.** `fold_enrichment_10x_pass`, `fold_enrichment_100x_pass`,
-   `neg_pass_5`, `neg_pass_10`. `>=` inclusive; **NA stays NA** (matches the neg_pass
-   NA-as-keep contract). Nullable-boolean.
-4. **log2 → log10.** Interpretability. Column `log2_ratio`→`log10_ratio`, `neg_decision`
-   values `log10_ratio`/`log10_ratio_fallback`, `log10_ratio_threshold_used`, CLI
-   `--log10-ratio-threshold`, `ConfigKeys.LOG10_RATIO_THRESHOLD`. **Default `1.0` now means a
-   10-fold enrichment** (log10=1) vs the old 2-fold (log2=1) — a deliberate, PI-approved
-   stricter default.
-5. **`final_species`.** `coalesce(nr_correct_species, name)` — NR's corrected species when NR
-   confidently disagreed, else the original name. Positioned right of `nr_correct_species` in
-   NR harmonize; the per-rank split (proposal 7) guarantees it on non-NR tracks too
-   (`= name`).
-6. **Contig stats.** `largest_contig_bp` + `largest_contig_median_depth` per taxon, via a
-   `.ctgstats` chain step. **Now on BOTH contig tracks** (PI reversed the initial
-   diamond-only scope). Each track remaps host-filtered reads to *its own* viral contigs and
-   runs `samtools depth -a`; median is over the single largest contig assigned to the taxon
-   (lineage-climb assignment). Gated on `--viral-genomes` (`compute_rpkm`). *Caveat documented
-   in the tutorial:* contig length is a proxy for, not a measure of, covered genome fraction.
-7. **Per-rank output reorg (breaking).** User-facing deliverable is now one table per rank
-   under `<track>/{family,genus,species}/`, with higher-rank names propagated down (species
-   gains `family`+`genus`; genus gains `family`). The combined cumulative chain is computed
-   internally under `<track>/chain/`. `select_reference_genomes.py` reads `<track>/chain/`
-   (with a fallback to the old flat layout); the Krona filter reads the combined chain file
-   unchanged.
-8. **Remove `source` column** (was an internal krona-input path; no consumer).
-
-## New Python scripts (all in `viralunity/scripts/python/`, each with a `*_test.py`)
-
-- `split_summary_by_rank.py` — terminal per-rank split; propagates family/genus name columns;
-  guarantees `final_species`.
-- `add_contig_stats_to_summary.py` — per-taxon largest-contig length + median depth from a
-  `samtools depth -a` file + contig→taxid map; classifier-agnostic (shared by both tracks).
-- `extract_viral_contigs.py` — selects contigs a classifier called viral (lineage under
-  taxid `10239`) so kraken2_contigs can build a light viral-only remap; also has a FASTA
-  writer. Used only by the kraken2_contigs track.
-
-## Modified Python / config surface
-
-- `apply_max_rpm_bleed_filter.py` — metric selection, `bleed_metric`, `bleed_max`, rpm/rpkm floors.
-- `add_negative_control_enrichment.py` — log10 rename, pass flags (`_threshold_flag`,
-  `_add_pass_flag_columns`), aggregate pooled control (`_add_aggregate_control`).
-- `harmonize_nr_summary.py` — `_add_final_species`.
-- `summarize_krona_taxa.py` — dropped `source`.
-- `select_reference_genomes.py` — `resolve_summary_file` now globs `<track>/chain/` first,
-  falls back to the flat layout.
-- CLI/config: `viralunity_meta_cli.py` (`--log10-ratio-threshold`), `constants.py`
-  (`LOG10_RATIO_THRESHOLD`), `config_generator.py`, `viralunity_meta.py`, `validators.py`.
-- `viralunity/__init__.py` (1.3.2), `Dockerfile` LABEL (1.3.2).
-
-## Snakemake workflow surface
-
-- Top-level `metagenomics_{illumina,nanopore}.smk`:
-  - `_summary_stem` now points into `<track>/chain/`.
-  - `_chain_steps` adds `ctgstats` for any `track.endswith("contigs")` when `compute_rpkm`
-    (order: `[nr] → [ctgstats] → bleed → [neg] → [ictv]`).
-  - Added `per_rank_summary`/`per_rank_summaries`/`_chain_tail`; `_all_inputs()` requests the
-    per-rank files (not the combined `final_summary`).
-  - Four `split_<track>_by_rank` rules after the includes (guarded by the track flags).
-- `rules/metagenomics_diamond_contigs_{illumina,nanopore}.smk`: `depth_of_viral_contigs`
-  (samtools depth on the existing viral BAM) + `add_contig_stats_diamond_contigs`.
-- `rules/metagenomics_kraken2_contigs_{illumina,nanopore}.smk`: `extract_viral_contigs_kraken2`
-  + `remap_and_depth_viral_contigs_kraken2` (writes to `mapping/viral_kraken2/`) +
-  `add_contig_stats_kraken2_contigs`.
-- All 8 per-track bleed rules gained a `rpkm_floor = config.get("bleed_rpkm_floor", 0.1)` param.
-- Chain-base paths in all 8 track rule files relocated under `<track>/chain/`.
-
-## New / changed output schema (for the PI's records)
-
-Fully-loaded diamond_contigs deliverable (species table):
-`taxonomic_assignments/diamond_contigs/species/diamond_contigs_species_taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv`
-
-New columns vs 1.3.1: `family`, `genus` (propagated, rank-dependent), `final_species`,
-`bleed_metric`, `bleed_max` (was `max_rpm`), `fold_enrichment_10x_pass`,
-`fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10`, `pooled_control_metric`,
-`agg_fold_enrichment`, `agg_log10_ratio`, `agg_fold_enrichment_10x_pass`,
-`agg_fold_enrichment_100x_pass`, `largest_contig_bp`, `largest_contig_median_depth`.
-Renamed: `log2_ratio`→`log10_ratio`, `log2_ratio_threshold_used`→`log10_ratio_threshold_used`.
-Removed: `source`. Layout: combined chain moved to `<track>/chain/`; per-rank tree is new.
-
-## OPEN item needing the PI (non-blocking)
-
-**`bleed_rpkm_floor` default = `0.1`** is a guess (≈ the old RPM floor of 1.0 evaluated at a
-10 kb genome, since RPKM ≈ RPM·1000/len). It only changes *which taxa the bleed filter is
-applied to*, never the ratio test. Confirm/retune once the toy + REVISA outputs are visible.
-It's a YAML-only knob — edit the generated config and rerun Snakemake.
-
-## How to verify (run these when unblocked)
+The v1.3.2 work is `origin/main..HEAD` — **15 commits, 51 files, +2523/−280**:
 
 ```bash
-conda activate viralunity            # env must have the package installed (pip install -e .)
-python -m pytest test/ -q            # 466 unit tests + 14 dryruns
-# lint (Makefile's `make lint` reinstalls and hits a py3.12 pin; run the tools directly):
-black --check viralunity/ test/ && ruff check viralunity/ test/
+git fetch origin
+git log --oneline --reverse origin/main..HEAD          # the 15 commits below
+git diff origin/main...HEAD                             # full diff
+git diff origin/main...HEAD -- viralunity/scripts/python # just the filter math
 ```
 
-Dryrun coverage note: `test/dryrun_configs/metagenomics_illumina__fullchain.yaml` exercises
-both contig tracks + RPKM + NR + neg + ICTV (so `.ctgstats` + per-rank split on both);
-`metagenomics_nanopore__ctgstats.yaml` covers the nanopore contig tracks.
+Do **not** review the 1.3.1 get-databases commits (they're already merged to `origin/main`).
+`metagenomcis_filters_issue.md` (repo root) is the original change request / source spec.
 
-### Phase 5 — toy sars-cov-2 (after REVISA run 5 done + PI confirms)
-Run the toy dataset end-to-end (see `CLAUDE.md` invocation examples / `docs/tutorial/`),
-confirm the per-rank tree and new columns are produced, and report real results.
+## Context (why this branch exists)
 
-### Phase 6 — REVISA summarization (after Phase 5 passes + explicit PI go)
-Run ONLY the latest summarization steps on the real REVISA data (heavy compute already done).
-Confirm scope first; do not re-trigger upstream compute; do not overwrite existing results
-without confirming.
+The REVISA project surfaced a real lab-contamination episode (mayaro + HIV libraries seen
+across negative controls). The PI proposed eight refinements to the metagenomics
+contamination filters; this branch implements them as v1.3.2, plus one PI-requested
+extension (kraken2 contig stats) and two output-layout refinements. All scientific/output
+changes were signed off by the PI during planning (see `IMPLEMENTATION_PLAN.md` "Decisions").
 
-## Finishing the release (maintainer)
+## Suggested review order
 
-Per `RELEASING.md`: `__version__` and Dockerfile LABEL are already at 1.3.2 and `CHANGELOG.md`
-has the `[1.3.2]` entry. Remaining: open a PR / merge to `main`, then tag `v1.3.2` and push the
-tag (pushing the tag triggers the PyPI publish workflow). Left intentionally to the maintainer.
+1. `viralunity/scripts/python/` — the filter math (this is the substance; each has a `_test.py`).
+2. `viralunity/scripts/metagenomics_{illumina,nanopore}.smk` — the chain/rank path helpers + split rules.
+3. `viralunity/scripts/rules/metagenomics_*.smk` — per-track rule wiring (mostly mechanical/parallel).
+4. The CLI/config 6-touch (`viralunity_meta_cli`, `constants`, `config_generator`, `viralunity_meta`, `validators`).
+5. Docs (`docs/output.md`, `docs/tutorial/metagenomics.md`, `docs/commands.md`) + `CHANGELOG.md`.
 
-## Gotchas for whoever continues
+## Commit-by-commit map (with review focus)
 
-- `make lint` runs `make install-dev` first, which fails on Python 3.12 (`requires <3.12`).
-  Run `black`/`ruff` directly instead; the installed env already works for tests.
-- Tests are stdlib `unittest` classes collected by `pytest`; run via
-  `python -m pytest test/...`, not `python -m unittest` from the repo root (package-path issues).
-- With both contig tracks on, each does its own viral remap → two (light, viral-only) remaps
-  per sample. Intentional: keeps per-track depth semantics correct.
-- Do not rename `validate_args` / `generate_config_file` / `run_snakemake_workflow`
-  (tests patch those names) — see `CLAUDE.md`.
+| Commit | Change | Key files | Review focus |
+|---|---|---|---|
+| `fcb129e` | Remove `source` column | `summarize_krona_taxa.py` | Confirm nothing downstream consumed `source` (it was a krona-input path). |
+| `72fcd72`! | log2 → log10 rename | `add_negative_control_enrichment.py`, `viralunity_meta_cli.py`, `constants.py`, `config_generator.py`, `viralunity_meta.py`, `validators.py`, 8 rule files, docs, 9 dryrun configs | **Default threshold stays `1.0` but now means 10× (log10=1), was 2× (log2=1) → the neg gate is deliberately stricter.** Check the rename is total (no `log2` left) and the test numerics were recomputed, not just renamed. |
+| `6e5e025` | Pass-flag columns | `add_negative_control_enrichment.py` | `fold_enrichment_10x/100x_pass`, `neg_pass_5/10`; `>=` inclusive; **NA→NA** (nullable boolean). Verify NA propagation matches the neg_pass "NA=keep" contract. |
+| `f0bd78e` | `final_species` | `harmonize_nr_summary.py` | `coalesce(nr_correct_species, name)`, positioned right of `nr_correct_species`. `nr_correct_species` is populated only when NR *disagreed*, so this = "NR's correction, else original name". |
+| `4514514` | Bleed metric-aware | `apply_max_rpm_bleed_filter.py` + 6-touch (`bleed_rpkm_floor`) + 8 rule files | **Subtle claim to verify:** bleed is a *within-taxon* ratio across samples, so RPM→RPKM (constant per-taxon rescale) leaves `bleed_pass` unchanged; only the application *floor* differs. See `TestRpkmInvariance` / `TestFloorDivergence`. `max_rpm`→`bleed_max`; added `bleed_metric`. |
+| `41b075f` | Bleed unit test (was missing) | `test/scripts/apply_max_rpm_bleed_filter_test.py` | New coverage for the above. |
+| `9f69b31` | Aggregate pooled neg-control | `add_negative_control_enrichment.py` | **Pooling is by RAW reads: `Σ(metric·total_reads)/Σ(total_reads)`** (depth-weighted), NOT a plain mean; falls back to equal weights if `total_reads` absent. Complementary — must NOT change `neg_pass`. Adds `pooled_control_metric`, `agg_fold_enrichment`, `agg_log10_ratio`, `agg_fold_enrichment_10x/100x_pass`. |
+| `44118c3` | Contig stats (diamond_contigs) | `add_contig_stats_to_summary.py`, `depth_of_viral_contigs` rule, `_chain_steps` (`.ctgstats`) | Largest contig per taxon + its median depth via `samtools depth -a` on the existing viral BAM; lineage-climb contig→taxon assignment. Median over the single largest contig. Gated on `--viral-genomes`. |
+| `5e3c319`! | Per-rank split (breaking layout) | `split_summary_by_rank.py`, top-level `.smk` (path helpers + 4 split rules), `select_reference_genomes.py`, 8 rule files (chain relocation) | Combined chain moved to an internal dir; per-rank tree is the deliverable with family/genus names propagated down. **Verify `select_reference_genomes` still resolves the chain (glob + fallbacks) and `filter_krona` still reads the combined table.** |
+| `143be79` | Release 1.3.2 | `viralunity/__init__.py`, `Dockerfile`, `CHANGELOG.md` | Version single-sourced; Dockerfile LABEL bumped. |
+| `b99df7a` | Extend contig stats to kraken2_contigs | `extract_viral_contigs.py`, `kraken2_contigs` rule files, `_chain_steps` | PI reversed the diamond-only scope. kraken2 has no viral BAM, so a **new** per-sample viral-contig extraction (lineage under taxid 10239) + read-remap + `samtools depth` was added, distinct paths (`mapping/viral_kraken2/`). Each contig track measures depth against *its own* viral calls. |
+| `5085f45` | Group summaries + `chain`→`full` | top-level `.smk`, `select_reference_genomes.py`, rule files, docs | `<track>/{chain,family,genus,species}/` → `<track>/summaries/{full,family,genus,species}/`. |
+| `8974e6c` | Move per-sample summaries | 8 rule files | `<track>/summary/{sample}.taxa.tsv` → `<track>/summaries/per_sample_summaries/`. |
+| `2aa9af4`, `c337f1e` | Docs | `IMPLEMENTATION_PLAN.md`, this file | Planning/handoff docs. |
+
+## New Python modules and their test coverage
+
+| Module (`viralunity/scripts/python/`) | Purpose | Tests |
+|---|---|---|
+| `split_summary_by_rank.py` | terminal per-rank split; propagates family/genus columns; guarantees `final_species` | `split_summary_by_rank_test.py` (6) |
+| `add_contig_stats_to_summary.py` | per-taxon largest-contig length + median depth (classifier-agnostic) | `add_contig_stats_to_summary_test.py` (7) |
+| `extract_viral_contigs.py` | select kraken2-viral contigs (lineage under 10239) for the depth remap | `extract_viral_contigs_test.py` (4) |
+
+Modified filter modules and their tests: `apply_max_rpm_bleed_filter.py` (14),
+`add_negative_control_enrichment.py` (64 incl. subtests), `harmonize_nr_summary.py` (13),
+`summarize_krona_taxa.py`, `select_reference_genomes.py`, `filter_krona_by_pass_taxids.py`.
+
+**Note for the reviewer:** the `viralunity/scripts/python/*.py` scripts run under Snakemake's
+`script:` directive (a `snakemake` global is injected); `# noqa: F821` on those refs is
+intentional. Each has both a `run`/CLI entry and pure functions used by the tests.
+
+## Wiring pattern (where a meta option threads through)
+
+Six touch points, useful when auditing the new options (`bleed_rpkm_floor` is YAML-only, so
+it only appears in the rules): Click option in `viralunity_meta_cli.py` → `ConfigKeys` in
+`constants.py` → setter in `config_generator.py` → forward in `viralunity_meta.py` → validate
+in `validators.py` → read `config.get(...)` in the `.smk` rules. Tests are the 7th touch.
+
+## Output/behaviour changes (schema the reviewer will see)
+
+Fully-loaded contig track deliverable, e.g.:
+`taxonomic_assignments/diamond_contigs/summaries/species/diamond_contigs_species_taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv`
+
+- New columns: `family`, `genus` (propagated), `final_species`, `bleed_metric`, `bleed_max`
+  (was `max_rpm`), `fold_enrichment_10x/100x_pass`, `neg_pass_5`, `neg_pass_10`,
+  `pooled_control_metric`, `agg_fold_enrichment`, `agg_log10_ratio`,
+  `agg_fold_enrichment_10x/100x_pass`, `largest_contig_bp`, `largest_contig_median_depth`.
+- Renamed: `log2_ratio`→`log10_ratio`, `log2_ratio_threshold_used`→`log10_ratio_threshold_used`;
+  `neg_decision` values `log10_ratio`/`log10_ratio_fallback`.
+- Removed: `source`.
+- Layout (breaking): `<track>/summaries/{full,family,genus,species,per_sample_summaries}/`;
+  the track root now holds only `results/`, `reports/`, `summaries/`.
+- Chain step order: base `_RPM|_RPKM` → `[.nr]` (contigs) → `[.ctgstats]` (contigs, `--viral-genomes`)
+  → `.bleed` → `[.neg]` → `[.ictv]`, built by `_chain_steps` in the two top-level `.smk`.
+
+## Review-focus checklist (the subtle / higher-risk items)
+
+1. **log10 default = 10× is a real behaviour change**, not just a rename — intended & signed off.
+2. **Bleed RPKM invariance** — confirm the within-taxon-ratio argument (pass/fail unchanged; only the floor gate scales). This is the one proposal whose original rationale was corrected during planning.
+3. **Aggregate pooling = raw-read (depth-weighted)**, complementary, does not alter `neg_pass`.
+4. **Chain relocation** — `select_reference_genomes.resolve_summary_file` globs `summaries/full/` with fallbacks to `chain/` and flat; `filter_krona_by_pass_taxids` still reads the combined table. Verify no consumer was left pointing at an old path.
+5. **kraken2 viral remap** — new compute; check the extraction (taxid 10239 lineage), distinct output paths (no collision with diamond's `mapping/viral/`), and the empty/absent-BAM guards.
+6. **Per-rank split** — family/genus name propagation is correct per rank (species gets both, genus gets family, family gets neither); `final_species` guaranteed on non-NR tracks (= `name`).
+7. **NA / empty-input contracts** — filters emit fixed-schema empty outputs and treat NA as keep; check the `_test.py` "input contract" cases.
+
+## Known limitations / open items (not defects)
+
+- **`bleed_rpkm_floor` default `0.1` is an unvalidated guess** (≈ the old RPM floor of 1.0 at a
+  10 kb genome). Flagged in `IMPLEMENTATION_PLAN.md` for the PI to tune. YAML-only knob.
+- With both contig tracks on, each does its own viral remap (two light, viral-only remaps per
+  sample) — intentional, to keep per-track depth semantics correct.
+- The REVISA offline re-derivation (below) leaves **kraken2_contigs contig-depth = NA** because
+  the run-5 cleanup purged the reads; documented, not a code issue.
+
+## Verification already performed
+
+- `python -m pytest test/` → 466 passed (incl. 14 dryruns), lint clean.
+- **Toy end-to-end run** (`my_results/test_meta_illumina_v132/`, SARS-CoV-2 data): 107/107 steps;
+  diamond_contigs recovered a 29,819 bp contig at 876×; kraken2_contigs remap produced its own
+  depth; new schema + layout confirmed on disk.
+- **REVISA (Phase 6)**: a normal re-run was impossible (run-5 cleanup purged intermediate FASTQs
+  → full-rebuild cascade), so v1.3.2 outputs were produced by an **offline re-derivation**
+  (`/home/gevop/projects/REVISA/rederive_v132.py`, outside this repo) that drives the *actual*
+  v1.3.2 filter modules over surviving artifacts — no read recompute. All 5 batches, 0 errors,
+  outputs in `/home/gevop/projects/REVISA/results_v132_rederived/` (originals untouched). That
+  script is a one-off and is NOT part of this branch's code — out of review scope, but it
+  exercises the same modules.
+
+## How to run the checks
+
+```bash
+conda activate viralunity          # package installed via pip install -e .
+python -m pytest test/ -q          # 466 unit tests + 14 dryruns
+black --check viralunity/ test/ && ruff check viralunity/ test/
+# NB: `make lint` runs `make install-dev` first, which fails on Python 3.12 (requires <3.12) —
+# run black/ruff directly instead; the installed env already works for tests.
+```
+
+## Gotchas for the reviewer
+
+- Tests are stdlib `unittest` classes collected by pytest; run via `python -m pytest test/...`
+  (not `python -m unittest` from the repo root — package-path issues).
+- Do not rename `validate_args` / `generate_config_file` / `run_snakemake_workflow` — tests
+  patch those exact names (see `CLAUDE.md`).
+- Snakemake `.smk` rule bodies are duplicated per track × platform (8 files); the substantive
+  logic lives in the Python modules — review those once, then spot-check the rule wiring is parallel.
