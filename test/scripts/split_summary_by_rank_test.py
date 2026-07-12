@@ -9,8 +9,18 @@ import pandas as pd
 from viralunity.scripts.python.split_summary_by_rank import (
     add_higher_rank_names,
     ensure_final_species,
+    run,
     split_by_rank,
 )
+
+
+def _write_minimal_taxdump(d):
+    """A one-node taxdump so run() can call load_taxdump before the empty check."""
+    with open(os.path.join(d, "nodes.dmp"), "w") as f:
+        f.write("1\t|\t1\t|\tno rank\t|\t-\t|\n")
+    with open(os.path.join(d, "names.dmp"), "w") as f:
+        f.write("1\t|\troot\t|\t\t|\tscientific name\t|\n")
+
 
 # species 3001 -> genus 2001 -> family 1000 -> root
 PARENT = {"3001": "2001", "2001": "1000", "1000": "1", "1": "1"}
@@ -86,6 +96,19 @@ class TestSplitByRank(unittest.TestCase):
         df = pd.DataFrame([{"sample": "S1", "taxid": "3001", "name": "x"}])
         with self.assertRaises(ValueError):
             split_by_rank(df, {"species": "/tmp/x.tsv"}, PARENT, RANK, NAME)
+
+
+class TestRunEmptyInputContract(unittest.TestCase):
+    def test_zero_byte_summary_writes_empty_per_rank_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            _write_minimal_taxdump(d)
+            summary = os.path.join(d, "empty.tsv")
+            open(summary, "w").close()  # 0-byte input
+            paths = {r: os.path.join(d, r, f"{r}.tsv") for r in ("family", "genus", "species")}
+            run(summary_path=summary, out_paths=paths, taxdump_dir=d)
+            for p in paths.values():
+                self.assertTrue(os.path.exists(p))
+                self.assertEqual(os.path.getsize(p), 0)
 
 
 if __name__ == "__main__":

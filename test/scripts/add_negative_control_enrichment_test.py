@@ -83,28 +83,28 @@ class TestCalculateFoldEnrichment(unittest.TestCase):
 class TestCalculateLog10Ratio(unittest.TestCase):
     def test_tenfold_gives_log10_1_equals_1(self):
         # log10 of a 10-fold ratio is exactly 1.0 (the new default threshold).
-        l2r = calculate_log10_ratio(sample_metric=10.0, control_mean=1.0, pseudocount=0.0)
-        self.assertAlmostEqual(l2r, 1.0)
+        log10r = calculate_log10_ratio(sample_metric=10.0, control_mean=1.0, pseudocount=0.0)
+        self.assertAlmostEqual(log10r, 1.0)
 
     def test_equal_gives_zero(self):
-        l2r = calculate_log10_ratio(sample_metric=5.0, control_mean=5.0, pseudocount=0.0)
-        self.assertAlmostEqual(l2r, 0.0)
+        log10r = calculate_log10_ratio(sample_metric=5.0, control_mean=5.0, pseudocount=0.0)
+        self.assertAlmostEqual(log10r, 0.0)
 
     def test_sample_lower_than_control_negative(self):
-        l2r = calculate_log10_ratio(sample_metric=2.0, control_mean=8.0, pseudocount=0.0)
-        self.assertLess(l2r, 0.0)
+        log10r = calculate_log10_ratio(sample_metric=2.0, control_mean=8.0, pseudocount=0.0)
+        self.assertLess(log10r, 0.0)
 
     def test_pseudocount_stabilises_zero_control(self):
-        l2r = calculate_log10_ratio(sample_metric=100.0, control_mean=0.0, pseudocount=1.0)
-        self.assertGreater(l2r, 0.0)
-        self.assertFalse(math.isinf(l2r))
+        log10r = calculate_log10_ratio(sample_metric=100.0, control_mean=0.0, pseudocount=1.0)
+        self.assertGreater(log10r, 0.0)
+        self.assertFalse(math.isinf(log10r))
 
     def test_log10_relationship_to_fold_enrichment(self):
         pc = 1.0
         sample, ctrl = 10.0, 3.0
         fe = calculate_fold_enrichment(sample, ctrl, pc)
-        l2r = calculate_log10_ratio(sample, ctrl, pc)
-        self.assertAlmostEqual(l2r, math.log10(fe), places=10)
+        log10r = calculate_log10_ratio(sample, ctrl, pc)
+        self.assertAlmostEqual(log10r, math.log10(fe), places=10)
 
 
 class TestCalculateZScore(unittest.TestCase):
@@ -345,8 +345,8 @@ class TestDecisionMetricSelection(unittest.TestCase):
     def test_log10_ratio_uses_rpkm_values(self):
         out = apply_negative_control_enrichment(self.df, negatives=["CTRL"], pseudocount=1.0)
         s1 = out[out["sample"] == "S1"].iloc[0]
-        expected_l2r = math.log10((100.0 + 1.0) / (2.0 + 1.0))
-        self.assertAlmostEqual(s1["log10_ratio"], expected_l2r, places=5)
+        expected_log10r = math.log10((100.0 + 1.0) / (2.0 + 1.0))
+        self.assertAlmostEqual(s1["log10_ratio"], expected_log10r, places=5)
 
     def test_neg_metric_falls_back_to_rpm_when_rpkm_all_na(self):
         df = _df(
@@ -705,6 +705,69 @@ class TestAggregatePooledControl(unittest.TestCase):
             "agg_fold_enrichment_100x_pass",
         ):
             self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
+
+
+class TestPrimaryGateBoundaries(unittest.TestCase):
+    """The primary neg_pass gates are inclusive (>=) at their exact threshold."""
+
+    def test_zscore_gate_inclusive_at_threshold(self):
+        # 3 controls [1,2,3] -> mean 2, sd 1. Sample rpm 5 -> z = (5-2)/1 = 3.0,
+        # exactly the default z_score_threshold; the inclusive >= must pass.
+        df = _df(
+            _row("C1", "3001", rpm=1.0),
+            _row("C2", "3001", rpm=2.0),
+            _row("C3", "3001", rpm=3.0),
+            _row("S_at", "3001", rpm=5.0),  # z == 3.0
+            _row("S_below", "3001", rpm=4.0),  # z == 2.0
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["C1", "C2", "C3"], z_score_threshold=3.0
+        )
+        at = out[out["sample"] == "S_at"].iloc[0]
+        below = out[out["sample"] == "S_below"].iloc[0]
+        self.assertEqual(at["neg_decision"], "z_score")
+        self.assertAlmostEqual(float(at["z_score"]), 3.0)
+        self.assertTrue(bool(at["neg_pass"]))
+        self.assertFalse(bool(below["neg_pass"]))
+
+    def test_log10_gate_inclusive_at_threshold(self):
+        # Single control -> log10_ratio gate. rpm 19 vs control 1, pc 1 ->
+        # log10((19+1)/(1+1)) = log10(10) = 1.0 exactly; inclusive >= must pass.
+        df = _df(
+            _row("CTRL", "3001", rpm=1.0),
+            _row("S_at", "3001", rpm=19.0),  # log10_ratio == 1.0
+            _row("S_below", "3001", rpm=17.0),  # log10(18/2) = 0.954
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL"], pseudocount=1.0, log10_ratio_threshold=1.0
+        )
+        at = out[out["sample"] == "S_at"].iloc[0]
+        below = out[out["sample"] == "S_below"].iloc[0]
+        self.assertEqual(at["neg_decision"], "log10_ratio")
+        self.assertAlmostEqual(float(at["log10_ratio"]), 1.0)
+        self.assertTrue(bool(at["neg_pass"]))
+        self.assertFalse(bool(below["neg_pass"]))
+
+
+class TestEqualWeightPoolingFallback(unittest.TestCase):
+    """When the total_reads column is absent, pooling falls back to equal
+    weights, i.e. the plain zero-filled mean (NOT the depth-weighted value)."""
+
+    def test_absent_total_reads_uses_equal_weights(self):
+        # Same rpm values as test_deep_control_dominates_pooled_metric, but with
+        # no total_reads column: pooled must be the plain mean (200+2000)/2 = 1100,
+        # not the library-size-weighted 363.6.
+        df = _df(
+            _row("CTRL_deep", "3001", rpm=200.0),
+            _row("CTRL_shallow", "3001", rpm=2000.0),
+            _row("S1", "3001", rpm=5000.0),
+        ).drop(columns=["total_reads"])
+        self.assertNotIn("total_reads", df.columns)
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL_deep", "CTRL_shallow"], pseudocount=1.0
+        )
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), 1100.0, places=3)
 
 
 if __name__ == "__main__":

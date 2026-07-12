@@ -184,5 +184,45 @@ class TestMetricSelectionAndErrors(unittest.TestCase):
             apply_bleed_filter(df)
 
 
+class TestRpkmInvarianceMultiTaxon(unittest.TestCase):
+    """Invariance is per-taxon: two taxa with DIFFERENT genome lengths (hence
+    different rpm->rpkm scale factors) coexisting in one table still produce the
+    same bleed_pass under rpm and rpkm, because the ratio cancels within each
+    taxon independently."""
+
+    def setUp(self):
+        # taxon 1000: rpkm = rpm * 0.1 (10 kb). taxon 2000: rpkm = rpm * 0.5 (2 kb).
+        self.rpm_rows = [
+            _row("S1", "1000", rpm=1000.0),
+            _row("S2", "1000", rpm=3.0),
+            _row("S3", "1000", rpm=10.0),
+            _row("S1", "2000", rpm=500.0),
+            _row("S2", "2000", rpm=2.0),
+            _row("S3", "2000", rpm=400.0),
+        ]
+        self.rpkm_rows = [
+            _row("S1", "1000", rpm=1000.0, rpkm=100.0),
+            _row("S2", "1000", rpm=3.0, rpkm=0.3),
+            _row("S3", "1000", rpm=10.0, rpkm=1.0),
+            _row("S1", "2000", rpm=500.0, rpkm=250.0),
+            _row("S2", "2000", rpm=2.0, rpkm=1.0),
+            _row("S3", "2000", rpm=400.0, rpkm=200.0),
+        ]
+
+    def test_bleed_pass_identical_across_taxa(self):
+        rpm_out = apply_bleed_filter(_df(*self.rpm_rows))  # no rpkm col -> rpm
+        rpkm_out = apply_bleed_filter(_df(*self.rpkm_rows))  # auto -> rpkm
+        self.assertTrue((rpkm_out["bleed_metric"] == "rpkm").all())
+        key = ["taxid", "sample"]
+        self.assertEqual(
+            list(rpm_out.sort_values(key)["bleed_pass"]),
+            list(rpkm_out.sort_values(key)["bleed_pass"]),
+        )
+        # sanity: the two taxa have genuinely different max metrics/thresholds
+        maxes = rpkm_out.groupby("taxid")["bleed_max"].first().to_dict()
+        self.assertAlmostEqual(maxes["1000"], 100.0)
+        self.assertAlmostEqual(maxes["2000"], 250.0)
+
+
 if __name__ == "__main__":
     unittest.main()
