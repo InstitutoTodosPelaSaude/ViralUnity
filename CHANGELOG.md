@@ -15,18 +15,23 @@ across negative controls).
 
 ### Changed (breaking)
 
-- **Per-rank output layout.** Each track's taxa summary is now split into one
-  table per taxonomic rank under `taxonomic_assignments/<track>/{family,genus,species}/`,
-  with higher-rank names propagated down (species tables gain `family`+`genus`
-  columns; genus tables gain `family`). The combined cumulative filter chain now
-  lives internally under `<track>/chain/`. Downstream scripts that read the old
-  flat `<track>/<track>_taxa_summary_*.tsv` path must switch to `<track>/species/`
-  (or `<track>/chain/` for the combined table).
+- **Per-rank output layout.** Each track's taxa summary now lives under a
+  `taxonomic_assignments/<track>/summaries/` tree: one table per taxonomic rank
+  under `summaries/{family,genus,species}/` (the user-facing deliverable, most
+  users want `species/`), with higher-rank names propagated down (species tables
+  gain `family`+`genus` columns; genus tables gain `family`). The combined
+  cumulative filter chain lives internally under `summaries/full/`, and the
+  per-sample intermediate tables under `summaries/per_sample_summaries/`.
+  Downstream scripts that read the old flat `<track>/<track>_taxa_summary_*.tsv`
+  path must switch to `<track>/summaries/species/` (or `<track>/summaries/full/`
+  for the combined table).
 - **Negative-control log-ratio is now log10, not log2.** The `log2_ratio` column,
   `neg_decision` values, `--log2-ratio-threshold` flag and config key are renamed
   to their `log10` equivalents. The default threshold stays `1.0` but now marks a
   **10-fold** enrichment over controls (log10 = 1) rather than the old 2-fold
-  (log2 = 1) — i.e. the negative-control gate is stricter by default.
+  (log2 = 1). This gate drives `neg_pass` when exactly one control is present or
+  the control variance is zero; with ≥2 controls the primary z-score gate
+  (unchanged) decides, so the tightening applies to that fallback path.
 - **Removed the `source` column** from taxa summaries (it held an internal
   krona-input path of no user interest).
 
