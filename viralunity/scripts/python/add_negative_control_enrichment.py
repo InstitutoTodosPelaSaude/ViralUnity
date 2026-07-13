@@ -18,7 +18,15 @@ Pass/fail logic (``neg_pass``):
   * n_controls >= 2  → neg_pass = (z_score >= z_score_threshold);
                        if control_sd == 0, falls back to log10_ratio gate
   * n_controls == 1  → neg_pass = (log10_ratio >= log10_ratio_threshold)
-  * taxa absent from controls → control_mean = 0, computed against pseudocount
+  * taxa absent from ALL controls (control_max == 0) → neg_decision =
+    "absent_from_controls": the enrichment ratios are undefined (they would be
+    computed only against the pseudocount and merely track the sample's own
+    abundance), so ``fold_enrichment``, ``log10_ratio``, ``agg_fold_enrichment``
+    and ``agg_log10_ratio`` are blanked to NA and every enrichment gate
+    (``neg_pass`` and the fold_enrichment 10x/100x pass flags, per-control and
+    aggregate) is set True. Absence from controls is itself evidence the taxon is
+    not control-borne contamination. The z-score gates (neg_pass_5/10) stay NA —
+    a z-score is undefined when the controls carry no signal.
 
 Control statistics use *zero-fill*: a taxon not detected in a given control
 contributes a metric of 0 for that control, so control_mean / control_sd /
@@ -268,6 +276,66 @@ def _add_aggregate_control(
     out["agg_fold_enrichment_100x_pass"] = _threshold_flag(out["agg_fold_enrichment"], 100.0)
 
 
+def apply_absent_control_overrides(out: pd.DataFrame) -> None:
+    """In-place: neutralise enrichment stats for taxa absent from ALL controls.
+
+    A non-control taxon with ``control_max == 0`` was never detected in any
+    negative control. Its fold-enrichment / log10-ratio would be computed only
+    against the pseudocount — ``(sample + pc) / (0 + pc)`` — so the value tracks
+    the sample's own abundance rather than any real enrichment over controls.
+    That is misleading and made low-abundance control-absent taxa fail the 100x
+    gate. Absence from controls is itself evidence the taxon is not control-borne
+    contamination, so we blank the (meaningless) ratios and auto-pass every
+    enrichment gate, including the primary ``neg_pass``:
+
+      * fold_enrichment, log10_ratio, agg_fold_enrichment, agg_log10_ratio → NA
+      * fold_enrichment_10x/100x_pass, agg_fold_enrichment_10x/100x_pass → True
+      * neg_pass → True, neg_decision → "absent_from_controls"
+
+    The z-score gates (``neg_pass_5``/``neg_pass_10``) are left as-is (NA): a
+    z-score is undefined when the controls carry no signal. This helper is shared
+    with post-hoc tooling that re-applies the rule to already-computed summaries,
+    so it is a no-op when the driving columns are absent.
+    """
+    if "control_max" not in out.columns:
+        return
+    cmax = pd.to_numeric(out["control_max"], errors="coerce").fillna(0.0)
+    if "is_negative_control" in out.columns:
+        is_ctrl = out["is_negative_control"].fillna(False).astype(bool)
+    else:
+        is_ctrl = pd.Series(False, index=out.index)
+    if not is_ctrl.any():
+        # No negative controls in this table (bleed-only mode). "control_max == 0"
+        # then means "no controls exist", not "absent from controls" — leave the
+        # NA-as-keep contract untouched.
+        return
+    absent = (~is_ctrl) & (cmax <= 0)
+    if not absent.any():
+        return
+
+    for col in ("fold_enrichment", "log10_ratio", "agg_fold_enrichment", "agg_log10_ratio"):
+        if col in out.columns:
+            out[col] = out[col].astype("object")
+            out.loc[absent, col] = pd.NA
+
+    for col in (
+        "fold_enrichment_10x_pass",
+        "fold_enrichment_100x_pass",
+        "agg_fold_enrichment_10x_pass",
+        "agg_fold_enrichment_100x_pass",
+    ):
+        if col in out.columns:
+            out[col] = out[col].astype("boolean")
+            out.loc[absent, col] = True
+
+    if "neg_pass" in out.columns:
+        out["neg_pass"] = out["neg_pass"].astype("boolean")
+        out.loc[absent, "neg_pass"] = True
+    if "neg_decision" in out.columns:
+        out["neg_decision"] = out["neg_decision"].astype("object")
+        out.loc[absent, "neg_decision"] = "absent_from_controls"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main enrichment logic
 # ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +500,9 @@ def apply_negative_control_enrichment(
 
     # Convenience pass/fail flags derived from the enrichment stats.
     _add_pass_flag_columns(out)
+
+    # Taxa absent from every control: blank the meaningless ratios and auto-pass.
+    apply_absent_control_overrides(out)
 
     # Tidy up internal columns
     out = out.drop(columns=["_metric", "_ctrl_vals"], errors="ignore")
