@@ -66,6 +66,25 @@ across negative controls).
   within-taxon ratio the pass/fail is unchanged by the metric; the application
   floor is now metric-specific (`bleed_rpm_floor` 1.0, new `bleed_rpkm_floor`
   0.1 — both YAML-only).
+- **Taxa absent from all negative controls now auto-pass the enrichment gates**
+  (science-behaviour change — flagged for PI review). Previously a taxon never
+  seen in any control still got a finite `fold_enrichment = (sample + pc)/(0 + pc)`
+  that tracked only the sample's own abundance, so low/moderate-abundance
+  control-absent taxa could *fail* `fold_enrichment_100x_pass` /
+  `agg_fold_enrichment_100x_pass` (pervasive on contig tracks, where RPKM is
+  tiny). Now, when a taxon's `control_max == 0`, the meaningless ratios
+  (`fold_enrichment`, `log10_ratio`, `agg_fold_enrichment`, `agg_log10_ratio`)
+  are blanked to NA and every enrichment gate — the four fold-enrichment
+  10x/100x pass flags **and** the primary `neg_pass` — is set True, with
+  `neg_decision = "absent_from_controls"`. Absence from controls is itself the
+  evidence the taxon is not control-borne contamination. The z-score gates
+  (`neg_pass_5`/`neg_pass_10`) stay NA (a z-score is undefined without control
+  signal). This changes which taxa survive the lineage-aware Krona "filtered"
+  output and reference-assembly selection.
+- **ICTV host-filter docstrings corrected.** The filter runs *last* in the chain
+  (after bleed/negative-control), not before as three docstrings claimed. The
+  behaviour is unchanged and numerically equivalent to running it earlier, since
+  bleed/neg are per-taxon ratios; only the comments were wrong.
 
 ## [1.3.1] - 2026-07-10
 
