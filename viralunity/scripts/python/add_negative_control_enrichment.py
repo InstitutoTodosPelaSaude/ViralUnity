@@ -304,11 +304,21 @@ def apply_absent_control_overrides(out: pd.DataFrame) -> None:
         is_ctrl = out["is_negative_control"].fillna(False).astype(bool)
     else:
         is_ctrl = pd.Series(False, index=out.index)
-    if not is_ctrl.any():
-        # No negative controls in this table (bleed-only mode). "control_max == 0"
-        # then means "no controls exist", not "absent from controls" — leave the
-        # NA-as-keep contract untouched.
+
+    # "Controls exist" must be judged by n_negative_controls, not by the presence
+    # of control ROWS: on a rank-split summary the control samples' rows may have
+    # been dropped while per-taxon control_max is still populated. Falling back to
+    # is_negative_control only when the count column is absent. If no controls
+    # exist at all (bleed-only mode), control_max == 0 means "no controls", not
+    # "absent from controls" — leave the NA-as-keep contract untouched.
+    if "n_negative_controls" in out.columns:
+        ncc = pd.to_numeric(out["n_negative_controls"], errors="coerce").fillna(0)
+        controls_exist = bool((ncc > 0).any())
+    else:
+        controls_exist = bool(is_ctrl.any())
+    if not controls_exist:
         return
+
     absent = (~is_ctrl) & (cmax <= 0)
     if not absent.any():
         return

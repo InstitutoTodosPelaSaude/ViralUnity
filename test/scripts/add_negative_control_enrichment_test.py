@@ -16,6 +16,7 @@ import unittest
 import pandas as pd
 
 from viralunity.scripts.python.add_negative_control_enrichment import (
+    apply_absent_control_overrides,
     apply_negative_control_enrichment,
     calculate_fold_enrichment,
     calculate_log10_ratio,
@@ -804,6 +805,67 @@ class TestEqualWeightPoolingFallback(unittest.TestCase):
         )
         s1 = out[out["sample"] == "S1"].iloc[0]
         self.assertAlmostEqual(float(s1["pooled_control_metric"]), 1100.0, places=3)
+
+
+class TestAbsentControlOverridesReuse(unittest.TestCase):
+    """apply_absent_control_overrides re-applied to an already-computed summary.
+
+    Mimics a rank-split table where the control samples' rows were dropped but
+    per-taxon control statistics (and n_negative_controls) are still present."""
+
+    def _split_like_row(self, taxid, control_max, fe, fe100, neg_pass, decision):
+        return {
+            "sample": "S1",
+            "taxid": taxid,
+            "is_negative_control": False,
+            "n_negative_controls": 4,
+            "control_max": control_max,
+            "fold_enrichment": fe,
+            "log10_ratio": 0.5,
+            "agg_fold_enrichment": fe,
+            "agg_log10_ratio": 0.5,
+            "fold_enrichment_10x_pass": fe100,
+            "fold_enrichment_100x_pass": fe100,
+            "agg_fold_enrichment_10x_pass": fe100,
+            "agg_fold_enrichment_100x_pass": fe100,
+            "neg_pass": neg_pass,
+            "neg_pass_5": pd.NA,
+            "neg_pass_10": pd.NA,
+            "neg_decision": decision,
+        }
+
+    def test_absent_taxon_overridden_without_control_rows(self):
+        df = pd.DataFrame(
+            [
+                # absent from controls (control_max 0), currently failing
+                self._split_like_row("9999", 0.0, 6.0, False, False, "log10_ratio_fallback"),
+                # present in controls (control_max 5), must stay untouched
+                self._split_like_row("3001", 5.0, 16.0, False, True, "z_score"),
+            ]
+        )
+        apply_absent_control_overrides(df)
+
+        absent = df[df["taxid"] == "9999"].iloc[0]
+        self.assertTrue(pd.isna(absent["fold_enrichment"]))
+        self.assertTrue(pd.isna(absent["agg_log10_ratio"]))
+        self.assertTrue(bool(absent["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(absent["agg_fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(absent["neg_pass"]))
+        self.assertEqual(absent["neg_decision"], "absent_from_controls")
+
+        present = df[df["taxid"] == "3001"].iloc[0]
+        self.assertEqual(float(present["fold_enrichment"]), 16.0)
+        self.assertEqual(present["neg_decision"], "z_score")
+        self.assertFalse(bool(present["fold_enrichment_100x_pass"]))
+
+    def test_no_controls_at_all_is_noop(self):
+        # n_negative_controls == 0 → bleed-only mode; control_max 0 must NOT flip.
+        df = pd.DataFrame([self._split_like_row("9999", 0.0, 6.0, False, False, "none")])
+        df["n_negative_controls"] = 0
+        apply_absent_control_overrides(df)
+        row = df.iloc[0]
+        self.assertEqual(float(row["fold_enrichment"]), 6.0)  # untouched
+        self.assertEqual(row["neg_decision"], "none")
 
 
 if __name__ == "__main__":
