@@ -263,8 +263,9 @@ class ConfigGenerator:
             run_ictv_host_filter: When True, drop taxa that are not
                 vertebrate-infecting viruses (bacteriophages, plant/fungal/algal
                 /invertebrate-only viruses) using the ICTV-derived allowlist. A
-                taxonomic filter applied before bleed/negative-control. Off by
-                default.
+                taxonomic filter applied last in the chain (after bleed and
+                negative-control); numerically equivalent to running it earlier
+                because bleed/neg statistics are per-taxon ratios. Off by default.
             ictv_vertebrate_taxids_file: Path to the vertebrate-virus taxid
                 allowlist consumed by the ICTV host filter (built by
                 build_ictv_vertebrate_taxids.py). Required when

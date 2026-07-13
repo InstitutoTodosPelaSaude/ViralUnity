@@ -154,7 +154,8 @@ _COMMON_META_OPTIONS = [
         help=(
             "Drop non-vertebrate-infecting viruses (bacteriophages, plant/fungal/"
             "algal/invertebrate-only viruses) using the ICTV-derived allowlist. "
-            "Applied before the bleed/negative-control filters."
+            "Applied last in the filter chain (after bleed/negative-control); "
+            "equivalent to running it earlier since those are per-taxon filters."
         ),
     ),
     click.option(
