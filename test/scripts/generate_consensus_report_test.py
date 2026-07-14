@@ -202,6 +202,34 @@ class TestReportMetadata(unittest.TestCase):
         self.assertFalse(meta["qc_performed"])
 
 
+class TestMappingRate(unittest.TestCase):
+    def test_paired_mapped_column_is_a_rate_with_raw_count_tooltip(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df, paired=True)
+        # sample-A: 643219 / (2 x 330568) = 97.3% (mapped is individual reads,
+        # QC-passed is read pairs -> double the denominator when paired).
+        self.assertIn("97.3%", html)
+        self.assertIn(">Mapped %<", html)
+        # the raw count is preserved in the cell tooltip, not as the visible text.
+        self.assertIn("643,219 mapped reads", html)
+        self.assertNotIn(">643,219<", html)
+
+    def test_single_end_uses_undoubled_denominator(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df, paired=False)
+        # single-end (Nanopore): mapped / QC-passed, no doubling. sample-B is
+        # 800 / 900 = 88.9%; paired would instead give 800 / 1800 = 44.4%.
+        self.assertIn("88.9%", html)
+        self.assertNotIn("44.4%", html)
+
+    def test_sortable_headers_have_accessibility_attributes(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df, paired=True)
+        self.assertIn('role="button"', html)
+        self.assertIn('aria-sort="none"', html)
+        self.assertIn('tabindex="0"', html)
+
+
 class TestLoadBasewiseTable(unittest.TestCase):
     def test_missing_file_returns_empty_frame(self):
         df = load_basewise_table("/no/such/file.txt")

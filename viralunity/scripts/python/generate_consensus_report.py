@@ -54,7 +54,7 @@ COLUMN_LABELS = {
     "segment": "Segment",
     "number_of_reads": "Total reads",
     "number_of_trim_paired_reads": "QC-passed reads",
-    "number_of_mapped_reads": "Mapped reads",
+    "number_of_mapped_reads": "Mapped %",
     "average_depth": "Mean depth",
     "horizontal_coverage": "Genome coverage",
 }
@@ -254,17 +254,53 @@ def _fmt_int(value) -> str:
         return str(value)
 
 
-def build_stats_table_html(df: pd.DataFrame) -> str:
+def _mapping_rate(mapped, qc_passed, paired: bool) -> Optional[float]:
+    """Mapped-read rate (%) = mapped / QC-passed, unit-reconciled by layout.
+
+    Mapped reads are counted individually; on a paired-end (Illumina) run the
+    QC-passed count is read *pairs*, so the denominator is doubled to bring both
+    onto the individual-read scale. Layout comes from the declared metadata, never
+    from the mapped/total ratio. Returns ``None`` when the inputs are unusable.
+    """
+    try:
+        mapped_f = float(mapped)
+        qc = float(qc_passed)
+    except (TypeError, ValueError):
+        return None
+    denom = qc * 2 if paired else qc
+    if denom <= 0:
+        return None
+    return mapped_f / denom * 100.0
+
+
+def _fmt_rate(pct: Optional[float]) -> str:
+    """Format a mapping rate, keeping small on-target fractions legible."""
+    if pct is None or not math.isfinite(pct):
+        return "—"  # em dash
+    if pct >= 1:
+        return f"{pct:.1f}%"
+    if pct >= 0.01:
+        return f"{pct:.2f}%"
+    if pct > 0:
+        return f"{pct:.3f}%"
+    return "0%"
+
+
+def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
     """Render the stats summary as a sortable HTML table.
 
     The ``percentage_above_*x`` columns are dropped and headers are humanized.
     ``horizontal_coverage`` is shown x100 with a ``%`` suffix; ``average_depth``
-    is rounded; read counts render as integers. Sorting is handled by inline JS
-    in the template (``data-sort`` carries the raw numeric value).
+    is rounded; read counts are grouped; ``number_of_mapped_reads`` becomes a
+    **mapping rate** (``mapped / QC-passed``, denominator doubled when
+    ``paired``), with the raw count kept in the cell tooltip. Sorting is handled
+    by inline JS in the template (``data-sort`` carries the raw numeric value);
+    headers carry the a11y attributes the JS keeps in sync.
     """
     columns = [c for c in df.columns if c not in PERCENTAGE_ABOVE_COLS]
     header_cells = "".join(
-        f'<th data-col="{i}" onclick="sortTable(this)">{COLUMN_LABELS.get(col, col)}'
+        f'<th data-col="{i}" role="button" tabindex="0" aria-sort="none" '
+        f'onclick="sortTable(this)">{COLUMN_LABELS.get(col, col)}'
         f'<span class="sort-arrow"></span></th>'
         for i, col in enumerate(columns)
     )
@@ -274,6 +310,12 @@ def build_stats_table_html(df: pd.DataFrame) -> str:
         cells = []
         for col in columns:
             raw = row[col]
+            if col == "number_of_mapped_reads":
+                rate = _mapping_rate(raw, row.get("number_of_trim_paired_reads"), paired)
+                sort_val = rate if rate is not None else -1
+                tip = f'{_fmt_int(raw)} mapped reads / {"2× " if paired else ""}QC-passed reads'
+                cells.append(f'<td data-sort="{sort_val}" title="{tip}">{_fmt_rate(rate)}</td>')
+                continue
             if col in PERCENTAGE_COLS:
                 display, sort_val = _fmt_pct(raw), raw
             elif col == "average_depth":
@@ -532,6 +574,10 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     """
     if metadata is None:
         metadata = build_report_metadata(None, output_dir)
+    # On Illumina (paired-end), total/QC-passed counts are read pairs while mapped
+    # reads are counted individually; the mapping-rate denominator is doubled to
+    # reconcile the units. Driven by the declared library layout, never by ratios.
+    paired = metadata["library_layout"] == "paired"
     stats_path = os.path.join(output_dir, "assembly", "assembly_stats_summary.csv")
     df = read_stats_summary(stats_path)
     segmented = is_segmented(df)
@@ -541,7 +587,7 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     cache = _load_coverage_cache(output_dir, df, segmented)
 
     # Global figures.
-    stats_table_html = build_stats_table_html(df)
+    stats_table_html = build_stats_table_html(df, paired)
     reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df)))
     depth_fig_html = _fig_to_html(build_coverage_bar_chart(df, segmented))
 
@@ -574,12 +620,8 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
             )
         coverage_json[sample] = entries
 
-    stats_by_sample = _stats_rows_by_sample(df, segmented)
+    stats_by_sample = _stats_rows_by_sample(df, segmented, paired)
 
-    # On Illumina (paired-end), total/QC-passed counts are read pairs while mapped
-    # reads are counted individually, so the two reads panels are on different
-    # units. Driven by the declared library layout, never inferred from ratios.
-    paired = metadata["library_layout"] == "paired"
     reads_note = (
         "Top panel: read-pair counts. Bottom panel: individual read counts." if paired else ""
     )
@@ -607,8 +649,14 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     )
 
 
-def _stats_rows_by_sample(df: pd.DataFrame, segmented: bool) -> Dict[str, list]:
-    """Formatted per-sample stat rows for the per-sample detail panel."""
+def _stats_rows_by_sample(
+    df: pd.DataFrame, segmented: bool, paired: bool = True
+) -> Dict[str, list]:
+    """Formatted per-sample stat rows for the per-sample detail panel.
+
+    Mirrors :func:`build_stats_table_html`: the mapped column is rendered as a
+    mapping rate (unit-reconciled by ``paired``), other numbers are grouped.
+    """
     out: Dict[str, list] = {}
     for _, row in df.iterrows():
         rendered = {}
@@ -617,7 +665,11 @@ def _stats_rows_by_sample(df: pd.DataFrame, segmented: bool) -> Dict[str, list]:
                 continue
             label = COLUMN_LABELS.get(col, col)
             raw = row[col]
-            if col in PERCENTAGE_COLS:
+            if col == "number_of_mapped_reads":
+                rendered[label] = _fmt_rate(
+                    _mapping_rate(raw, row.get("number_of_trim_paired_reads"), paired)
+                )
+            elif col in PERCENTAGE_COLS:
                 rendered[label] = _fmt_pct(raw)
             elif col == "average_depth":
                 rendered[label] = _fmt_depth(raw)
