@@ -3,11 +3,16 @@
 infecting clade (ICTV-derived allowlist); drop everything else (bacteriophages,
 archaeal viruses, plant/fungal/algal/protist/invertebrate-only viruses).
 
-This is a *taxonomic* filter and runs BEFORE the bleed / negative-control
-filters, so it removes rows (rather than flagging them): the statistical filters
-downstream then compute their thresholds on taxonomically-valid taxa only. A row
+This is a *taxonomic* filter that removes rows (rather than flagging them): a row
 is kept iff its taxid or any ancestor is in the allowlist. Removed rows are
 written to a ``*.dropped.tsv`` sidecar with a ``drop_reason`` column for audit.
+
+It runs *last* in the chain (after the bleed / negative-control filters). Because
+the bleed and negative-control statistics are per-taxon ratios (grouped by
+tool/mode/rank/taxid), the presence of non-vertebrate taxa upstream never affects
+a surviving taxon's statistics — so running the taxonomic filter last is
+numerically equivalent to running it first, and it keeps the dropped-row sidecar
+carrying the fully-computed enrichment columns for audit.
 
 The allowlist is a plain text file of NCBI taxids (one per line, ``#`` comments
 and blank lines ignored), built from the ICTV Virus Metadata Resource by

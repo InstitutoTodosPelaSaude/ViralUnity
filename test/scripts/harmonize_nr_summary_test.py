@@ -8,6 +8,7 @@ import pandas as pd
 
 from viralunity.scripts.python.harmonize_nr_summary import (
     NA,
+    _add_final_species,
     _build_flags,
     aggregate_species_row,
     harmonize,
@@ -221,6 +222,49 @@ class TestHarmonize(unittest.TestCase):
         self.assertEqual(set(drp["taxid"]), {"3100"})
         # flags file exists with a header
         self.assertTrue(os.path.exists(flags))
+        # final_species present, immediately right of nr_correct_species
+        cols = list(kept.columns)
+        self.assertIn("final_species", cols)
+        self.assertEqual(cols[cols.index("nr_correct_species") + 1], "final_species")
+        # NR agreed on the flu species -> final_species falls back to name
+        self.assertEqual(flu["final_species"], "Influenza A virus")
+        # family row (no NR correction) -> final_species echoes the family name
+        fam = kept[kept["taxid"] == "1000"].iloc[0]
+        self.assertEqual(fam["final_species"], "Orthomyxoviridae")
+
+
+class TestFinalSpecies(unittest.TestCase):
+    """_add_final_species: coalesce(nr_correct_species, name), positioned + all rows."""
+
+    def _df(self):
+        return pd.DataFrame(
+            [
+                # NR disagreed -> nr_correct_species carries the correction
+                ("species", "Influenza B virus", "Influenza A virus"),
+                # NR agreed (nr_correct_species NA) -> keep original name
+                ("species", "Enterovirus C", NA),
+                # family row -> echoes its own name
+                ("family", "Picornaviridae", NA),
+                # empty-string correction is treated as absent
+                ("species", "Mayaro virus", ""),
+            ],
+            columns=["rank", "name", "nr_correct_species"],
+        )
+
+    def test_coalesce_and_positioning(self):
+        out = _add_final_species(self._df())
+        cols = list(out.columns)
+        self.assertEqual(cols[cols.index("nr_correct_species") + 1], "final_species")
+        vals = list(out["final_species"])
+        self.assertEqual(
+            vals,
+            ["Influenza A virus", "Enterovirus C", "Picornaviridae", "Mayaro virus"],
+        )
+
+    def test_does_not_mutate_input(self):
+        df = self._df()
+        _add_final_species(df)
+        self.assertNotIn("final_species", df.columns)
 
 
 class TestAggregateSpeciesRow(unittest.TestCase):

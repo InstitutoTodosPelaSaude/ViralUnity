@@ -239,8 +239,8 @@ longest-named file for a track is its fully-filtered summary. Each step:
 | `_taxa_summary.tsv`   | Raw counts, one row per `(sample, tool, mode, rank, taxid)`.                                                   |
 | `…_RPM` / `…_RPKM`     | The normalisation base (one or the other). `_RPM` adds `total_reads` + `rpm`; `_RPKM` also adds `genome_length_bp`, `n_genomes`, `rpkm` (only when `--viral-genomes`/`--viral-taxids` are set). |
 | `….nr`                | **Contig tracks only, `--run-nr-validation`.** Adds `nr_pass`; contigs the NR LCA calls non-viral are removed (see below). |
-| `….bleed`             | Adds `max_rpm`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)                          |
-| `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log2_ratio`, `z_score`, `neg_pass`, …). |
+| `….bleed`             | Adds `bleed_metric`, `bleed_max`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)         |
+| `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log10_ratio`, `z_score`, `neg_pass`, …). |
 | `….ictv`              | `--run-ictv-host-filter` only. Removes taxa outside the ICTV vertebrate-infecting-virus allowlist (see below). |
 
 Row-removing steps (`.nr`, `.ictv`) also write a `*.dropped.tsv` sidecar listing what they removed, for audit.
@@ -261,25 +261,29 @@ rpkm = rpm × 1000 / genome_length_bp
 
 RPKM at genus and family level is approximate (based on the median genome length of all accessions under that node). Taxons with no matching genome length get `rpkm = NA`.
 
+> **Segmented viruses.** `genome_length_bp` is the median length across the individual RefSeq *records* under a taxon, and each segment of a segmented virus (influenza, bunyaviruses, etc.) is a separate record. So for a segmented virus this is the median **segment** length, not the summed genome length — its RPKM is normalised per-segment and is therefore inflated and not directly comparable to a monopartite virus's RPKM. This does *not* affect the bleed or negative-control pass/fail (both are within-taxon ratios in which the constant genome length cancels); it affects absolute RPKM values, cross-taxon comparison, and which segmented taxa clear the `bleed_rpkm_floor` gate. The same assumption carries into `largest_contig_ref_coverage_pct` (see the `.ctgstats` note below).
+
 ### Bleed filter
 
-For each taxon, the pipeline looks at its maximum RPM across all samples, and sets a threshold at a small fraction of that maximum:
+For each taxon, the pipeline looks at its maximum value across all samples, and sets a threshold at a small fraction of that maximum:
 
 ```text
-bleed_threshold = max_rpm * bleed_fraction      # bleed_fraction = 0.005 by default
-bleed_pass      = rpm >= bleed_threshold
+bleed_threshold = bleed_max * bleed_fraction    # bleed_fraction = 0.005 by default
+bleed_pass      = value >= bleed_threshold
 ```
+
+The comparison metric (`bleed_metric` column) is **RPKM when `--viral-genomes` is supplied and the taxon has a genome length, otherwise RPM** — chosen per taxon. Because the bleed test is a *within-taxon* ratio across samples, and a taxon's genome length is constant, switching RPM→RPKM rescales every value in the group by the same factor and leaves `bleed_pass` unchanged; the only thing it changes is the floor gate below (RPKM values sit on a different scale).
 
 For example, if *Coronaviridae* hits 1000 RPM in sample A and 0.2 RPM in sample B:
 
-- `max_rpm` = 1000
+- `bleed_max` = 1000
 - `bleed_threshold` = 1000 × 0.005 = 5 RPM
-- Sample A's row passes (`rpm=1000 ≥ 5`).
-- Sample B's row fails (`rpm=0.2 < 5`) — flagged as likely cross-sample bleed.
+- Sample A's row passes (`value=1000 ≥ 5`).
+- Sample B's row fails (`value=0.2 < 5`) — flagged as likely cross-sample bleed.
 
-If `max_rpm` is itself very small (`< rpm_floor`, currently 1.0), the filter is a no-op and `bleed_applied` is `False` — there is no reliable signal to filter against, so every row is preserved.
+If `bleed_max` is itself very small (below the metric's floor — `bleed_rpm_floor`, default 1.0, or `bleed_rpkm_floor`, default 0.1), the filter is a no-op and `bleed_applied` is `False` — there is no reliable signal to filter against, so every row is preserved.
 
-Tune the strictness with `--bleed-fraction` (default `0.005`). Lower values (`0.001`) are stricter; higher values (`0.01`) are more permissive.
+Tune the strictness with `--bleed-fraction` (default `0.005`). Lower values (`0.001`) are stricter; higher values (`0.01`) are more permissive. The floors are YAML-only knobs (`bleed_rpm_floor`, `bleed_rpkm_floor`); edit the generated config and rerun Snakemake to change them.
 
 ### Negative-control enrichment filter
 
@@ -294,21 +298,29 @@ The sample IDs must match the sample sheet exactly (no `sample-` prefix). For ea
 | Controls | Gate | Option |
 |---|---|---|
 | 0 | no filter (`neg_pass = NA`) | — |
-| 1 | `log2_ratio ≥ threshold` | `--log2-ratio-threshold` (default 1.0, i.e. 2-fold) |
+| 1 | `log10_ratio ≥ threshold` | `--log10-ratio-threshold` (default 1.0, i.e. 10-fold) |
 | ≥ 2 | `z_score ≥ threshold` | `--z-score-threshold` (default 3.0) |
-| ≥ 2, SD = 0 | falls back to log2-ratio | — |
+| ≥ 2, SD = 0 | falls back to log10-ratio | — |
 
-`log2_ratio = log2((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
+`log10_ratio = log10((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log10_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
 
-Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log2-ratio.
+Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log10-ratio.
 
 The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from the control rows are given a zero background — they pass the enrichment gate easily (conservative choice).
+
+**Aggregate (pooled) control.** Alongside the per-control z-score, the step also reports a complementary view that treats *all* negative controls as one pooled library: `pooled_control_metric` = Σ(control metric × control library size) / Σ(control library size) — i.e. raw reads pooled across controls, so a deeply-sequenced control legitimately counts more (a taxon absent from a control contributes 0). From it come `agg_fold_enrichment`, `agg_log10_ratio`, and `agg_fold_enrichment_10x_pass`/`agg_fold_enrichment_100x_pass`. This is *diagnostic only* — it does not change `neg_pass` — but it catches widespread, high-variance contamination whose per-control variance inflates the z-score denominator and can mask the signal. (If `total_reads` is unavailable, controls are weighted equally, making the pool a plain zero-filled mean.)
 
 ### NR validation (optional, contig tracks)
 
 `--run-nr-validation` adds a confirmation step for de novo **viral contigs** (contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`). All samples' candidate viral contigs are combined and searched once with `diamond blastx` against a full NCBI **nr** database (`--nr-diamond-database` — a BLAST+ nr db read via `diamond prepdb`, or a native `.dmnd`; set one up with `viralunity get-databases nr`). Each contig gets an LCA consensus across its hits; it is kept only if at least a fraction `--nr-consensus-threshold` (default `0.5`) of its hits agree it is viral. The verdict is written into the contig tracks as an `nr_pass` column at the `.nr` step, and failing contigs are removed (logged to a `*.dropped.tsv` sidecar). Tune with `--nr-evalue`, `--nr-max-target-seqs`, `--nr-sensitivity` (default `fast`).
 
 This catches the common false positive where a de novo contig gets a viral hit from the (smaller) viral DIAMOND database but is really host/bacterial/vector sequence that only the full nr database can disambiguate.
+
+### Largest-contig statistics (diamond_contigs, with `--viral-genomes`)
+
+When `--viral-genomes` is supplied, **both contig tracks** (`diamond_contigs` and `kraken2_contigs`) add three cheap columns per taxon (the `.ctgstats` chain step): `largest_contig_bp` — the length of the largest de novo viral contig assigned to that taxon — `largest_contig_ref_coverage_pct` — that length as a percentage of the reference genome (`largest_contig_bp / genome_length_bp × 100`) — and `largest_contig_median_depth` — that contig's median per-position depth. Each track remaps the host-filtered reads to its own viral contigs (the contigs it classified as viral) and runs `samtools depth -a`, so the depth reflects that track's own assignment. Together the three columns are a quick proxy for how much of the genome assembled and how deeply it was covered: e.g. a 7,000 bp contig for a 10 kb virus gives `largest_contig_ref_coverage_pct ≈ 70` at, say, 1,000× median depth — suggesting most of the genome is well covered without any extra heavy compute, a handy signal for deciding whether a reference assembly is worth attempting. The percentage is reported raw and **uncapped**, so a value above 100% means the largest contig is longer than the median reference (over-assembly, a chimeric contig, or a longer strain), and it is `NA` where no reference length is available (so it is approximate at family/genus ranks). *Caveat:* contig length is a proxy for, not a direct measure of, the fraction of the reference genome covered (a long contig can still be partial or chimeric) — this is a preliminary estimate, not a substitute for read remapping to the reference and consensus calling. It also assumes a **monopartite (non-segmented) genome**: `largest_contig_ref_coverage_pct` divides by `genome_length_bp`, which for a segmented virus is a median *segment* length (see the RPKM note above), while a de novo contig spans at most one segment. So for segmented viruses (influenza, bunyaviruses, etc.) this column reflects the largest single segment relative to the median segment — routinely >100% and *not* a whole-genome completeness measure. The read-level tracks (`kraken2_reads`, `diamond_reads`) have no contigs and so do not carry these columns.
+
+Alongside `nr_pass`, the `.nr` step appends `nr_is_virus`, `nr_species_correct`, `nr_correct_species` (NR's corrected species name where it confidently disagreed with the original call), and `final_species`. `final_species` is the confirmed species call — NR's correction when NR disagreed, otherwise the original `name` — so a single column carries the best available taxonomy for every row.
 
 ### ICTV vertebrate-virus filter (optional)
 
@@ -338,8 +350,8 @@ Sensitivity / specificity of detection:
 
 - **`--bleed-fraction`** (`0.005`) — lower = stricter cross-sample bleed filter.
 - **`--z-score-threshold`** (`3.0`) — negative-control gate with ≥ 2 controls; higher = stricter (see [Negative-control enrichment filter](#negative-control-enrichment-filter)).
-- **`--log2-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
-- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log2-ratio.
+- **`--log10-ratio-threshold`** (`1.0`) — negative-control gate with 1 control (or when control SD = 0); higher = stricter.
+- **`--enrichment-pseudocount`** (`1.0`) — pseudocount added to sample and control means before fold-enrichment / log10-ratio.
 - **`--minimum-hit-group`** (`4`) — Kraken2's hit-group threshold; raising it makes Kraken2 more conservative.
 
 DIAMOND tuning:

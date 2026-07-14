@@ -154,7 +154,8 @@ _COMMON_META_OPTIONS = [
         help=(
             "Drop non-vertebrate-infecting viruses (bacteriophages, plant/fungal/"
             "algal/invertebrate-only viruses) using the ICTV-derived allowlist. "
-            "Applied before the bleed/negative-control filters."
+            "Applied last in the filter chain (after bleed/negative-control); "
+            "equivalent to running it earlier since those are per-taxon filters."
         ),
     ),
     click.option(
@@ -222,7 +223,7 @@ _COMMON_META_OPTIONS = [
         type=float,
         help=(
             "Pseudocount added to both numerator and denominator when computing "
-            "fold-enrichment and log2-ratio vs negative controls."
+            "fold-enrichment and log10-ratio vs negative controls."
         ),
     ),
     click.option(
@@ -236,14 +237,15 @@ _COMMON_META_OPTIONS = [
         ),
     ),
     click.option(
-        "--log2-ratio-threshold",
+        "--log10-ratio-threshold",
         default=1.0,
         show_default=True,
         type=float,
         help=(
-            "Log2-ratio threshold for the negative-control gate "
-            "(used when exactly 1 negative control is present, or when z-score "
-            "is undefined due to zero control variance)."
+            "Log10-ratio threshold for the negative-control gate; the default "
+            "1.0 marks a 10-fold enrichment over controls. Used when exactly 1 "
+            "negative control is present, or when the z-score is undefined due "
+            "to zero control variance."
         ),
     ),
     click.option(

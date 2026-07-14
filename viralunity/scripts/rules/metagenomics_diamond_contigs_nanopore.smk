@@ -216,6 +216,27 @@ if run_denovo and run_diamond_contigs:
                 fi
                 """
 
+    rule depth_of_viral_contigs:
+        input:
+            bam = config["output"] + "mapping/viral/{sample}.viral.bam",
+            bai = config["output"] + "mapping/viral/{sample}.viral.bam.bai"
+        output:
+            depth = config["output"] + "mapping/viral/{sample}.viral.depth.txt"
+        log:
+            config["output"] + "logs/remap_viral/{sample}.depth.log"
+        conda:
+            "../envs/alignment.yaml"
+        shell:
+            r"""
+            set -euo pipefail
+            mkdir -p $(dirname {output.depth}) $(dirname {log})
+            if [ ! -s {input.bam} ]; then
+                : > {output.depth}
+            else
+                samtools depth -a {input.bam} > {output.depth} 2> {log}
+            fi
+            """
+
     rule diamond_filter_by_idxstats:
         input:
             diamond = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.tsv",
@@ -307,7 +328,7 @@ if run_denovo and run_diamond_contigs:
             plot = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/reports/{sample}.diamond.supported.krona.html",
             annotated = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.tax.tsv"
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summary/{sample}.taxa.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv"
         params:
             taxdump = config["taxdump"],
             tool = "diamond",
@@ -321,11 +342,11 @@ if run_denovo and run_diamond_contigs:
     rule summarize_taxa_diamond_contigs_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_taxa_summary.tsv"
         conda:
             "../envs/utils.yaml"
         shell:
@@ -340,13 +361,13 @@ if run_denovo and run_diamond_contigs:
 
     rule add_RPM_to_diamond_contigs_summary:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_taxa_summary.tsv",
             merged_fastqs = expand(
                 config["output"] + "host_filtered/{sample}.filtered.fastq.gz",
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_taxa_summary_RPM.tsv"
         params:
             sample_to_fastq = get_sample_to_fastq(),
             reads_col = "mapped_reads"
@@ -358,14 +379,35 @@ if run_denovo and run_diamond_contigs:
     if compute_rpkm:
         rule add_rpkm_to_diamond_contigs_summary:
             input:
-                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPM.tsv",
+                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_taxa_summary_RPM.tsv",
                 genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
             output:
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_taxa_summary_RPKM.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_taxa_summary_RPKM.tsv",
             conda:
                 "../envs/utils.yaml"
             script:
                 "../python/add_rpkm_to_summary.py"
+
+        rule add_contig_stats_diamond_contigs:
+            input:
+                summary = chain_input("diamond_contigs", "ctgstats"),
+                depth = expand(
+                    config["output"] + "mapping/viral/{sample}.viral.depth.txt",
+                    sample=list(config["samples"])
+                ),
+                krona = expand(
+                    config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/results/{sample}.diamond.supported.krona_input.tsv",
+                    sample=list(config["samples"])
+                )
+            output:
+                summary = chain_output("diamond_contigs", "ctgstats")
+            params:
+                samples = list(config["samples"]),
+                taxdump = config["taxdump"]
+            conda:
+                "../envs/utils.yaml"
+            script:
+                "../python/add_contig_stats_to_summary.py"
 
     if run_ictv_host_filter:
         rule apply_ictv_filter_diamond_contigs:
@@ -391,7 +433,7 @@ if run_denovo and run_diamond_contigs:
             output:
                 summary = chain_output("diamond_contigs", "nr"),
                 dropped = dropped_sidecar(chain_output("diamond_contigs", "nr")),
-                flags = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/diamond_contigs_nr_flags.tsv"
+                flags = config["output"] + "metagenomics/taxonomic_assignments/diamond_contigs/summaries/full/diamond_contigs_nr_flags.tsv"
             params:
                 samples = list(config["samples"]),
                 taxdump = config["taxdump"]
@@ -408,6 +450,7 @@ if run_denovo and run_diamond_contigs:
         params:
             fraction = config.get("bleed_fraction", 0.005),
             rpm_floor = config.get("bleed_rpm_floor", 1.0),
+            rpkm_floor = config.get("bleed_rpkm_floor", 0.1),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"
@@ -424,7 +467,7 @@ if run_denovo and run_diamond_contigs:
                 negatives = config.get("negative_controls", []),
                 pseudocount = config.get("enrichment_pseudocount", 1.0),
                 z_score_threshold = config.get("z_score_threshold", 3.0),
-                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+                log10_ratio_threshold = config.get("log10_ratio_threshold", 1.0)
             conda:
                 "../envs/utils.yaml"
             script:

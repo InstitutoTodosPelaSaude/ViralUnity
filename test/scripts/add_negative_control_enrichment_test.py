@@ -1,11 +1,11 @@
 """Tests for viralunity.scripts.python.add_negative_control_enrichment.
 
 Covers:
-  - calculate_fold_enrichment / calculate_log2_ratio / calculate_z_score helpers
+  - calculate_fold_enrichment / calculate_log10_ratio / calculate_z_score helpers
   - apply_negative_control_enrichment: all three control-count tiers (0/1/≥2)
   - Decision-metric selection (rpkm preferred over rpm when available)
   - neg_pass correctness and NA-as-keep contract
-  - Control-SD=0 z-score fallback to log2-ratio gate
+  - Control-SD=0 z-score fallback to log10-ratio gate
   - Taxa absent from controls (zero-background assumption)
   - Output column schema
 """
@@ -16,9 +16,10 @@ import unittest
 import pandas as pd
 
 from viralunity.scripts.python.add_negative_control_enrichment import (
+    apply_absent_control_overrides,
     apply_negative_control_enrichment,
     calculate_fold_enrichment,
-    calculate_log2_ratio,
+    calculate_log10_ratio,
     calculate_z_score,
 )
 
@@ -80,30 +81,31 @@ class TestCalculateFoldEnrichment(unittest.TestCase):
         self.assertAlmostEqual(fe, 1.0)
 
 
-class TestCalculateLog2Ratio(unittest.TestCase):
-    def test_double_gives_log2_1_equals_1(self):
-        l2r = calculate_log2_ratio(sample_metric=10.0, control_mean=5.0, pseudocount=0.0)
-        self.assertAlmostEqual(l2r, 1.0)
+class TestCalculateLog10Ratio(unittest.TestCase):
+    def test_tenfold_gives_log10_1_equals_1(self):
+        # log10 of a 10-fold ratio is exactly 1.0 (the new default threshold).
+        log10r = calculate_log10_ratio(sample_metric=10.0, control_mean=1.0, pseudocount=0.0)
+        self.assertAlmostEqual(log10r, 1.0)
 
     def test_equal_gives_zero(self):
-        l2r = calculate_log2_ratio(sample_metric=5.0, control_mean=5.0, pseudocount=0.0)
-        self.assertAlmostEqual(l2r, 0.0)
+        log10r = calculate_log10_ratio(sample_metric=5.0, control_mean=5.0, pseudocount=0.0)
+        self.assertAlmostEqual(log10r, 0.0)
 
     def test_sample_lower_than_control_negative(self):
-        l2r = calculate_log2_ratio(sample_metric=2.0, control_mean=8.0, pseudocount=0.0)
-        self.assertLess(l2r, 0.0)
+        log10r = calculate_log10_ratio(sample_metric=2.0, control_mean=8.0, pseudocount=0.0)
+        self.assertLess(log10r, 0.0)
 
     def test_pseudocount_stabilises_zero_control(self):
-        l2r = calculate_log2_ratio(sample_metric=100.0, control_mean=0.0, pseudocount=1.0)
-        self.assertGreater(l2r, 0.0)
-        self.assertFalse(math.isinf(l2r))
+        log10r = calculate_log10_ratio(sample_metric=100.0, control_mean=0.0, pseudocount=1.0)
+        self.assertGreater(log10r, 0.0)
+        self.assertFalse(math.isinf(log10r))
 
-    def test_log2_relationship_to_fold_enrichment(self):
+    def test_log10_relationship_to_fold_enrichment(self):
         pc = 1.0
         sample, ctrl = 10.0, 3.0
         fe = calculate_fold_enrichment(sample, ctrl, pc)
-        l2r = calculate_log2_ratio(sample, ctrl, pc)
-        self.assertAlmostEqual(l2r, math.log2(fe), places=10)
+        log10r = calculate_log10_ratio(sample, ctrl, pc)
+        self.assertAlmostEqual(log10r, math.log10(fe), places=10)
 
 
 class TestCalculateZScore(unittest.TestCase):
@@ -158,7 +160,7 @@ class TestZeroControls(unittest.TestCase):
 
     def test_enrichment_cols_are_na(self):
         out = apply_negative_control_enrichment(self.df, negatives=[])
-        for col in ("fold_enrichment", "log2_ratio", "z_score"):
+        for col in ("fold_enrichment", "log10_ratio", "z_score"):
             self.assertTrue(out[col].isna().all(), f"Expected NA for {col}")
 
     def test_n_negative_controls_is_zero(self):
@@ -167,36 +169,36 @@ class TestZeroControls(unittest.TestCase):
 
 
 class TestSingleControl(unittest.TestCase):
-    """n_controls == 1 → log2_ratio gate, no z-score."""
+    """n_controls == 1 → log10_ratio gate, no z-score."""
 
     def setUp(self):
         self.df = _df(
             _row("CTRL", "3001", rpm=10.0),  # negative control
-            _row("S1", "3001", rpm=80.0),  # high enrichment
+            _row("S1", "3001", rpm=200.0),  # high enrichment (>10x over control)
             _row("S2", "3001", rpm=12.0),  # close to control
         )
 
-    def test_neg_decision_is_log2_ratio(self):
+    def test_neg_decision_is_log10_ratio(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"], log2_ratio_threshold=1.0
+            self.df, negatives=["CTRL"], log10_ratio_threshold=1.0
         )
         for _, row in out[out["sample"] != "CTRL"].iterrows():
-            self.assertEqual(row["neg_decision"], "log2_ratio")
+            self.assertEqual(row["neg_decision"], "log10_ratio")
 
     def test_high_enrichment_passes(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"], log2_ratio_threshold=1.0, pseudocount=1.0
+            self.df, negatives=["CTRL"], log10_ratio_threshold=1.0, pseudocount=1.0
         )
         s1 = out[out["sample"] == "S1"].iloc[0]
-        # log2((80+1)/(10+1)) ≈ 2.88 → passes threshold of 1.0
+        # log10((200+1)/(10+1)) ≈ 1.26 → passes threshold of 1.0 (10-fold)
         self.assertTrue(s1["neg_pass"])
 
     def test_near_background_fails(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"], log2_ratio_threshold=1.0, pseudocount=1.0
+            self.df, negatives=["CTRL"], log10_ratio_threshold=1.0, pseudocount=1.0
         )
         s2 = out[out["sample"] == "S2"].iloc[0]
-        # log2((12+1)/(10+1)) ≈ 0.24 → fails threshold of 1.0
+        # log10((12+1)/(10+1)) ≈ 0.072 → fails threshold of 1.0
         self.assertFalse(s2["neg_pass"])
 
     def test_z_score_is_na_for_single_control(self):
@@ -205,14 +207,14 @@ class TestSingleControl(unittest.TestCase):
 
     def test_control_row_neg_pass_is_na(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL"], log2_ratio_threshold=1.0
+            self.df, negatives=["CTRL"], log10_ratio_threshold=1.0
         )
         ctrl = out[out["sample"] == "CTRL"].iloc[0]
         self.assertTrue(pd.isna(ctrl["neg_pass"]))
 
 
 class TestMultipleControls(unittest.TestCase):
-    """n_controls >= 2 → z-score gate with log2-ratio fallback."""
+    """n_controls >= 2 → z-score gate with log10-ratio fallback."""
 
     def setUp(self):
         # Three negative controls around RPM ~5, two biological samples
@@ -257,14 +259,14 @@ class TestMultipleControls(unittest.TestCase):
 
 
 class TestZeroControlSD(unittest.TestCase):
-    """When all controls have identical metric → SD=0, z undefined → fallback to log2-ratio."""
+    """When all controls have identical metric → SD=0, z undefined → fallback to log10-ratio."""
 
     def setUp(self):
         # Both controls have RPM 10.0 → SD = 0
         self.df = _df(
             _row("CTRL1", "3001", rpm=10.0),
             _row("CTRL2", "3001", rpm=10.0),
-            _row("S1", "3001", rpm=50.0),
+            _row("S1", "3001", rpm=200.0),
         )
 
     def test_z_score_is_none_when_sd_zero(self):
@@ -272,58 +274,89 @@ class TestZeroControlSD(unittest.TestCase):
         s1 = out[out["sample"] == "S1"].iloc[0]
         self.assertTrue(pd.isna(s1["z_score"]))
 
-    def test_falls_back_to_log2_ratio_gate(self):
+    def test_falls_back_to_log10_ratio_gate(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"], log2_ratio_threshold=1.0
+            self.df, negatives=["CTRL1", "CTRL2"], log10_ratio_threshold=1.0
         )
         s1 = out[out["sample"] == "S1"].iloc[0]
-        self.assertEqual(s1["neg_decision"], "log2_ratio_fallback")
-        # log2((50+1)/(10+1)) ≈ 2.21 → passes threshold 1.0
+        self.assertEqual(s1["neg_decision"], "log10_ratio_fallback")
+        # log10((200+1)/(10+1)) ≈ 1.26 → passes threshold 1.0 (10-fold)
         self.assertTrue(s1["neg_pass"])
 
     def test_falls_back_and_fails_when_below_threshold(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"], log2_ratio_threshold=10.0
+            self.df, negatives=["CTRL1", "CTRL2"], log10_ratio_threshold=10.0
         )
         s1 = out[out["sample"] == "S1"].iloc[0]
-        self.assertEqual(s1["neg_decision"], "log2_ratio_fallback")
+        self.assertEqual(s1["neg_decision"], "log10_ratio_fallback")
         self.assertFalse(s1["neg_pass"])
 
 
 class TestAbsentFromControls(unittest.TestCase):
-    """Taxa absent from negative controls → control_mean=0, computed against pseudocount."""
+    """Taxa absent from ALL negative controls → ratios undefined (NA), every
+    enrichment gate auto-passes, neg_decision = 'absent_from_controls'."""
 
     def setUp(self):
         # CTRL1/CTRL2 have taxid 3001 at rpm 5, but S1 has a taxid 9999 not in controls.
+        # 9999 is deliberately low-abundance (rpm 5) so that under the old
+        # pseudocount behaviour fold_enrichment would be ~6 and FAIL the 100x gate.
         self.df = _df(
             _row("CTRL1", "3001", rpm=5.0),
             _row("CTRL2", "3001", rpm=5.0),
             _row("CTRL1", "9999", rpm=0.0),  # absent in controls (zero reads)
             _row("CTRL2", "9999", rpm=0.0),
-            _row("S1", "3001", rpm=100.0),
-            _row("S1", "9999", rpm=50.0),
+            _row("S1", "3001", rpm=100.0),  # control-PRESENT (regression guard)
+            _row("S1", "9999", rpm=5.0),  # control-ABSENT, low abundance
         )
+
+    def _absent(self, out):
+        return out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
+
+    def _present(self, out):
+        return out[(out["sample"] == "S1") & (out["taxid"] == "3001")].iloc[0]
 
     def test_absent_taxon_uses_zero_background(self):
         out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
-        s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
-        # control_mean for 9999 is 0 (zero rpm in controls)
-        self.assertAlmostEqual(s1_9999["control_mean"], 0.0, places=5)
+        # control_mean for 9999 is 0 (zero rpm in controls) — unchanged by the override.
+        self.assertAlmostEqual(self._absent(out)["control_mean"], 0.0, places=5)
 
-    def test_absent_taxon_still_gets_enrichment_metrics(self):
+    def test_absent_taxon_ratios_are_blanked(self):
         out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
-        s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
-        self.assertFalse(pd.isna(s1_9999["fold_enrichment"]))
-        self.assertFalse(pd.isna(s1_9999["log2_ratio"]))
+        row = self._absent(out)
+        for col in ("fold_enrichment", "log10_ratio", "agg_fold_enrichment", "agg_log10_ratio"):
+            self.assertTrue(pd.isna(row[col]), f"Expected NA for {col} on control-absent taxon")
 
-    def test_absent_taxon_with_high_sample_passes(self):
+    def test_absent_taxon_auto_passes_all_enrichment_gates(self):
         out = apply_negative_control_enrichment(
-            self.df, negatives=["CTRL1", "CTRL2"], z_score_threshold=3.0, log2_ratio_threshold=1.0
+            self.df, negatives=["CTRL1", "CTRL2"], z_score_threshold=3.0, log10_ratio_threshold=1.0
         )
-        s1_9999 = out[(out["sample"] == "S1") & (out["taxid"] == "9999")].iloc[0]
-        # z is undefined (sd for 9999 in controls is 0), falls back to log2-ratio
-        # log2((50+1)/(0+1)) ≈ 5.67 > 1.0 → passes
-        self.assertTrue(s1_9999["neg_pass"])
+        row = self._absent(out)
+        self.assertEqual(row["neg_decision"], "absent_from_controls")
+        self.assertTrue(bool(row["neg_pass"]))
+        for col in (
+            "fold_enrichment_10x_pass",
+            "fold_enrichment_100x_pass",
+            "agg_fold_enrichment_10x_pass",
+            "agg_fold_enrichment_100x_pass",
+        ):
+            self.assertTrue(bool(row[col]), f"Expected True for {col} on control-absent taxon")
+
+    def test_absent_taxon_zscore_gates_stay_na(self):
+        # z-score is undefined with no control signal; its gates must remain NA.
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
+        row = self._absent(out)
+        self.assertTrue(pd.isna(row["z_score"]))
+        self.assertTrue(pd.isna(row["neg_pass_5"]))
+        self.assertTrue(pd.isna(row["neg_pass_10"]))
+
+    def test_control_present_taxon_unchanged(self):
+        # Regression guard: a taxon PRESENT in controls keeps finite ratios and a
+        # z-score/log10 decision — the override must touch only fully-absent taxa.
+        out = apply_negative_control_enrichment(self.df, negatives=["CTRL1", "CTRL2"])
+        row = self._present(out)
+        self.assertFalse(pd.isna(row["fold_enrichment"]))
+        self.assertFalse(pd.isna(row["log10_ratio"]))
+        self.assertNotEqual(row["neg_decision"], "absent_from_controls")
 
 
 class TestDecisionMetricSelection(unittest.TestCase):
@@ -331,7 +364,7 @@ class TestDecisionMetricSelection(unittest.TestCase):
 
     def setUp(self):
         # Control has rpkm 2.0, sample has rpkm 100.0 (very high)
-        # rpm values would give different log2-ratios
+        # rpm values would give different log10-ratios
         self.df = _df(
             _row("CTRL", "3001", rpm=20.0, rpkm=2.0),
             _row("S1", "3001", rpm=200.0, rpkm=100.0),
@@ -341,11 +374,11 @@ class TestDecisionMetricSelection(unittest.TestCase):
         out = apply_negative_control_enrichment(self.df, negatives=["CTRL"])
         self.assertTrue((out["neg_metric"] == "rpkm").all())
 
-    def test_log2_ratio_uses_rpkm_values(self):
+    def test_log10_ratio_uses_rpkm_values(self):
         out = apply_negative_control_enrichment(self.df, negatives=["CTRL"], pseudocount=1.0)
         s1 = out[out["sample"] == "S1"].iloc[0]
-        expected_l2r = math.log2((100.0 + 1.0) / (2.0 + 1.0))
-        self.assertAlmostEqual(s1["log2_ratio"], expected_l2r, places=5)
+        expected_log10r = math.log10((100.0 + 1.0) / (2.0 + 1.0))
+        self.assertAlmostEqual(s1["log10_ratio"], expected_log10r, places=5)
 
     def test_neg_metric_falls_back_to_rpm_when_rpkm_all_na(self):
         df = _df(
@@ -392,13 +425,22 @@ class TestOutputSchema(unittest.TestCase):
         "control_median",
         "control_max",
         "fold_enrichment",
-        "log2_ratio",
+        "log10_ratio",
         "z_score",
         "enrichment_pseudocount",
         "z_score_threshold_used",
-        "log2_ratio_threshold_used",
+        "log10_ratio_threshold_used",
         "neg_decision",
         "neg_pass",
+        "fold_enrichment_10x_pass",
+        "fold_enrichment_100x_pass",
+        "neg_pass_5",
+        "neg_pass_10",
+        "pooled_control_metric",
+        "agg_fold_enrichment",
+        "agg_log10_ratio",
+        "agg_fold_enrichment_10x_pass",
+        "agg_fold_enrichment_100x_pass",
     }
 
     def _out(self, negatives=None):
@@ -454,8 +496,10 @@ class TestErrorCases(unittest.TestCase):
 class TestPseudocountEffect(unittest.TestCase):
     def test_higher_pseudocount_reduces_fold_enrichment(self):
         """With a larger pseudocount both metrics get pulled towards 1."""
+        # CTRL must be present for this taxon (rpm > 0); a control-absent taxon is
+        # now routed to the auto-pass override with a blanked fold_enrichment.
         df = _df(
-            _row("CTRL", "3001", rpm=0.0),
+            _row("CTRL", "3001", rpm=2.0),
             _row("S1", "3001", rpm=100.0),
         )
         out_pc1 = apply_negative_control_enrichment(df, negatives=["CTRL"], pseudocount=1.0)
@@ -473,7 +517,7 @@ class TestPseudocountEffect(unittest.TestCase):
 
 class TestZeroFillEdgeCases(unittest.TestCase):
     """Zero-fill must never divide by zero: when the (zero-filled) control vector
-    has SD 0, the z-score is NA and the taxon routes to the log2 gate. Covers the
+    has SD 0, the z-score is NA and the taxon routes to the log10 gate. Covers the
     absent-from-all-controls and identical-controls cases plus the single-control
     tier."""
 
@@ -497,7 +541,10 @@ class TestZeroFillEdgeCases(unittest.TestCase):
         row = self._pick(out, "S1", "100")
         self.assertEqual(row["control_mean"], 0.0)
         self.assertTrue(pd.isna(row["z_score"]))  # SD 0 -> no z-score, no ZeroDivisionError
-        self.assertEqual(row["neg_decision"], "log2_ratio_fallback")
+        # Absent from every control: routed to the auto-pass override, not the
+        # log10-ratio fallback.
+        self.assertEqual(row["neg_decision"], "absent_from_controls")
+        self.assertTrue(bool(row["neg_pass"]))
 
     def test_case_c_identical_controls_sd_zero_is_na(self):
         # taxon 200 present in all 3 controls with identical values -> SD 0.
@@ -511,10 +558,10 @@ class TestZeroFillEdgeCases(unittest.TestCase):
         row = self._pick(out, "S1", "200")
         self.assertAlmostEqual(row["control_mean"], 5.0)
         self.assertTrue(pd.isna(row["z_score"]))
-        self.assertEqual(row["neg_decision"], "log2_ratio_fallback")
+        self.assertEqual(row["neg_decision"], "log10_ratio_fallback")
 
-    def test_single_control_uses_log2_gate_without_crash(self):
-        # n_controls == 1: z-score is undefined (needs >= 2), so the log2 gate is used.
+    def test_single_control_uses_log10_gate_without_crash(self):
+        # n_controls == 1: z-score is undefined (needs >= 2), so the log10 gate is used.
         rows = [
             {"sample": "S1", "taxid": "300", "rpm": 100.0},
             {"sample": "C1", "taxid": "300", "rpm": 10.0},
@@ -523,7 +570,7 @@ class TestZeroFillEdgeCases(unittest.TestCase):
         row = self._pick(out, "S1", "300")
         self.assertEqual(int(row["n_negative_controls"]), 1)
         self.assertTrue(pd.isna(row["z_score"]))
-        self.assertEqual(row["neg_decision"], "log2_ratio")
+        self.assertEqual(row["neg_decision"], "log10_ratio")
 
 
 class TestZeroFillControlStatistics(unittest.TestCase):
@@ -554,8 +601,271 @@ class TestZeroFillControlStatistics(unittest.TestCase):
         out = apply_negative_control_enrichment(self._df(), negatives=["C1", "C2", "C3"])
         row = out[(out["sample"] == "S1") & (out["taxid"] == "100")].iloc[0]
         # With zero-fill the control vector is [30, 0, 0] (SD > 0), so the
-        # decision uses the z-score, not the log2-ratio fallback.
+        # decision uses the z-score, not the log10-ratio fallback.
         self.assertEqual(row["neg_decision"], "z_score")
+
+
+class TestPassFlagColumns(unittest.TestCase):
+    """fold_enrichment_10x/100x_pass and neg_pass_5/10: >= inclusive, NA stays NA."""
+
+    def setUp(self):
+        # Controls [1, 2, 3] -> mean 2, sd 1 (with pseudocount 1).
+        self.df = _df(
+            _row("CTRL1", "3001", rpm=1.0),
+            _row("CTRL2", "3001", rpm=2.0),
+            _row("CTRL3", "3001", rpm=3.0),
+            _row("S_mid", "3001", rpm=8.0),  # fold 3, z 6
+            _row("S_hi", "3001", rpm=2000.0),  # fold 667, z 1998
+            _row("S_fold_bnd", "3001", rpm=29.0),  # fold exactly 10.0
+            _row("S_z_bnd", "3001", rpm=7.0),  # z exactly 5.0
+        )
+        self.out = apply_negative_control_enrichment(
+            self.df, negatives=["CTRL1", "CTRL2", "CTRL3"], pseudocount=1.0
+        )
+
+    def _pick(self, sample):
+        return self.out[self.out["sample"] == sample].iloc[0]
+
+    def test_mid_sample_flags(self):
+        r = self._pick("S_mid")
+        self.assertFalse(bool(r["fold_enrichment_10x_pass"]))
+        self.assertFalse(bool(r["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(r["neg_pass_5"]))  # z 6 >= 5
+        self.assertFalse(bool(r["neg_pass_10"]))  # z 6 < 10
+
+    def test_high_sample_flags(self):
+        r = self._pick("S_hi")
+        self.assertTrue(bool(r["fold_enrichment_10x_pass"]))
+        self.assertTrue(bool(r["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(r["neg_pass_5"]))
+        self.assertTrue(bool(r["neg_pass_10"]))
+
+    def test_fold_threshold_is_inclusive(self):
+        r = self._pick("S_fold_bnd")
+        self.assertAlmostEqual(float(r["fold_enrichment"]), 10.0, places=6)
+        self.assertTrue(bool(r["fold_enrichment_10x_pass"]))  # >= is inclusive
+
+    def test_zscore_threshold_is_inclusive(self):
+        r = self._pick("S_z_bnd")
+        self.assertAlmostEqual(float(r["z_score"]), 5.0, places=6)
+        self.assertTrue(bool(r["neg_pass_5"]))  # >= is inclusive
+        self.assertFalse(bool(r["neg_pass_10"]))
+
+    def test_control_rows_have_na_zscore_flags(self):
+        # z_score is NA for control rows, so its derived flags are NA (not False).
+        r = self._pick("CTRL1")
+        self.assertTrue(pd.isna(r["neg_pass_5"]))
+        self.assertTrue(pd.isna(r["neg_pass_10"]))
+
+    def test_zero_controls_all_flags_na(self):
+        df = _df(_row("S1", "3001", rpm=100.0), _row("S2", "3001", rpm=200.0))
+        out = apply_negative_control_enrichment(df, negatives=[])
+        for col in (
+            "fold_enrichment_10x_pass",
+            "fold_enrichment_100x_pass",
+            "neg_pass_5",
+            "neg_pass_10",
+        ):
+            self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
+
+
+class TestAggregatePooledControl(unittest.TestCase):
+    """Pooled-control complement: raw-read (library-size weighted) pooling,
+    grounded in the REVISA high-variance contamination scenario."""
+
+    def test_deep_control_dominates_pooled_metric(self):
+        # A deep control with low rpm vs a shallow control with high rpm. Raw
+        # pooling weights by library size, so the deep control counts more.
+        df = _df(
+            _row("CTRL_deep", "3001", rpm=200.0, total_reads=10_000_000),
+            _row("CTRL_shallow", "3001", rpm=2000.0, total_reads=1_000_000),
+            _row("S1", "3001", rpm=5000.0, total_reads=1_000_000),
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL_deep", "CTRL_shallow"], pseudocount=1.0
+        )
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        # plain zero-filled mean = (200 + 2000) / 2 = 1100
+        self.assertAlmostEqual(float(s1["control_mean"]), 1100.0, places=3)
+        # library-size-weighted pool = (200*1e7 + 2000*1e6) / 1.1e7 ≈ 363.6
+        pooled = 4e9 / 1.1e7
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), pooled, places=2)
+        # pool differs from the plain mean -> the deep low-rpm control drags it down
+        self.assertNotAlmostEqual(
+            float(s1["pooled_control_metric"]), float(s1["control_mean"]), places=1
+        )
+        expected_agg = (5000.0 + 1.0) / (pooled + 1.0)
+        self.assertAlmostEqual(float(s1["agg_fold_enrichment"]), expected_agg, places=3)
+        self.assertTrue(bool(s1["agg_fold_enrichment_10x_pass"]))  # ≈13.7 >= 10
+        self.assertFalse(bool(s1["agg_fold_enrichment_100x_pass"]))
+
+    def test_absent_controls_zero_fill_via_denominator(self):
+        # HIV-like spread across 4 of 6 controls (equal library sizes) -> the
+        # pool is the plain zero-filled mean over all six controls.
+        rows = [
+            _row("C1", "3001", rpm=276.0),
+            _row("C2", "3001", rpm=1988.0),
+            _row("C3", "3001", rpm=1991.0),
+            _row("C4", "3001", rpm=17144.0),
+            # C5/C6 present via another taxon -> still controls, zero for 3001
+            _row("C5", "9999", rpm=5.0),
+            _row("C6", "9999", rpm=5.0),
+            _row("S1", "3001", rpm=5000.0),
+        ]
+        out = apply_negative_control_enrichment(
+            _df(*rows), negatives=["C1", "C2", "C3", "C4", "C5", "C6"], pseudocount=1.0
+        )
+        s1 = out[(out["sample"] == "S1") & (out["taxid"] == "3001")].iloc[0]
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), 21399.0 / 6, places=3)
+
+    def test_complementary_populates_agg_and_keeps_neg_pass(self):
+        df = _df(
+            _row("C1", "3001", rpm=4.0),
+            _row("C2", "3001", rpm=6.0),
+            _row("S1", "3001", rpm=500.0),
+        )
+        out = apply_negative_control_enrichment(df, negatives=["C1", "C2"])
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        # neg_pass is still driven by the z-score / log10 gate, not the pool
+        self.assertIn(s1["neg_decision"], ("z_score", "log10_ratio_fallback"))
+        self.assertFalse(pd.isna(s1["pooled_control_metric"]))
+        self.assertFalse(pd.isna(s1["agg_log10_ratio"]))
+
+    def test_zero_controls_agg_cols_all_na(self):
+        df = _df(_row("S1", "3001", rpm=100.0))
+        out = apply_negative_control_enrichment(df, negatives=[])
+        for col in (
+            "pooled_control_metric",
+            "agg_fold_enrichment",
+            "agg_log10_ratio",
+            "agg_fold_enrichment_10x_pass",
+            "agg_fold_enrichment_100x_pass",
+        ):
+            self.assertTrue(out[col].isna().all(), f"Expected all-NA for {col}")
+
+
+class TestPrimaryGateBoundaries(unittest.TestCase):
+    """The primary neg_pass gates are inclusive (>=) at their exact threshold."""
+
+    def test_zscore_gate_inclusive_at_threshold(self):
+        # 3 controls [1,2,3] -> mean 2, sd 1. Sample rpm 5 -> z = (5-2)/1 = 3.0,
+        # exactly the default z_score_threshold; the inclusive >= must pass.
+        df = _df(
+            _row("C1", "3001", rpm=1.0),
+            _row("C2", "3001", rpm=2.0),
+            _row("C3", "3001", rpm=3.0),
+            _row("S_at", "3001", rpm=5.0),  # z == 3.0
+            _row("S_below", "3001", rpm=4.0),  # z == 2.0
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["C1", "C2", "C3"], z_score_threshold=3.0
+        )
+        at = out[out["sample"] == "S_at"].iloc[0]
+        below = out[out["sample"] == "S_below"].iloc[0]
+        self.assertEqual(at["neg_decision"], "z_score")
+        self.assertAlmostEqual(float(at["z_score"]), 3.0)
+        self.assertTrue(bool(at["neg_pass"]))
+        self.assertFalse(bool(below["neg_pass"]))
+
+    def test_log10_gate_inclusive_at_threshold(self):
+        # Single control -> log10_ratio gate. rpm 19 vs control 1, pc 1 ->
+        # log10((19+1)/(1+1)) = log10(10) = 1.0 exactly; inclusive >= must pass.
+        df = _df(
+            _row("CTRL", "3001", rpm=1.0),
+            _row("S_at", "3001", rpm=19.0),  # log10_ratio == 1.0
+            _row("S_below", "3001", rpm=17.0),  # log10(18/2) = 0.954
+        )
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL"], pseudocount=1.0, log10_ratio_threshold=1.0
+        )
+        at = out[out["sample"] == "S_at"].iloc[0]
+        below = out[out["sample"] == "S_below"].iloc[0]
+        self.assertEqual(at["neg_decision"], "log10_ratio")
+        self.assertAlmostEqual(float(at["log10_ratio"]), 1.0)
+        self.assertTrue(bool(at["neg_pass"]))
+        self.assertFalse(bool(below["neg_pass"]))
+
+
+class TestEqualWeightPoolingFallback(unittest.TestCase):
+    """When the total_reads column is absent, pooling falls back to equal
+    weights, i.e. the plain zero-filled mean (NOT the depth-weighted value)."""
+
+    def test_absent_total_reads_uses_equal_weights(self):
+        # Same rpm values as test_deep_control_dominates_pooled_metric, but with
+        # no total_reads column: pooled must be the plain mean (200+2000)/2 = 1100,
+        # not the library-size-weighted 363.6.
+        df = _df(
+            _row("CTRL_deep", "3001", rpm=200.0),
+            _row("CTRL_shallow", "3001", rpm=2000.0),
+            _row("S1", "3001", rpm=5000.0),
+        ).drop(columns=["total_reads"])
+        self.assertNotIn("total_reads", df.columns)
+        out = apply_negative_control_enrichment(
+            df, negatives=["CTRL_deep", "CTRL_shallow"], pseudocount=1.0
+        )
+        s1 = out[out["sample"] == "S1"].iloc[0]
+        self.assertAlmostEqual(float(s1["pooled_control_metric"]), 1100.0, places=3)
+
+
+class TestAbsentControlOverridesReuse(unittest.TestCase):
+    """apply_absent_control_overrides re-applied to an already-computed summary.
+
+    Mimics a rank-split table where the control samples' rows were dropped but
+    per-taxon control statistics (and n_negative_controls) are still present."""
+
+    def _split_like_row(self, taxid, control_max, fe, fe100, neg_pass, decision):
+        return {
+            "sample": "S1",
+            "taxid": taxid,
+            "is_negative_control": False,
+            "n_negative_controls": 4,
+            "control_max": control_max,
+            "fold_enrichment": fe,
+            "log10_ratio": 0.5,
+            "agg_fold_enrichment": fe,
+            "agg_log10_ratio": 0.5,
+            "fold_enrichment_10x_pass": fe100,
+            "fold_enrichment_100x_pass": fe100,
+            "agg_fold_enrichment_10x_pass": fe100,
+            "agg_fold_enrichment_100x_pass": fe100,
+            "neg_pass": neg_pass,
+            "neg_pass_5": pd.NA,
+            "neg_pass_10": pd.NA,
+            "neg_decision": decision,
+        }
+
+    def test_absent_taxon_overridden_without_control_rows(self):
+        df = pd.DataFrame(
+            [
+                # absent from controls (control_max 0), currently failing
+                self._split_like_row("9999", 0.0, 6.0, False, False, "log10_ratio_fallback"),
+                # present in controls (control_max 5), must stay untouched
+                self._split_like_row("3001", 5.0, 16.0, False, True, "z_score"),
+            ]
+        )
+        apply_absent_control_overrides(df)
+
+        absent = df[df["taxid"] == "9999"].iloc[0]
+        self.assertTrue(pd.isna(absent["fold_enrichment"]))
+        self.assertTrue(pd.isna(absent["agg_log10_ratio"]))
+        self.assertTrue(bool(absent["fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(absent["agg_fold_enrichment_100x_pass"]))
+        self.assertTrue(bool(absent["neg_pass"]))
+        self.assertEqual(absent["neg_decision"], "absent_from_controls")
+
+        present = df[df["taxid"] == "3001"].iloc[0]
+        self.assertEqual(float(present["fold_enrichment"]), 16.0)
+        self.assertEqual(present["neg_decision"], "z_score")
+        self.assertFalse(bool(present["fold_enrichment_100x_pass"]))
+
+    def test_no_controls_at_all_is_noop(self):
+        # n_negative_controls == 0 → bleed-only mode; control_max 0 must NOT flip.
+        df = pd.DataFrame([self._split_like_row("9999", 0.0, 6.0, False, False, "none")])
+        df["n_negative_controls"] = 0
+        apply_absent_control_overrides(df)
+        row = df.iloc[0]
+        self.assertEqual(float(row["fold_enrichment"]), 6.0)  # untouched
+        self.assertEqual(row["neg_decision"], "none")
 
 
 if __name__ == "__main__":

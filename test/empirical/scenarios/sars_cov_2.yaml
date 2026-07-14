@@ -94,7 +94,7 @@ pipelines:
       - samples/sample-itps-0001/kraken2_reads.report.txt
       - samples/sample-itps-0001/kraken2_reads.krona.html
       - samples/sample-itps-0001/kraken2_reads.filtered.krona.html
-      - metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv
+      - metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary.tsv
       - qc/reports/multiqc_report.html
       - benchmark.tsv
 
@@ -114,5 +114,5 @@ pipelines:
       - samples/sample-barcode05/kraken2_reads.report.txt
       - samples/sample-barcode05/kraken2_reads.krona.html
       - samples/sample-barcode05/kraken2_reads.filtered.krona.html
-      - metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv
+      - metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary.tsv
       - benchmark.tsv

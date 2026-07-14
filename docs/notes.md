@@ -9,11 +9,11 @@ ViralUnity uses interpretable enrichment statistics to filter taxa that could re
 | `n_negative_controls` | `neg_decision` | Gate |
 |---|---|---|
 | 0 | `none` | No filter; `neg_pass = NA` (treated as *keep*) |
-| 1 | `log2_ratio` | `log2((sample + pc) / (control + pc)) ≥ --log2-ratio-threshold` |
+| 1 | `log10_ratio` | `log10((sample + pc) / (control + pc)) ≥ --log10-ratio-threshold` |
 | ≥ 2 | `z_score` | `(sample − control_mean) / control_sd ≥ --z-score-threshold` |
-| ≥ 2, SD = 0 | `log2_ratio_fallback` | Same as single-control gate |
+| ≥ 2, SD = 0 | `log10_ratio_fallback` | Same as single-control gate |
 
-All metrics are recorded in the summary at the `.neg` step (the negative-control table in the cumulative chain, e.g. `*_RPKM.nr.bleed.neg.tsv`) for full traceability: `fold_enrichment`, `log2_ratio`, `z_score`, `control_mean`, `control_sd`, `control_median`, `control_max`, `neg_metric`, `neg_decision`, `neg_pass`, plus the thresholds and pseudocount used.
+All metrics are recorded in the summary at the `.neg` step (the negative-control table in the cumulative chain, e.g. `*_RPKM.nr.bleed.neg.tsv`) for full traceability: `fold_enrichment`, `log10_ratio`, `z_score`, `control_mean`, `control_sd`, `control_median`, `control_max`, `neg_metric`, `neg_decision`, `neg_pass`, plus the thresholds and pseudocount used.
 
 Taxa absent from the negative-control rows are treated as having a zero background (control_mean = 0) — they pass the enrichment gate easily, which is the conservative choice. The lineage-aware Krona filter (`filter_krona_by_pass_taxids.py`) also treats NA `neg_pass` as *keep*, so increasing the number of controls can only make the filter stricter, never accidentally drop a taxon.
 

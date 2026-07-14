@@ -90,7 +90,7 @@ if run_diamond_reads:
             krona = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/results/{sample}.diamond.supported.krona_input.tsv",
             plot = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/reports/{sample}.diamond.krona.html"
         output:
-            temp(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summary/{sample}.taxa.tsv")
+            temp(config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/per_sample_summaries/{sample}.taxa.tsv")
         params:
             taxdump = config["taxdump"],
             tool = "diamond",
@@ -104,11 +104,11 @@ if run_diamond_reads:
     rule summarize_taxa_diamond_reads_all:
         input:
             expand(
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summary/{sample}.taxa.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/per_sample_summaries/{sample}.taxa.tsv",
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/full/diamond_reads_taxa_summary.tsv"
         conda:
             "../envs/utils.yaml"
         shell:
@@ -123,13 +123,13 @@ if run_diamond_reads:
 
     rule add_RPM_to_diamond_reads_summary:
         input:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/full/diamond_reads_taxa_summary.tsv",
             merged_fastqs = expand(
                 config["output"] + "host_filtered/{sample}.filtered.fastq.gz",
                 sample=config["samples"]
             )
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv"
+            config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/full/diamond_reads_taxa_summary_RPM.tsv"
         params:
             sample_to_fastq = get_sample_to_fastq(),
             reads_col = "count"
@@ -141,10 +141,10 @@ if run_diamond_reads:
     if compute_rpkm:
         rule add_rpkm_to_diamond_reads_summary:
             input:
-                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPM.tsv",
+                summary = config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/full/diamond_reads_taxa_summary_RPM.tsv",
                 genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
             output:
-                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/diamond_reads_taxa_summary_RPKM.tsv",
+                config["output"] + "metagenomics/taxonomic_assignments/diamond_reads/summaries/full/diamond_reads_taxa_summary_RPKM.tsv",
             conda:
                 "../envs/utils.yaml"
             script:
@@ -173,6 +173,7 @@ if run_diamond_reads:
         params:
             fraction = config.get("bleed_fraction", 0.005),
             rpm_floor = config.get("bleed_rpm_floor", 1.0),
+            rpkm_floor = config.get("bleed_rpkm_floor", 0.1),
             rpm_col = "rpm",
         conda:
             "../envs/utils.yaml"
@@ -189,7 +190,7 @@ if run_diamond_reads:
                 negatives = config.get("negative_controls", []),
                 pseudocount = config.get("enrichment_pseudocount", 1.0),
                 z_score_threshold = config.get("z_score_threshold", 3.0),
-                log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+                log10_ratio_threshold = config.get("log10_ratio_threshold", 1.0)
             conda:
                 "../envs/utils.yaml"
             script:

@@ -94,7 +94,6 @@ def run(
         "name",
         "count",
         "percent",
-        "source",
     ]
 
     if diamond_reads is not None:
@@ -121,7 +120,6 @@ def run(
                     taxname,
                     str(count),
                     f"{percent:.4f}",
-                    krona,
                 ]
 
                 if diamond_reads is not None:

@@ -78,7 +78,7 @@ rule summarize_taxa_kraken2_reads:
         krona = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/results/{sample}.output.krona.txt",
         plot = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/reports/{sample}.output.krona.html"
     output:
-        temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summary/{sample}.taxa.tsv")
+        temp(config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/per_sample_summaries/{sample}.taxa.tsv")
     params:
         taxdump = config["taxdump"],
         tool = "kraken2",
@@ -92,11 +92,11 @@ rule summarize_taxa_kraken2_reads:
 rule summarize_taxa_kraken2_reads_all:
     input:
         expand(
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summary/{sample}.taxa.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/per_sample_summaries/{sample}.taxa.tsv",
             sample=config["samples"]
         )
     output:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv"
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary.tsv"
     conda:
         "../envs/utils.yaml"
     shell:
@@ -111,13 +111,13 @@ rule summarize_taxa_kraken2_reads_all:
 
 rule add_RPM_to_kraken2_reads_summary:
     input:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary.tsv",
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary.tsv",
         merged_fastqs = expand(
             config["output"] + "host_filtered/{sample}.merged.fastq.gz",
             sample=config["samples"]
         )
     output:
-        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv"
+        config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary_RPM.tsv"
     params:
         sample_to_fastq = get_sample_to_fastq(),
         reads_col = "count"
@@ -129,10 +129,10 @@ rule add_RPM_to_kraken2_reads_summary:
 if compute_rpkm:
     rule add_rpkm_to_kraken2_reads_summary:
         input:
-            summary = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPM.tsv",
+            summary = config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary_RPM.tsv",
             genome_lengths = config["output"] + "metagenomics/genome_lengths.tsv",
         output:
-            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/kraken2_reads_taxa_summary_RPKM.tsv",
+            config["output"] + "metagenomics/taxonomic_assignments/kraken2_reads/summaries/full/kraken2_reads_taxa_summary_RPKM.tsv",
         conda:
             "../envs/utils.yaml"
         script:
@@ -162,6 +162,7 @@ rule apply_bleed_filter_kraken2_reads:
     params:
         fraction = config.get("bleed_fraction", 0.005),
         rpm_floor = config.get("bleed_rpm_floor", 1.0),
+        rpkm_floor = config.get("bleed_rpkm_floor", 0.1),
         rpm_col = "rpm",
     conda:
         "../envs/utils.yaml"
@@ -178,7 +179,7 @@ if has_negative_controls:
             negatives = config.get("negative_controls", []),
             pseudocount = config.get("enrichment_pseudocount", 1.0),
             z_score_threshold = config.get("z_score_threshold", 3.0),
-            log2_ratio_threshold = config.get("log2_ratio_threshold", 1.0)
+            log10_ratio_threshold = config.get("log10_ratio_threshold", 1.0)
         conda:
             "../envs/utils.yaml"
         script:

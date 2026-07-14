@@ -7,6 +7,85 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.3.2] - 2026-07-11
+
+Empirically-motivated refinements to the metagenomics contamination filters,
+grounded in the REVISA lab-contamination episode (mayaro + HIV libraries seen
+across negative controls).
+
+### Changed (breaking)
+
+- **Per-rank output layout.** Each track's taxa summary now lives under a
+  `taxonomic_assignments/<track>/summaries/` tree: one table per taxonomic rank
+  under `summaries/{family,genus,species}/` (the user-facing deliverable, most
+  users want `species/`), with higher-rank names propagated down (species tables
+  gain `family`+`genus` columns; genus tables gain `family`). The combined
+  cumulative filter chain lives internally under `summaries/full/`, and the
+  per-sample intermediate tables under `summaries/per_sample_summaries/`.
+  Downstream scripts that read the old flat `<track>/<track>_taxa_summary_*.tsv`
+  path must switch to `<track>/summaries/species/` (or `<track>/summaries/full/`
+  for the combined table).
+- **Negative-control log-ratio is now log10, not log2.** The `log2_ratio` column,
+  `neg_decision` values, `--log2-ratio-threshold` flag and config key are renamed
+  to their `log10` equivalents. The default threshold stays `1.0` but now marks a
+  **10-fold** enrichment over controls (log10 = 1) rather than the old 2-fold
+  (log2 = 1). This gate drives `neg_pass` when exactly one control is present or
+  the control variance is zero; with ≥2 controls the primary z-score gate
+  (unchanged) decides, so the tightening applies to that fallback path.
+- **Removed the `source` column** from taxa summaries (it held an internal
+  krona-input path of no user interest).
+
+### Added
+
+- **`final_species` column** — the confirmed species call, coalescing
+  `nr_correct_species` (NR's correction where it disagreed) with the original
+  `name`; present on every track.
+- **Aggregate (pooled) negative-control filter** — treats all controls as one
+  pooled library (raw reads pooled, weighting each control by its library size)
+  and reports `pooled_control_metric`, `agg_fold_enrichment`, `agg_log10_ratio`,
+  and `agg_fold_enrichment_10x/100x_pass`. Complementary to the z-score; catches
+  widespread, high-variance contamination that inflates per-control SD.
+- **Convenience pass-flag columns** — `fold_enrichment_10x_pass`,
+  `fold_enrichment_100x_pass`, `neg_pass_5`, `neg_pass_10` (`>=` inclusive; NA
+  where the underlying statistic is NA).
+- **Largest-contig statistics** (both contig tracks, with `--viral-genomes`):
+  `largest_contig_bp`, `largest_contig_ref_coverage_pct`, and
+  `largest_contig_median_depth`, a cheap genome-fraction/coverage proxy. Each
+  contig track remaps the host-filtered reads to its own viral contigs and runs
+  `samtools depth -a` for per-contig depth (kraken2_contigs extracts its viral
+  contigs by lineage; diamond_contigs reuses its existing viral remap).
+  `largest_contig_ref_coverage_pct` = `largest_contig_bp / genome_length_bp * 100`
+  is a preliminary genome-completeness estimate (raw/uncapped, so >100% flags a
+  contig longer than the median reference; NA without a reference length).
+
+### Changed
+
+- **Bleed filter is metric-aware.** It now uses RPKM when `--viral-genomes` is
+  supplied (per taxon), else RPM, recorded in a new `bleed_metric` column; the
+  group-max column `max_rpm` is renamed `bleed_max`. Because bleed is a
+  within-taxon ratio the pass/fail is unchanged by the metric; the application
+  floor is now metric-specific (`bleed_rpm_floor` 1.0, new `bleed_rpkm_floor`
+  0.1 — both YAML-only).
+- **Taxa absent from all negative controls now auto-pass the enrichment gates**
+  (science-behaviour change — flagged for PI review). Previously a taxon never
+  seen in any control still got a finite `fold_enrichment = (sample + pc)/(0 + pc)`
+  that tracked only the sample's own abundance, so low/moderate-abundance
+  control-absent taxa could *fail* `fold_enrichment_100x_pass` /
+  `agg_fold_enrichment_100x_pass` (pervasive on contig tracks, where RPKM is
+  tiny). Now, when a taxon's `control_max == 0`, the meaningless ratios
+  (`fold_enrichment`, `log10_ratio`, `agg_fold_enrichment`, `agg_log10_ratio`)
+  are blanked to NA and every enrichment gate — the four fold-enrichment
+  10x/100x pass flags **and** the primary `neg_pass` — is set True, with
+  `neg_decision = "absent_from_controls"`. Absence from controls is itself the
+  evidence the taxon is not control-borne contamination. The z-score gates
+  (`neg_pass_5`/`neg_pass_10`) stay NA (a z-score is undefined without control
+  signal). This changes which taxa survive the lineage-aware Krona "filtered"
+  output and reference-assembly selection.
+- **ICTV host-filter docstrings corrected.** The filter runs *last* in the chain
+  (after bleed/negative-control), not before as three docstrings claimed. The
+  behaviour is unchanged and numerically equivalent to running it earlier, since
+  bleed/neg are per-taxon ratios; only the comments were wrong.
+
 ## [1.3.1] - 2026-07-10
 
 ### Added

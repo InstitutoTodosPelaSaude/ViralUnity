@@ -228,7 +228,7 @@ class ConfigGenerator:
         compute_rpkm: bool = False,
         enrichment_pseudocount: float = 1.0,
         z_score_threshold: float = 3.0,
-        log2_ratio_threshold: float = 1.0,
+        log10_ratio_threshold: float = 1.0,
     ) -> None:
         """Add metagenomics-specific settings to configuration.
 
@@ -263,8 +263,9 @@ class ConfigGenerator:
             run_ictv_host_filter: When True, drop taxa that are not
                 vertebrate-infecting viruses (bacteriophages, plant/fungal/algal
                 /invertebrate-only viruses) using the ICTV-derived allowlist. A
-                taxonomic filter applied before bleed/negative-control. Off by
-                default.
+                taxonomic filter applied last in the chain (after bleed and
+                negative-control); numerically equivalent to running it earlier
+                because bleed/neg statistics are per-taxon ratios. Off by default.
             ictv_vertebrate_taxids_file: Path to the vertebrate-virus taxid
                 allowlist consumed by the ICTV host filter (built by
                 build_ictv_vertebrate_taxids.py). Required when
@@ -285,10 +286,10 @@ class ConfigGenerator:
                 viral_taxids to be set).  Derived automatically from
                 ``viral_genomes != "NA"`` in the CLI layer.
             enrichment_pseudocount: Pseudocount added to both numerator and
-                denominator when computing fold-enrichment and log2-ratio.
+                denominator when computing fold-enrichment and log10-ratio.
             z_score_threshold: Minimum z-score to consider a hit above
                 background (used when ≥2 negative controls are present).
-            log2_ratio_threshold: Minimum log2-ratio to consider a hit above
+            log10_ratio_threshold: Minimum log10-ratio to consider a hit above
                 background (used when exactly 1 negative control is present, or
                 when z-score is undefined due to zero control variance).
         """
@@ -329,7 +330,7 @@ class ConfigGenerator:
         self._set(ConfigKeys.COMPUTE_RPKM, compute_rpkm, P)
         self._set(ConfigKeys.ENRICHMENT_PSEUDOCOUNT, enrichment_pseudocount, P)
         self._set(ConfigKeys.Z_SCORE_THRESHOLD, z_score_threshold, P)
-        self._set(ConfigKeys.LOG2_RATIO_THRESHOLD, log2_ratio_threshold, P)
+        self._set(ConfigKeys.LOG10_RATIO_THRESHOLD, log10_ratio_threshold, P)
 
     def add_reference_assembly_settings(
         self,
