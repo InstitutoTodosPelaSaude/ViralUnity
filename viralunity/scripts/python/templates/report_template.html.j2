@@ -87,6 +87,26 @@ table.stats-table tbody tr:hover { background: var(--hover); }
 #sample-coverage > div + div, #segment-coverage > div + div {
   margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--border);
 }
+/* Linear/Log10 toggle */
+.scale-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; vertical-align: middle; margin: 0 0 14px; }
+.scale-toggle button { border: none; background: var(--card-bg); color: var(--text-secondary); font: inherit; font-size: 0.8rem; padding: 6px 12px; cursor: pointer; }
+.scale-toggle button + button { border-left: 1px solid var(--border); }
+.scale-toggle button.active { background: var(--accent); color: #fff; }
+.scale-toggle button:hover:not(.active) { background: var(--hover); }
+.scale-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 6px; }
+.chart-controls .scale-toggle { margin: 0; }
+table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Progressive disclosure: per-sample / per-segment detail behind a collapsed accordion. */
+.sample-details > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sample-details > summary::-webkit-details-marker { display: none; }
+.sample-details > summary::before { content: '\25B8'; color: var(--text-muted); font-size: 0.85em; transition: transform 0.15s ease; }
+.sample-details[open] > summary::before { transform: rotate(90deg); }
+.sample-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.sample-summary-title { font-size: 1rem; font-weight: 600; }
+.sample-summary-hint { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
+.sample-details-body { margin-top: 18px; }
+@media (prefers-reduced-motion: reduce) { .sample-details > summary::before { transition: none; } }
 </style>
 </head>
 <body data-palette="{{ palette_light|join(',') }}">
@@ -209,34 +229,68 @@ function sortTable(th) {
   rows.forEach(function (r) { table.tBodies[0].appendChild(r); });
   table.querySelectorAll('th').forEach(function (h) {
     h.setAttribute('data-asc', 'false');
+    if (h.hasAttribute('aria-sort')) h.setAttribute('aria-sort', 'none');
     const arr = h.querySelector('.sort-arrow'); if (arr) arr.textContent = '';
   });
   th.setAttribute('data-asc', asc ? 'true' : 'false');
+  if (th.hasAttribute('aria-sort')) th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
   const arrow = th.querySelector('.sort-arrow'); if (arrow) arrow.textContent = asc ? '▲' : '▼';
 }
 
-/* ---- lazy per-sample coverage plots ---- */
-// Log10 range for a depth axis — must match Python's _log_depth_range: floor at
-// 1 (10^0), top = 1.5x the data max but never below 150, so 20x/100x always show.
-function logDepthRange(maxDepth) {
-  const top = Math.max(150, (maxDepth || 0) * 1.5);
-  return [0, Math.log10(top)];
+/* ---- sortable-header keyboard access (attrs are emitted server-side) ---- */
+function enhanceSortHeaders() {
+  document.querySelectorAll('table.stats-table th[onclick]').forEach(function (th) {
+    th.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); th.click(); }
+    });
+  });
 }
-function coverageLayout(title, maxDepth) {
-  const dark = isDark();
+
+/* ---- Linear/Log10 scale toggle control ---- */
+function themeFont() {
+  return {family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 13,
+          color: isDark() ? '#c3c2b7' : '#52514e'};
+}
+function scaleToggleEl(initial, onChange) {
+  const wrap = document.createElement('div');
+  wrap.className = 'scale-toggle';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Y-axis scale');
+  ['linear', 'log'].forEach(function (s) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = s === 'linear' ? 'Linear' : 'Log10';
+    b.setAttribute('data-scale', s);
+    if (s === initial) b.className = 'active';
+    b.addEventListener('click', function () {
+      wrap.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      onChange(s);
+    });
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+/* ---- depth-axis layouts (shared by the coverage line charts) ----
+   Depth axes are linear by default; the toggle switches to Log10 by REBUILDING
+   the figure (Plotly.react/newPlot), never a relayout that flips yaxis.type —
+   that path hits a Plotly slow path (~6s freeze) on the ~2000-point lines. The
+   Log10 range comes from Python (entry.logRange), computed once, not re-derived
+   here. The y-caption is just "Depth" in both modes (the toggle states the
+   scale); log ticks are pinned to powers of ten (dtick 1). */
+function depthYAxis(scale, logRange) {
+  const common = {title: {text: 'Depth'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false};
+  if (scale === 'log') {
+    return Object.assign(common, {type: 'log', range: logRange, dtick: 1});
+  }
+  return Object.assign(common, {type: 'linear', rangemode: 'tozero'});
+}
+function depthGuides() {
   return {
-    width: FIG_WIDTH, height: FIG_HEIGHT, title: {text: title},
-    margin: {l: 60, r: 30, t: 50, b: 60},
-    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
-    font: {family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 13,
-           color: dark ? '#c3c2b7' : '#52514e'},
-    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
-    yaxis: {title: {text: 'Depth (log)'}, type: 'log', range: logDepthRange(maxDepth),
-            gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
-    hovermode: 'x unified', showlegend: false,
     shapes: [
-      {type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 20, y1: 20, line: {color: '#898781', width: 1, dash: 'dot'}},
-      {type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 100, y1: 100, line: {color: '#898781', width: 1, dash: 'dot'}}
+      {type: 'line', xref: 'x domain', x0: 0, x1: 1, y0: 20, y1: 20, line: {color: '#898781', width: 1, dash: 'dot'}},
+      {type: 'line', xref: 'x domain', x0: 0, x1: 1, y0: 100, y1: 100, line: {color: '#898781', width: 1, dash: 'dot'}}
     ],
     annotations: [
       {xref: 'paper', x: 1, y: 20, yref: 'y', text: '20x', showarrow: false, xanchor: 'right', font: {color: '#898781', size: 11}},
@@ -244,27 +298,29 @@ function coverageLayout(title, maxDepth) {
     ]
   };
 }
-function showSample(sample) {
-  const entries = COVERAGE[sample] || [];
-  const holder = document.getElementById('sample-coverage');
-  holder.innerHTML = '';
-  entries.forEach(function (e, i) {
-    const div = document.createElement('div');
-    div.id = 'sample-cov-' + i;
-    holder.appendChild(div);
-    const label = e.label ? (sample + ' — ' + e.label) : sample;
-    const maxDepth = e.y.length ? Math.max.apply(null, e.y) : 0;
-    // Clamp zeros to 1 so the log axis can render them (shown at the floor).
-    const y = e.y.map(function (v) { return Math.max(1, v); });
-    const trace = {x: e.x, y: y, mode: 'lines', line: {width: 2, color: '#2a78d6'}, name: label};
-    Plotly.newPlot(div, [trace], coverageLayout(label, maxDepth), {responsive: false, displayModeBar: false});
-  });
-  renderSampleStats(sample);
+function coverageLayout(title, scale, logRange) {
+  const g = depthGuides();
+  return {
+    autosize: true, height: FIG_HEIGHT, title: title ? {text: title} : undefined,
+    margin: {l: 60, r: 30, t: title ? 50 : 24, b: 60},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: themeFont(),
+    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: depthYAxis(scale, logRange),
+    hovermode: 'x unified', showlegend: false,
+    shapes: g.shapes, annotations: g.annotations
+  };
 }
-function renderSampleStats(sample) {
-  const rows = STATS[sample] || [];
-  const box = document.getElementById('sample-stats');
-  if (!rows.length) { box.innerHTML = ''; return; }
+// Honest zeros: on a linear axis plot raw depth (0 on the baseline); on a log
+// axis break the line at true zeros (null) so no-coverage reads as a gap, never
+// a false depth of 1.
+function depthForScale(y, scale) {
+  return scale === 'log' ? y.map(function (v) { return v > 0 ? v : null; }) : y;
+}
+
+/* ---- shared stats-table renderer (values are pre-formatted server-side) ---- */
+function statsTableHTML(rows) {
+  if (!rows.length) return '';
   const cols = Object.keys(rows[0]);
   let html = '<table class="stats-table"><thead><tr>';
   cols.forEach(function (c) { html += '<th>' + c + '</th>'; });
@@ -274,15 +330,217 @@ function renderSampleStats(sample) {
     cols.forEach(function (c) { html += '<td>' + r[c] + '</td>'; });
     html += '</tr>';
   });
-  html += '</tbody></table>';
-  box.innerHTML = html;
+  return html + '</tbody></table>';
+}
+
+/* ---- "By sample" view: one sample, its coverage across segments ---- */
+var covScale = 'linear';
+var currentSample = null;
+function plotCoverage(holderId, entries, labelFor, scale) {
+  const holder = document.getElementById(holderId);
+  if (!holder) return;
+  holder.innerHTML = '';
+  entries.forEach(function (e, i) {
+    const div = document.createElement('div');
+    div.id = holderId + '-' + i;
+    holder.appendChild(div);
+    const trace = {x: e.x, y: depthForScale(e.y, scale), mode: 'lines',
+                   line: {width: 2, color: '#2a78d6'}, name: labelFor(e), connectgaps: false};
+    Plotly.newPlot(div, [trace], coverageLayout(labelFor(e), scale, e.logRange),
+                   {responsive: true, displayModeBar: false});
+  });
+}
+function showSample(sample) {
+  currentSample = sample;
+  const entries = COVERAGE[sample] || [];
+  plotCoverage('sample-coverage', entries, function (e) {
+    return e.label ? (sample + ' — ' + e.label) : sample;
+  }, covScale);
+  renderSampleStats(sample);
+}
+function renderSampleStats(sample) {
+  const box = document.getElementById('sample-stats');
+  if (box) box.innerHTML = statsTableHTML(STATS[sample] || []);
+}
+// Collapse the "Coverage by sample" card into a <details> so run-level cards
+// lead and per-sample detail is opt-in and lazily rendered.
+function makeSampleSectionCollapsible() {
+  const card = Array.from(document.querySelectorAll('main .card')).find(function (c) {
+    const h = c.querySelector('h2');
+    return h && /Coverage by sample/i.test(h.textContent);
+  });
+  if (!card) return null;
+  const h2 = card.querySelector('h2');
+  if (!h2) return null;
+  const details = document.createElement('details');
+  details.className = 'sample-details';
+  const summary = document.createElement('summary');
+  const title = document.createElement('span');
+  title.className = 'sample-summary-title'; title.textContent = 'By sample';
+  const hint = document.createElement('span');
+  hint.className = 'sample-summary-hint'; hint.textContent = 'Coverage and depth for one sample';
+  summary.appendChild(title); summary.appendChild(hint);
+  details.appendChild(summary);
+  const body = document.createElement('div');
+  body.className = 'sample-details-body';
+  let node = h2.nextSibling;
+  while (node) { const next = node.nextSibling; body.appendChild(node); node = next; }
+  details.appendChild(body);
+  h2.remove();
+  card.appendChild(details);
+  return details;
+}
+function injectCoverageToggle() {
+  const sel = document.getElementById('sampleSelect');
+  if (!sel) return;
+  const toggle = scaleToggleEl('linear', function (s) {
+    covScale = s;
+    if (currentSample) showSample(currentSample);
+  });
+  toggle.style.margin = '0 0 14px 8px';
+  sel.insertAdjacentElement('afterend', toggle);
+}
+
+/* ---- "By segment" view: one segment, its coverage across every sample ----
+   For a segmented genome a Segment selector picks the segment; for an
+   unsegmented genome there is a single whole-genome "segment", so no selector —
+   it just stacks every sample's coverage. Only built when coverage exists. */
+var segCovScale = 'linear';
+var currentSegment = null;
+function rowsForSegment(segment) {
+  const rows = [];
+  Object.keys(STATS).forEach(function (sample) {
+    (STATS[sample] || []).forEach(function (r) { if ((r.Segment || '') === segment) rows.push(r); });
+  });
+  return rows;
+}
+function showSegment(segment) {
+  currentSegment = segment;
+  const entries = [];
+  Object.keys(COVERAGE).forEach(function (sample) {
+    (COVERAGE[sample] || []).forEach(function (e) {
+      if ((e.label || '') === segment) entries.push({_sample: sample, x: e.x, y: e.y, logRange: e.logRange, label: e.label});
+    });
+  });
+  plotCoverage('segment-coverage', entries, function (e) {
+    return segment ? (e._sample + ' — ' + segment) : e._sample;
+  }, segCovScale);
+  // The per-segment stats table (one row per sample) is a useful focused subset
+  // for a segmented run; for an unsegmented run it would duplicate Assembly
+  // statistics, so it is omitted.
+  const box = document.getElementById('segment-stats');
+  if (box) box.innerHTML = segment ? statsTableHTML(rowsForSegment(segment)) : '';
+}
+function buildSegmentSection() {
+  const samples = Object.keys(COVERAGE);
+  if (!samples.length) return;
+  const labels = (COVERAGE[samples[0]] || []).map(function (e) { return e.label; });
+  if (!labels.length) return;
+  const labeled = labels.filter(function (l) { return l && l.length; });
+  const isSegmented = labeled.length > 0;
+  const segList = isSegmented ? labeled : [''];
+  let segChoice = segList[0];
+
+  let sampleCard = document.querySelector('.sample-details');
+  sampleCard = sampleCard ? sampleCard.closest('.card') : null;
+  if (!sampleCard) return;
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  const details = document.createElement('details');
+  details.className = 'sample-details';
+  const summary = document.createElement('summary');
+  const title = document.createElement('span'); title.className = 'sample-summary-title'; title.textContent = 'By segment';
+  const hint = document.createElement('span'); hint.className = 'sample-summary-hint';
+  hint.textContent = isSegmented ? 'Coverage and depth for one segment, across samples'
+                                 : 'Coverage and depth across all samples';
+  summary.appendChild(title); summary.appendChild(hint);
+  details.appendChild(summary);
+
+  const body = document.createElement('div'); body.className = 'sample-details-body';
+  const controls = document.createElement('div'); controls.className = 'chart-controls';
+  if (segList.length > 1) {
+    const lab = document.createElement('label'); lab.className = 'control'; lab.setAttribute('for', 'segmentSelect'); lab.textContent = 'Segment';
+    const sel = document.createElement('select'); sel.id = 'segmentSelect';
+    segList.forEach(function (sg) { const o = document.createElement('option'); o.value = sg; o.textContent = sg; sel.appendChild(o); });
+    sel.addEventListener('change', function () { segChoice = sel.value; showSegment(segChoice); });
+    controls.appendChild(lab); controls.appendChild(sel);
+  }
+  controls.appendChild(scaleToggleEl('linear', function (s) { segCovScale = s; showSegment(segChoice); }));
+  body.appendChild(controls);
+  const stats = document.createElement('div'); stats.id = 'segment-stats'; body.appendChild(stats);
+  const cov = document.createElement('div'); cov.id = 'segment-coverage'; cov.className = 'plot-holder'; body.appendChild(cov);
+  details.appendChild(body);
+  card.appendChild(details);
+  sampleCard.insertAdjacentElement('afterend', card);
+
+  let rendered = false;
+  details.addEventListener('toggle', function () {
+    if (details.open && !rendered) { rendered = true; showSegment(segChoice); }
+  });
+}
+
+/* ---- aggregated-coverage Linear/Log10 toggle (server-rendered linear first) ----
+   Rebuilds every segment panel via Plotly.react on toggle (never a yaxis.type
+   relayout). The Log10 range is derived from the plotted data max. */
+function aggMax(gd) {
+  let mx = 0;
+  (gd._fullData || gd.data || []).forEach(function (t) {
+    const y = t.y; if (y && y.length) for (let i = 0; i < y.length; i++) { if (y[i] > mx) mx = y[i]; }
+  });
+  return mx;
+}
+function aggregatedLayout(scale, mx) {
+  const logRange = [0, Math.log10(Math.max(150, mx * 1.5))];
+  const g = depthGuides();
+  return {
+    autosize: true, height: FIG_HEIGHT, margin: {l: 60, r: 30, t: 24, b: 60},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: scale === 'log' ? depthYAxis('log', logRange) : {title: {text: 'Depth'}, type: 'linear', range: [0, mx * 1.08], gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    hovermode: 'x unified', showlegend: false, shapes: g.shapes, annotations: g.annotations
+  };
+}
+function enhanceAggregatedToggle() {
+  if (!window.Plotly) return;
+  const card = Array.from(document.querySelectorAll('main .card')).find(function (c) {
+    const h = c.querySelector('h2');
+    return h && /^Aggregated coverage/i.test(h.textContent);
+  });
+  if (!card) return;
+  const setScale = function (s) {
+    card.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+      try { Plotly.react(gd, gd.data, aggregatedLayout(s, aggMax(gd) || 1), {responsive: true, displayModeBar: false}); } catch (e) {}
+    });
+  };
+  const toggle = scaleToggleEl('linear', setScale);
+  // Place the toggle after the segment selector when present, else after the heading.
+  (card.querySelector('select') || card.querySelector('h2')).insertAdjacentElement('afterend', toggle);
 }
 
 /* ---- init ---- */
 window.addEventListener('load', function () {
   themeCharts();
+  enhanceSortHeaders();
+  enhanceAggregatedToggle();
+  // The eyebrow over the collapsible section now holds both a by-sample and a
+  // by-segment view, so it reads "Details".
+  document.querySelectorAll('.section-title').forEach(function (s) {
+    if (/per[-\s]?sample/i.test(s.textContent)) s.textContent = 'Details';
+  });
+  const details = makeSampleSectionCollapsible();
+  injectCoverageToggle();
+  buildSegmentSection();
   const first = document.getElementById('sampleSelect');
-  if (first && first.value) showSample(first.value);
+  if (details) {
+    // Lazy: build the per-sample plot only when the section is first expanded.
+    let rendered = false;
+    details.addEventListener('toggle', function () {
+      if (details.open && !rendered && first && first.value) { rendered = true; showSample(first.value); }
+    });
+  } else if (first && first.value) {
+    showSample(first.value);
+  }
 });
 </script>
 </body>
