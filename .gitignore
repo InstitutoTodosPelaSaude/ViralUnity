@@ -93,5 +93,9 @@ tmp_*
 # Local test assets
 test/dryrun_output/
 test/empirical/.cache/
+# Report UX handoff kit: heavy rendered reference reports + local design note
+# (reference material, not committed — the small kit docs are kept).
+report-ux-improvements/reference-reports/
+consensus_html_visualization.md
 # Documentation builds
 docs/_build/
