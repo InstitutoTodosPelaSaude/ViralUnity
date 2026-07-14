@@ -140,6 +140,17 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn("sample-A", html)
         self.assertIn("sample-B", html)
 
+    def test_counts_grouped_with_thousands_separators_display_only(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df)
+        # 6-7 digit read counts render grouped for the reader...
+        self.assertIn("348,018", html)  # number_of_reads
+        self.assertIn("330,568", html)  # number_of_trim_paired_reads
+        # ...mean depth groups its integer part but keeps one fractional digit.
+        self.assertIn("3,245.2", html)
+        # ...while the raw ungrouped value is preserved as the numeric sort key.
+        self.assertIn('data-sort="348018"', html)
+
     def test_table_drops_percentage_above_columns_and_humanizes_headers(self):
         df = pd.read_csv(io.StringIO(UNSEG_CSV))
         html = build_stats_table_html(df)

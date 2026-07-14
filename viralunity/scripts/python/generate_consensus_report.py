@@ -235,15 +235,21 @@ def _fmt_pct(value) -> str:
 
 
 def _fmt_depth(value) -> str:
+    # Group the integer part (a comma every 3 digits) but keep the single
+    # fractional digit ungrouped. Python's ``,`` format spec is locale-
+    # independent (always a comma), so the separator never renders as a decimal
+    # point under a de-DE-style ambient locale.
     try:
-        return f"{float(value):.1f}"
+        return f"{float(value):,.1f}"
     except (TypeError, ValueError):
         return str(value)
 
 
 def _fmt_int(value) -> str:
+    # Thousands-grouped display for read counts. ``,`` is locale-independent;
+    # the raw value is kept separately as the numeric sort key (``data-sort``).
     try:
-        return f"{int(round(float(value)))}"
+        return f"{int(round(float(value))):,}"
     except (TypeError, ValueError):
         return str(value)
 
