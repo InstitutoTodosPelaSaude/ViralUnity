@@ -371,11 +371,6 @@ def _log_depth_range(max_value: float) -> list:
     return [0.0, math.log10(top)]
 
 
-def _clamp_for_log(depths) -> np.ndarray:
-    """Clamp depths to >= 1 so a log axis can render zeros (shown at the floor)."""
-    return np.maximum(np.asarray(depths, dtype=float), 1.0)
-
-
 def _add_depth_guides(fig: go.Figure) -> None:
     """20x / 100x horizontal guide lines with literal '20x'/'100x' annotations."""
     fig.add_hline(
@@ -459,6 +454,12 @@ def build_aggregated_coverage_line_plot(
 ) -> go.Figure:
     """Aggregated coverage: x = genome position, one line per sample.
 
+    Rendered **linear by default** with the y-range fit to the data
+    (``[0, max x 1.08]``) and **raw depth** — zeros sit honestly on the baseline,
+    never clamped to 1 to satisfy a log axis. A client-side Log10 toggle (added in
+    the template, rebuilt via ``Plotly.react`` rather than an axis-type
+    ``relayout``) handles the wide-dynamic-range case.
+
     <= 8 samples get the fixed categorical palette; more than 8 fall back to a
     single recessive hue (emphasis + hover) so identity is never colour-alone
     past the CVD-safe ceiling (the stats table carries per-sample identity).
@@ -473,37 +474,12 @@ def build_aggregated_coverage_line_plot(
         if emphasis:
             kwargs["line"]["color"] = EMPHASIS_MUTED
             kwargs["opacity"] = 0.6
-        fig.add_scatter(x=positions, y=_clamp_for_log(depths), **kwargs)
+        fig.add_scatter(x=positions, y=depths, **kwargs)
     fig.update_layout(
         _base_layout(showlegend=not emphasis, hovermode="x unified"),
         title=title,
-        yaxis_type="log",
-        yaxis_range=_log_depth_range(max_depth),
-        yaxis_title="Depth (log)",
-        xaxis_title="Genome position",
-    )
-    _add_depth_guides(fig)
-    return fig
-
-
-def build_sample_detail_plot(sample: str, label: str, positions, depths) -> go.Figure:
-    """Single-sample (single-segment) coverage line, used by the lazy path."""
-    max_depth = float(np.max(depths)) if len(depths) else 100.0
-    fig = go.Figure()
-    fig.add_scatter(
-        x=list(positions),
-        y=list(_clamp_for_log(depths)),
-        mode="lines",
-        line=dict(width=2, color=SERIES_1_LIGHT),
-        name=label or sample,
-    )
-    title = sample if not label else f"{sample} — {label}"
-    fig.update_layout(
-        _base_layout(showlegend=False, hovermode="x unified"),
-        title=title,
-        yaxis_type="log",
-        yaxis_range=_log_depth_range(max_depth),
-        yaxis_title="Depth (log)",
+        yaxis_range=[0.0, max_depth * 1.08],
+        yaxis_title="Depth",
         xaxis_title="Genome position",
     )
     _add_depth_guides(fig)
@@ -587,11 +563,15 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
             pos, depth = cache.get((sample, segment), (np.array([]), np.array([])))
             if len(pos) == 0:
                 continue
+            # Compute the Log10 axis range once, here, and hand it to the client
+            # so the JS scale toggle consumes it as data instead of re-deriving it
+            # (kills the Python<->JS _log_depth_range duplication).
             entries.append(
                 {
                     "label": segment or "",
                     "x": [int(p) for p in pos],
                     "y": [float(d) for d in depth],
+                    "logRange": _log_depth_range(float(np.max(depth)) if len(depth) else 0.0),
                 }
             )
         coverage_json[sample] = entries

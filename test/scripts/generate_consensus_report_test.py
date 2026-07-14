@@ -20,6 +20,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
+    build_aggregated_coverage_line_plot,
     build_reads_histogram,
     build_report_metadata,
     build_stats_table_html,
@@ -255,6 +256,17 @@ class TestFigureBuilders(unittest.TestCase):
         fig = build_reads_histogram(df)
         self.assertIsInstance(fig, go.Figure)
         self.assertGreaterEqual(len(fig.data), 1)
+
+    def test_aggregated_coverage_is_linear_with_honest_zeros(self):
+        series = {"sample-A": (np.array([1, 2, 3, 4]), np.array([0.0, 10.0, 100.0, 0.0]))}
+        fig = build_aggregated_coverage_line_plot(series, "Aggregated coverage")
+        # linear by default (Plotly leaves type unset for linear axes).
+        self.assertIn(fig.layout.yaxis.type, (None, "linear"))
+        # zeros are plotted as zero, never clamped to 1 for a log axis.
+        self.assertEqual(list(fig.data[0].y), [0.0, 10.0, 100.0, 0.0])
+        # y-range is fit to the data and anchored at zero.
+        self.assertEqual(fig.layout.yaxis.range[0], 0.0)
+        self.assertAlmostEqual(fig.layout.yaxis.range[1], 108.0)
 
 
 if __name__ == "__main__":
