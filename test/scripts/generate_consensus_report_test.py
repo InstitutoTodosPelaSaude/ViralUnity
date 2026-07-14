@@ -274,7 +274,7 @@ class TestFigureBuilders(unittest.TestCase):
 
     def test_aggregated_coverage_is_linear_with_honest_zeros(self):
         series = {"sample-A": (np.array([1, 2, 3, 4]), np.array([0.0, 10.0, 100.0, 0.0]))}
-        fig = build_aggregated_coverage_line_plot(series, "Aggregated coverage")
+        fig = build_aggregated_coverage_line_plot(series)
         # linear by default (Plotly leaves type unset for linear axes).
         self.assertIn(fig.layout.yaxis.type, (None, "linear"))
         # zeros are plotted as zero, never clamped to 1 for a log axis.

@@ -77,6 +77,16 @@ table.stats-table tbody tr:hover { background: var(--hover); }
 .plot-holder { min-height: 60px; }
 .chart-note { font-size: 0.8rem; color: var(--text-muted); margin: 8px 4px 0; }
 .run-meta { font-size: 0.85rem; color: var(--text-secondary); margin: 0 4px 16px; }
+/* Charts fill the card (responsive) but never stretch past their design width. */
+.card .plotly-graph-div, .card .js-plotly-plot { width: 100%; max-width: 900px; }
+/* Separate the per-sample stats table from the coverage plot(s) below it; the
+   table's own last-row hairline reads cleanly, so spacing alone suffices. */
+#sample-coverage, #segment-coverage { margin-top: 28px; }
+/* Stacked coverage plots (one per segment, or one per sample in the by-segment
+   view) get breathing room and a hairline divider so each reads as its own panel. */
+#sample-coverage > div + div, #segment-coverage > div + div {
+  margin-top: 32px; padding-top: 28px; border-top: 1px solid var(--border);
+}
 </style>
 </head>
 <body data-palette="{{ palette_light|join(',') }}">

@@ -340,8 +340,10 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
 def _base_layout(**kwargs) -> dict:
     # Transparent surfaces + muted grid so the chart blends into the card in
     # both light and dark; the page's theme toggle relayouts font/grid colour.
+    # ``autosize`` (no fixed pixel width) lets the chart reflow to the card so
+    # narrow viewports don't scroll sideways; CSS caps the width.
     layout = dict(
-        width=FIG_WIDTH,
+        autosize=True,
         height=FIG_HEIGHT,
         margin=dict(l=60, r=30, t=50, b=60),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -442,7 +444,7 @@ def build_reads_histogram(df: pd.DataFrame, paired: bool = True) -> go.Figure:
         col=1,
     )
     fig.update_layout(
-        width=FIG_WIDTH,
+        autosize=True,
         height=560,
         margin=dict(l=60, r=30, t=60, b=60),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -461,9 +463,13 @@ def build_reads_histogram(df: pd.DataFrame, paired: bool = True) -> go.Figure:
 
 
 def build_aggregated_coverage_line_plot(
-    per_sample_series: Dict[str, Tuple[np.ndarray, np.ndarray]], title: str
+    per_sample_series: Dict[str, Tuple[np.ndarray, np.ndarray]],
 ) -> go.Figure:
     """Aggregated coverage: x = genome position, one line per sample.
+
+    No embedded plot title: the card heading and the segment selector already
+    name the view, so a repeated title only wastes vertical space (the top margin
+    is tightened to match).
 
     Rendered **linear by default** with the y-range fit to the data
     (``[0, max x 1.08]``) and **raw depth** — zeros sit honestly on the baseline,
@@ -487,8 +493,9 @@ def build_aggregated_coverage_line_plot(
             kwargs["opacity"] = 0.6
         fig.add_scatter(x=positions, y=depths, **kwargs)
     fig.update_layout(
-        _base_layout(showlegend=not emphasis, hovermode="x unified"),
-        title=title,
+        _base_layout(
+            showlegend=not emphasis, hovermode="x unified", margin=dict(l=60, r=30, t=24, b=60)
+        ),
         yaxis_range=[0.0, max_depth * 1.08],
         yaxis_title="Depth",
         xaxis_title="Genome position",
@@ -527,7 +534,16 @@ def _load_coverage_cache(
 
 
 def _fig_to_html(fig: go.Figure) -> str:
-    return pio.to_html(fig, include_plotlyjs=False, full_html=False)
+    # default_width="100%" makes the wrapper div fill the card (no fixed 900px
+    # that would force sideways scrolling on narrow viewports); responsive:true
+    # keeps the figure sized to that div as it changes.
+    return pio.to_html(
+        fig,
+        include_plotlyjs=False,
+        full_html=False,
+        default_width="100%",
+        config={"responsive": True},
+    )
 
 
 def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
@@ -562,8 +578,7 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
             for s in samples
             if len(cache.get((s, segment), (np.array([]),))[0]) > 0
         }
-        title = f"Aggregated coverage — {segment}" if segment else "Aggregated coverage"
-        fig_html = _fig_to_html(build_aggregated_coverage_line_plot(series, title))
+        fig_html = _fig_to_html(build_aggregated_coverage_line_plot(series))
         aggregated_panels.append({"segment": segment or "", "html": fig_html})
 
     # Per-sample coverage data, embedded once as JSON for the lazy detail section.

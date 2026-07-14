@@ -61,6 +61,16 @@ class _ReportCase:
         # reads histogram + >=1 aggregated panel are pre-rendered.
         self.assertGreaterEqual(html.count("Plotly.newPlot"), 2)
 
+    def test_charts_are_responsive_not_fixed_width(self):
+        html = self._render()
+        # figures are emitted responsive, filling the card rather than a fixed
+        # 900px box that would force sideways scrolling on narrow viewports.
+        self.assertIn('"responsive": true', html)
+        # no fixed pixel width on a figure wrapper (default_width=100%). The <style>
+        # block legitimately uses max-width:900px, so exclude it from the check.
+        body = re.sub(r"<style>.*?</style>", "", html, flags=re.S)
+        self.assertNotIn("width:900px", body.replace(" ", ""))
+
 
 class TestUnsegmentedReport(_ReportCase, unittest.TestCase):
     fixture_dir = os.path.join(FIXTURE_ROOT, "unsegmented")
