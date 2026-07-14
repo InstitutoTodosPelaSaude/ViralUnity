@@ -37,6 +37,10 @@ dependencies = [
     "pandas>=1.5",
     # Snakemake 7.32 calls pulp.list_solvers(), which was removed in pulp 2.8.
     "pulp<2.8",
+    # Interactive HTML report (viralunity report + the generate_html_report rule).
+    # Needed on the CLI path unconditionally, regardless of Snakemake/conda.
+    "plotly>=5.0",
+    "jinja2>=3.0",
 ]
 
 [project.optional-dependencies]
@@ -65,7 +69,7 @@ include = ["viralunity*"]
 exclude = ["test*", "docs*"]
 
 [tool.setuptools.package-data]
-"viralunity.scripts" = ["*.smk", "**/*.smk", "envs/*.yaml"]
+"viralunity.scripts" = ["*.smk", "**/*.smk", "envs/*.yaml", "python/templates/*.j2"]
 
 [tool.black]
 line-length = 100

@@ -7,7 +7,33 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
-## [1.3.3] - 2026-07-14
+## [1.3.4] - 2026-07-14
+
+Adds an interactive, self-contained HTML report for consensus runs.
+
+### Added
+
+- Interactive consensus HTML report: a single offline-openable `report.html`
+  visualizing a consensus run — a sortable assembly-statistics table, a grouped
+  reads histogram, a log-scale average-depth bar chart with 20x/100x guides, an
+  aggregated per-position coverage plot (one panel per segment in segmented
+  mode), and a per-sample coverage viewer. Charts use a colourblind-safe palette
+  and support light/dark mode. Built with Plotly, inlined once so the file has
+  no external dependencies.
+- `viralunity report --input <consensus-output-dir> [--output report.html]`: a
+  standalone subcommand to (re)generate the report from an existing output
+  directory without rerunning the pipeline.
+- `--generate-html-report / --no-generate-html-report` (default on) on both
+  `viralunity consensus illumina` and `viralunity consensus nanopore`: the
+  report is produced automatically at the end of every consensus run and can be
+  opted out of on very large runs.
+
+### Changed
+
+- New runtime dependencies `plotly` and `jinja2`; the packaged `.j2` template is
+  now shipped as package data.
+
+
 
 Documentation-only release: the user-facing docs are brought in line with the
 1.3.2 CLI and behaviour, and the changelog is tidied. No code or workflow changes.

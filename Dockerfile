@@ -1,5 +1,5 @@
 FROM continuumio/miniconda3:25.1.1-2
-LABEL version="1.3.3" \
+LABEL version="1.3.4" \
       description="A pipeline for viral metagenomics analysis."
 
 WORKDIR /app
