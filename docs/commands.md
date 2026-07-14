@@ -262,7 +262,7 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--diamond-database` | `NA` | Protein FASTA for Diamond. |
 | `--taxids` | `NA` | NCBI taxid mapping for Diamond taxonomy. |
 | `--diamond-sensitivity` | `sensitive` | `sensitive` / `mid-sensitive` / `more-sensitive` / `ultra-sensitive`. |
-| `--evalue` | `0.001` | Diamond E-value threshold. |
+| `--evalue` | `1e-10` | Diamond E-value threshold. |
 | `--bleed-fraction` | `0.005` | Max-RPM bleed filter fraction. |
 | `--negative-controls` | (empty) | Comma-separated sample IDs used as negative controls. |
 | `--enrichment-pseudocount` | `1.0` | Pseudocount for fold-enrichment and log10-ratio vs negative controls. |
@@ -270,7 +270,7 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--log10-ratio-threshold` | `1.0` | Log10-ratio threshold for `neg_pass`; the default `1.0` marks a 10-fold enrichment over controls. Used when exactly 1 negative control is present, or when z-score is undefined due to zero control variance. |
 | `--minimum-hit-group` | `4` | Kraken2 minimum-hit-group parameter. |
 | `--run-ictv-host-filter`/`--no-ictv-host-filter` | off | Keep only vertebrate-infecting viruses (drop phages, plant/fungal/algal/invertebrate-only viruses). See *Taxonomic false-positive filters* below. |
-| `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by `viralunity get-databases ictv-vertebrate-taxids`). Required with `--run-ictv-host-filter`. |
+| `--ictv-vertebrate-taxids-file` | `NA` | Vertebrate-virus taxid allowlist (built by the `build_ictv_vertebrate_taxids.py` script — see *Taxonomic false-positive filters* below). Required with `--run-ictv-host-filter`. |
 | `--run-nr-validation`/`--no-nr-validation` | off | Re-search de novo viral contigs against NCBI nr and keep only NR-confirmed viral contigs. Contig tracks only; requires `--run-denovo-assembly` and `--run-diamond-contigs`. |
 | `--nr-diamond-database` | `NA` | nr database for NR validation: a BLAST+ nr db (searched via `diamond prepdb`) or a native `.dmnd`. |
 | `--nr-evalue` | `1e-10` | E-value threshold for the NR DIAMOND search. |
@@ -278,8 +278,8 @@ The metagenomics pipeline takes raw reads to taxonomic classifications and visua
 | `--nr-sensitivity` | `fast` | DIAMOND sensitivity for the NR search. |
 | `--nr-consensus-threshold` | `0.5` | Fraction of a contig's hits that must agree at a rank for the LCA consensus. |
 | `--run-reference-assembly`/`--no-run-reference-assembly` | off | Enable reference assembly from filtered taxonomic hits. |
-| `--method` | `kraken2` | Method used for reference assembly (`kraken2`, `diamond`, `both`). Required when `--run-reference-assembly` is set. |
-| `--source` | `reads` | Source of taxonomy data for reference assembly (`reads`, `contigs`, `both`). Required when `--run-reference-assembly` is set. |
+| `--method` | *(none)* | Method used for reference assembly (`kraken2`, `diamond`, `both`). Required when `--run-reference-assembly` is set. |
+| `--source` | *(none)* | Source of taxonomy data for reference assembly (`reads`, `contigs`, `both`). Required when `--run-reference-assembly` is set. |
 | `--reads-count` | `100` | Minimum reads assigned to a viral family to trigger reference assembly. |
 | `--contigs-count` | `1` | Minimum contigs assigned to a viral family to trigger reference assembly. |
 | `--families` | `Coronaviridae,...` | Comma-separated list of targeted viral families for reference assembly. |
@@ -410,12 +410,13 @@ viralunity meta nanopore \
 For every classifier/mode that runs, the pipeline emits two Krona HTMLs per sample:
 
 - `samples/<sample>/<classifier>_<mode>.krona.html` — built directly from the per-sample taxonomic classification before any cross-sample filtering. This is the raw view of what the classifier reported.
-- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the filters recorded in the fully-filtered taxa-summary table (the longest-named file in the cumulative chain, e.g. `_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`) for that `(sample, tool, mode)`.
+- `samples/<sample>/<classifier>_<mode>.filtered.krona.html` — built from the same krona input, but pruned to taxa that survive the filters recorded in the fully-filtered taxa-summary table (the longest-named file in the cumulative chain, e.g. `_taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv`) for that `(sample, tool, mode)`.
 
 Filtering is *lineage-aware*: a contig/read is kept when any ancestor of its leaf taxid at the `family`, `genus`, or `species` rank passes `bleed_pass` (and, when negative controls are configured, also `neg_pass`). This is the inverse of how `summarize_krona_taxa.py` aggregates rows up the lineage, so the filtered Krona shows exactly the contigs/reads that contributed to a passing rank-row. Strain and sub-species hits whose species/genus/family passes are preserved; rows with `taxid==0` are dropped.
 
 **`neg_pass` semantics** — set by the negative-control enrichment filter:
 - `neg_pass = NA` — no negative controls configured (zero-control mode); treated as *keep* by the Krona filter.
+- `neg_pass = True` with `neg_decision = "absent_from_controls"` — controls *are* configured but the taxon is absent from every one of them (`control_max == 0`). The enrichment ratios (`fold_enrichment`, `log10_ratio`, `agg_fold_enrichment`, `agg_log10_ratio`) would only track the sample's own abundance against the pseudocount, so they are blanked to NA and every enrichment gate auto-passes — absence from the controls is itself the evidence the taxon is not control-borne. The z-score gates (`neg_pass_5`/`neg_pass_10`) stay NA (a z-score is undefined without control signal).
 - `neg_pass = True/False` with `neg_decision = "log10_ratio"` — one negative control; gate is `log10_ratio ≥ --log10-ratio-threshold`.
 - `neg_pass = True/False` with `neg_decision = "z_score"` — two or more controls; gate is `z_score ≥ --z-score-threshold`.
 - `neg_pass = True/False` with `neg_decision = "log10_ratio_fallback"` — two or more controls but all identical (SD = 0); falls back to the log10-ratio gate.
@@ -430,7 +431,7 @@ A complementary **aggregate (pooled) control** view is also emitted (diagnostic 
 
 ```bash
 python viralunity/scripts/python/filter_krona_by_pass_taxids.py \
-    --summary path/to/diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv \
+    --summary path/to/diamond_contigs_taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv \
     --krona-input path/to/{sample}.diamond.supported.krona_input.tsv \
     --out path/to/{sample}.diamond.supported.filtered.krona_input.tsv \
     --sample {sample} --tool diamond --mode contigs \
@@ -449,13 +450,14 @@ its output listing the removed rows and why.
 exactly one suffix, in this order:
 
 ```
-_RPM/_RPKM → .nr → .bleed → .neg → .ictv
+_RPM/_RPKM → .nr → .ctgstats → .bleed → .neg → .ictv
 ```
 
-so a fully-loaded contig track ends at `..._taxa_summary_RPKM.nr.bleed.neg.ictv.tsv` and the
-*fully-filtered* table is always the file with the longest name. NR validation is contig-tracks
-only; the ICTV host filter applies to all tracks. The order is **result-neutral** with respect to
-the surviving taxa: `.bleed` and `.neg` only add per-taxon `bleed_pass`/`neg_pass` columns (they
+so a fully-loaded contig track ends at `..._taxa_summary_RPKM.nr.ctgstats.bleed.neg.ictv.tsv` and
+the *fully-filtered* table is always the file with the longest name. NR validation and the
+`.ctgstats` largest-contig statistics are contig-tracks only (and `.ctgstats` additionally requires
+`--viral-genomes`); the ICTV host filter applies to all tracks. The order is **result-neutral** with
+respect to the surviving taxa: `.ctgstats`, `.bleed` and `.neg` only add per-taxon columns (they
 never remove rows and don't depend on which other taxa are present), while the row-removing steps
 (`.nr`, `.ictv`) use criteria independent of those columns. With every filter off the chain is just
 `..._RPM.bleed.tsv` (or `_RPKM.bleed.tsv` with `--viral-genomes`), byte-identical in content to
@@ -731,3 +733,20 @@ kraken2_extra_flags: ""
 ```
 
 Then re-run the same `viralunity meta ...` invocation (without `--create-config-only`) and pass the edited config to Snakemake.
+
+---
+
+## Per-rule CPU and RAM overrides
+
+Both `viralunity consensus` and `viralunity meta` auto-generate a `--<rule>-cpus` and a `--<rule>-ram` option for each computationally significant Snakemake rule, so you can size individual steps without touching the global `--threads` / `--threads-total`. Every such option defaults to **2** CPUs / **4** GB and is written into the generated YAML as `{rule}_cpus` / `{rule}_ram`.
+
+The exact set depends on the pipeline and data type — run the relevant subcommand's `--help` to list them all. Representative rules (flags replace `_` with `-` and append `-cpus` / `-ram`):
+
+- **consensus** — `map_reads`, `trim_primer_sequences`, `perform_qc` + `detect_isnv` (Illumina), `infer_consensus_sequence` (Nanopore). e.g. `--map-reads-cpus`, `--map-reads-ram`.
+- **meta** — `remove_host_reads`, `run_megahit`, `run_kraken2_reads`, `run_kraken2_contigs`, `run_diamond_reads`, `run_diamond_contigs`, `run_diamond_nr`, `perform_qc` (Illumina), `run_racon` / `run_medaka` (Nanopore), … e.g. `--run-megahit-cpus`, `--run-kraken2-reads-ram`.
+
+```bash
+viralunity meta illumina ... \
+    --run-megahit-cpus 8 --run-megahit-ram 32 \
+    --run-kraken2-reads-cpus 8
+```

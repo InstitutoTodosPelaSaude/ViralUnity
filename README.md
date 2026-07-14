@@ -42,8 +42,9 @@ viralunity meta      illumina --sample-sheet samples.csv --kraken2-database <db>
 viralunity build-deacon-index --input host.fasta --output host.dcn
 ```
 
-`get-databases all` grabs the four common databases; large optional ones are separate
-subcommands (`virus-genome`, `deacon-index`, and `nr` for `meta --run-nr-validation`).
+`get-databases all` grabs the four common databases; the others are separate subcommands
+(`virus-genome`, `deacon-index`, `host-genome`, `nr` for `meta --run-nr-validation`, and the
+`clean-protein-fasta` utility) — run `viralunity get-databases --help` for the full list.
 
 Global options: `--log-level {DEBUG,INFO,WARNING,ERROR}` and `--json-logs`
 (e.g. `viralunity --log-level DEBUG meta ...`).

@@ -6,16 +6,17 @@ ViralUnity uses interpretable enrichment statistics to filter taxa that could re
 
 **Decision tiers:**
 
-| `n_negative_controls` | `neg_decision` | Gate |
+| Controls (and taxon) | `neg_decision` | Gate |
 |---|---|---|
-| 0 | `none` | No filter; `neg_pass = NA` (treated as *keep*) |
+| 0 configured | `none` | No filter; `neg_pass = NA` (treated as *keep*) |
+| ≥ 1, taxon absent from every control (`control_max == 0`) | `absent_from_controls` | Ratios blanked to NA; all enrichment gates + `neg_pass` auto-pass True; z-score gates (`neg_pass_5`/`neg_pass_10`) stay NA |
 | 1 | `log10_ratio` | `log10((sample + pc) / (control + pc)) ≥ --log10-ratio-threshold` |
 | ≥ 2 | `z_score` | `(sample − control_mean) / control_sd ≥ --z-score-threshold` |
 | ≥ 2, SD = 0 | `log10_ratio_fallback` | Same as single-control gate |
 
 All metrics are recorded in the summary at the `.neg` step (the negative-control table in the cumulative chain, e.g. `*_RPKM.nr.bleed.neg.tsv`) for full traceability: `fold_enrichment`, `log10_ratio`, `z_score`, `control_mean`, `control_sd`, `control_median`, `control_max`, `neg_metric`, `neg_decision`, `neg_pass`, plus the thresholds and pseudocount used.
 
-Taxa absent from the negative-control rows are treated as having a zero background (control_mean = 0) — they pass the enrichment gate easily, which is the conservative choice. The lineage-aware Krona filter (`filter_krona_by_pass_taxids.py`) also treats NA `neg_pass` as *keep*, so increasing the number of controls can only make the filter stricter, never accidentally drop a taxon.
+Taxa absent from *every* negative control (`control_max == 0`) are auto-passed with `neg_decision = "absent_from_controls"`: their enrichment ratios (`fold_enrichment`, `log10_ratio`, and the aggregate variants) would only reflect the sample's own abundance against the pseudocount, so those columns are blanked to NA and every enrichment gate — including `neg_pass` — is set True. Absence from the controls is itself evidence the taxon is not control-borne contamination. The z-score gates (`neg_pass_5`/`neg_pass_10`) stay NA, since a z-score is undefined without control signal. The lineage-aware Krona filter (`filter_krona_by_pass_taxids.py`) also treats NA `neg_pass` as *keep*, so increasing the number of controls can only make the filter stricter, never accidentally drop a taxon.
 
 **RPKM and genome length:** when `--viral-genomes` points to a RefSeq FASTA (with a corresponding `--viral-taxids` genome2taxid mapping), ViralUnity builds a per-taxon genome-length table at all ranks (family, genus, species) using the median length across all accessions under each node. RPKM at higher ranks (genus, family) is an approximation based on this median.
 

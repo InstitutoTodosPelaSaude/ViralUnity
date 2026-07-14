@@ -1,11 +1,12 @@
 # Usage Overview
 
-ViralUnity provides five main subcommands:
+ViralUnity provides six main subcommands:
 
 ```
 viralunity [--version]
 ├── build-deacon-index   Build a Deacon minimizer index from a FASTA file
 ├── create-samplesheet   Generate a sample-sheet CSV from a run directory
+├── setup                Pre-build the per-rule conda environments into a shared cache
 ├── get-databases        Download and set up reference databases
 │   ├── kraken2              Download a Kraken2 pre-built index
 │   ├── krona                Set up the Krona taxonomy database

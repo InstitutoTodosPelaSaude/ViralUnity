@@ -2,7 +2,26 @@
 
 ViralUnity is a Python package that launches Snakemake workflows. The tool dependencies are documented in the conda environment file `environment.yml` and the workflow-specific dependencies are in `viralunity/scripts/envs/`.
 
+## Install from PyPI (recommended)
+
+The ViralUnity CLI is published on PyPI, so the quickest install is:
+
+```bash
+pip install viralunity
+```
+
+```{note}
+conda (or mamba/micromamba) is still required **at runtime**. ViralUnity orchestrates
+Snakemake, which builds the per-rule tool environments (aligners, classifiers, assemblers)
+via `--use-conda` on first run — so conda/mamba must be installed and on your `PATH`. Pre-build
+those environments once with `viralunity setup --pipelines all` (see [First-time environment
+setup](#first-time-environment-setup) below).
+```
+
 ## Clone and create the environment
+
+To work from a source checkout instead (required for development, and for the tutorial, which
+references bundled example files):
 
 ```bash
 git clone https://github.com/InstitutoTodosPelaSaude/ViralUnity.git

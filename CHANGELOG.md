@@ -7,6 +7,36 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.3.3] - 2026-07-14
+
+Documentation-only release: the user-facing docs are brought in line with the
+1.3.2 CLI and behaviour, and the changelog is tidied. No code or workflow changes.
+
+### Documentation
+
+- Removed the stale Portuguese-docs language switcher from `docs/index.md` (the
+  `docs-pt/` tree was retired in a prior PR).
+- Corrected doc/code drift in `docs/`: the `--evalue` default (`1e-10`), the
+  `--method`/`--source` reference-assembly flags (no default; required with
+  `--run-reference-assembly`), the subcommand count (six — adds `setup`), and
+  replaced references to a non-existent `get-databases ictv-vertebrate-taxids`
+  command with the `build_ictv_vertebrate_taxids.py` script.
+- Documented 1.3.2 behaviour that had not reached the docs: the
+  `absent_from_controls` negative-control decision, the per-rank
+  `summaries/{family,genus,species}/` + `summaries/full/` output layout, and the
+  `.ctgstats` step in the taxa-summary filter chain.
+- Added the PyPI install path (`pip install viralunity`) to the installation docs
+  and documented the auto-generated per-rule `--<rule>-cpus` / `--<rule>-ram`
+  options.
+
+### Changed
+
+- `CHANGELOG.md` housekeeping: folded the stale `[Unreleased]` section into
+  `[1.2.0]` (where the `viralunity setup` subcommand, `--conda-prefix`, and the
+  conda-26.x fix actually shipped), dropped entries already recorded under
+  `[1.3.0]`, and corrected an erroneous `get-databases ictv-vertebrate-taxids`
+  command reference — restoring reverse-chronological order.
+
 ## [1.3.2] - 2026-07-11
 
 Empirically-motivated refinements to the metagenomics contamination filters,
@@ -195,6 +225,27 @@ across negative controls).
 - `viralunity/scripts/python/add_negative_control_enrichment.py` — new enrichment filter;
   49 unit tests covering all decision tiers, RPKM/RPM metric selection, SD = 0 fallback,
   absent-from-controls zero-background assumption, and the NA-as-keep contract.
+- **`viralunity setup` subcommand** — pre-builds every per-rule conda environment into a
+  shared cache at install time, so `viralunity consensus` / `viralunity meta` runs never
+  have to materialize envs on the hot path. Options: `--conda-prefix PATH`, `--pipelines
+  [consensus-illumina|consensus-nanopore|meta-illumina|meta-nanopore|all]` (repeatable,
+  default `all`), `--threads INT`, `--dry-run`. Segmented workflow variants intentionally
+  share envs with their non-segmented counterparts and are not separate selections.
+- New `--conda-prefix` option on both `viralunity consensus` (illumina + nanopore) and
+  `viralunity meta` (illumina + nanopore) so pipeline runs reuse the cache produced by
+  `viralunity setup`. Picks up `$VIRALUNITY_CONDA_PREFIX` if set; otherwise defaults to
+  `~/.cache/viralunity/conda-envs/`.
+- `ConfigGenerator.write_skeleton(pipeline, data_type, config_path, placeholder_dir)`
+  classmethod + `SKELETON_PLACEHOLDERS` map: emits a minimal YAML config sufficient for
+  Snakemake to parse a workflow with `conda_create_envs_only=True`, paired with the set of
+  empty input files the DAG build needs to touch.
+- Docs: `docs/installation.md` "Troubleshooting" subsection (conda 26.x / bioconda shards
+  404 symptom + escape hatch) and "First-time environment setup" subsection;
+  `docs/tutorial/setup.md` step 1b "Build per-rule environments"; `docs/commands.md`
+  `viralunity setup` section plus the `--conda-prefix` flag on the consensus and meta
+  shared-options tables.
+- Tests: `--conda-prefix` wiring on both CLIs, orchestrator forwarding, and skeleton +
+  setup CLI coverage. +13 tests total.
 
 ### Changed
 
@@ -206,6 +257,19 @@ across negative controls).
   dehosting step: dehosted reads (when dehosting is on), post-QC reads (Illumina, dehosting
   off), or raw reads (Nanopore, dehosting off). This is the correct normalisation base and
   was already the implicit behaviour — it is now documented and tested explicitly.
+- `environment.yml`: pinned `conda` and `conda-libmamba-solver` to `>=24,<26` with an
+  inline comment naming the lift condition (bioconda publishes shards OR conda's shards
+  path tolerates 404s gracefully) — the immediate workaround for the
+  `CreateCondaEnvironmentException` (see "Fixed" below).
+- Default conda env cache path for `viralunity consensus` / `viralunity meta` is now
+  `~/.cache/viralunity/conda-envs/` (override with `--conda-prefix` or
+  `$VIRALUNITY_CONDA_PREFIX`). Snakemake previously materialized envs into
+  `<workdir>/.snakemake/conda/` per working directory, so existing users' per-workdir
+  caches become orphaned on first post-upgrade run and rebuild once into the shared cache.
+  Subsequent runs are faster and survive across workdirs.
+- `viralunity/_orchestrator.py:run_workflow` now forwards `args.get("conda_prefix")` to the
+  `snakemake(...)` call. Absent key resolves to `None`, preserving the previous per-workdir
+  behaviour for direct callers and tests that do not set the key.
 
 ### Removed
 
@@ -231,126 +295,23 @@ across negative controls).
   takes raw sample IDs, but the summary `sample` column is prefixed; the enrichment step
   matched the raw IDs and aborted with "None of the provided negative controls appear...".
   IDs are now prefixed to match, with fast-fail validation that each names a real sample.
-
-## [Unreleased]  - 2026-05-24
-
-### Added
-
-- New `viralunity setup` subcommand that pre-builds every per-rule conda
-  environment into a shared cache at install time, so `viralunity
-  consensus` / `viralunity meta` runs never have to materialize envs on
-  the hot path. Options: `--conda-prefix PATH`, `--pipelines
-  [consensus-illumina|consensus-nanopore|meta-illumina|meta-nanopore|all]`
-  (repeatable, default `all`), `--threads INT`, `--dry-run`. Segmented
-  workflow variants intentionally share envs with their non-segmented
-  counterparts and are not separate selections.
-- New `--conda-prefix` option on both `viralunity consensus`
-  (illumina + nanopore) and `viralunity meta` (illumina + nanopore) so
-  pipeline runs reuse the cache produced by `viralunity setup`. Picks up
-  `$VIRALUNITY_CONDA_PREFIX` if set; otherwise defaults to
-  `~/.cache/viralunity/conda-envs/`.
-- `ConfigGenerator.write_skeleton(pipeline, data_type, config_path,
-  placeholder_dir)` classmethod + `SKELETON_PLACEHOLDERS` map: emits a
-  minimal YAML config sufficient for Snakemake to parse a workflow with
-  `conda_create_envs_only=True`, paired with the set of empty input
-  files the DAG build needs to touch.
-- `docs/installation.md`: new "Troubleshooting" subsection covering the
-  conda 26.x / bioconda shards 404 symptom + escape hatch, and a new
-  "First-time environment setup" subsection calling out
-  `viralunity setup --pipelines all`.
-- `docs/tutorial/setup.md`: new step 1b "Build per-rule environments"
-  between Install and Generate sample sheets.
-- `docs/commands.md`: new `viralunity setup` section with the four
-  options plus four worked examples (install-time, partial,
-  `--dry-run`, shared-cache via `$VIRALUNITY_CONDA_PREFIX`); the
-  `--conda-prefix` flag is documented on both the consensus and meta
-  shared-options tables.
-- Tests: `--conda-prefix` wiring on both CLIs
-  (`test/viralunity_consensus_cli_test.py`,
-  `test/viralunity_meta_cli_test.py`), orchestrator forwarding
-  (`test/viralunity_orchestrator_test.py`), and skeleton + setup CLI
-  coverage (`test/viralunity_setup_cli_test.py`). +13 tests total.
-- **Taxonomic false-positive filters for `viralunity meta`** — optional
-  post-classification filters that remove non-target detections before the
-  bleed/negative-control statistics are computed. Filters run in a
-  cheap→expensive chain (each step appends a filename suffix and writes a
-  `*.dropped.tsv` audit sidecar):
-  - `--run-ictv-host-filter` (+ `--ictv-vertebrate-taxids-file`): keeps only
-    vertebrate-infecting viruses, dropping phages and plant/fungal/algal/
-    invertebrate-only viruses via a lineage-aware ICTV-derived taxid allowlist
-    (built by `viralunity get-databases ictv-vertebrate-taxids`). Applies to
-    all four tracks.
-  - `--run-nr-validation` (+ `--nr-diamond-database`, `--nr-evalue`,
-    `--nr-max-target-seqs`, `--nr-sensitivity`, `--nr-consensus-threshold`):
-    re-searches de novo viral contigs against NCBI `nr` in one aggregated
-    `diamond blastx` and drops contigs an LCA consensus confidently calls
-    non-viral. Contig tracks only; requires `--run-denovo-assembly` and
-    `--run-diamond-contigs`.
-  - `--combine-contig-search`: runs the contig DIAMOND search once over all
-    samples' contigs (combine → search → split) instead of per sample.
-
-### Changed
-
-- **Taxa-summary output filenames now form one cumulative chain**
-  (`viralunity meta`). Every enabled post-normalisation step appends exactly one
-  suffix, in the order `_RPM`/`_RPKM` → `.nr` → `.bleed` → `.neg` → `.ictv`, so
-  the fully-filtered table is always the file with the longest name (e.g.
-  `diamond_contigs_taxa_summary_RPKM.nr.bleed.neg.ictv.tsv`) and disabled options
-  never appear. The active metric token (`_RPM`/`_RPKM`) is now carried
-  consistently through the whole chain — previously the bleed/negative-control
-  outputs were mislabelled `_RPM.bleed[.neg]` even when they were derived from the
-  RPKM, NR-filtered table. This is a **user-facing output-filename change**: paths
-  like `*_RPM.bleed.neg.tsv` are replaced by the cumulative names. The reorder
-  (NR before bleed, ICTV last) is result-neutral — `.bleed`/`.neg` only add
-  per-taxon `bleed_pass`/`neg_pass` columns and never remove rows, so the surviving
-  taxa and all values are unchanged. Downstream consumers (filtered Krona,
-  reference assembly) resolve the fully-filtered table automatically.
-- `environment.yml`: pinned `conda` and `conda-libmamba-solver` to
-  `>=24,<26` with an inline comment naming the lift condition (bioconda
-  publishes shards OR conda's shards path tolerates 404s gracefully).
-  This is the immediate workaround for the
-  `CreateCondaEnvironmentException` (see "Fixed" below).
-- Default conda env cache path for `viralunity consensus` /
-  `viralunity meta` is now `~/.cache/viralunity/conda-envs/`
-  (override with `--conda-prefix` or `$VIRALUNITY_CONDA_PREFIX`).
-  Snakemake previously materialized envs into `<workdir>/.snakemake/conda/`
-  per working directory, so existing users' per-workdir caches become
-  orphaned on first post-upgrade run and rebuild once into the shared
-  cache. Subsequent runs are faster and survive across workdirs.
-- `viralunity/_orchestrator.py:run_workflow` now forwards
-  `args.get("conda_prefix")` to the `snakemake(...)` call. Absent key
-  resolves to `None`, preserving the previous per-workdir behaviour
-  for direct callers and tests that do not set the key.
-
-### Fixed
-
-- `viralunity setup` now pre-builds the conda envs gated by every
-  optional pipeline flag — previously the skeleton config used by
-  `setup` left `run_isnv`, `run_denovo_assembly`, `run_diamond_*`,
-  `run_reference_assembly`, and the meta-nanopore polish flags off, so
-  Snakemake's DAG walk pruned the matching rules and their envs were
-  never materialized. A user who pre-warmed with `setup` and then ran
-  e.g. `viralunity consensus illumina --run-isnv` still hit dynamic env
-  creation for `envs/consensus.yaml` at runtime — exactly the failure
-  mode `setup` exists to avoid. `setup --pipelines consensus-illumina`
-  now builds 4 envs instead of 3 (adds `consensus.yaml`); the meta
-  variants pick up `assembly.yaml`, `genome_selection.yaml`, and
-  (nanopore) `medaka.yaml`. `SKELETON_PLACEHOLDERS` grew the
-  reference-assembly placeholders (`virus_genomes/*.fasta`, `*.tsv`,
-  `diamond/protein2taxid.tsv`) needed for the expanded DAG.
-- **Critical:** first pipeline run on a fresh install with the current
-  conda stack (conda 26.x + conda-libmamba-solver 26.x) aborts on
-  `Creating conda environment .../qc.yaml` with a
-  `CreateCondaEnvironmentException`. Root cause is upstream:
-  conda-libmamba-solver's "repodata shards" optimization queries
-  `repodata_shards.msgpack.zst` from bioconda, which does not publish
-  one; the resulting HTTP 404 trips conda's `RepodataIsEmpty`
-  constructor, which calls `response.json()` on the non-JSON 404 body
-  and crashes inside conda's own error path. Fixed by the
-  `environment.yml` toolchain pin (see "Changed") and structurally
-  neutralized by `viralunity setup` (see "Added"): containerless
-  pipeline runs no longer touch the host solver after the cache is
-  pre-warmed.
+- `viralunity setup` pre-builds the conda envs gated by every optional pipeline flag —
+  the skeleton config previously left `run_isnv`, `run_denovo_assembly`, `run_diamond_*`,
+  `run_reference_assembly`, and the meta-nanopore polish flags off, so Snakemake's DAG walk
+  pruned the matching rules and their envs were never materialized. `setup --pipelines
+  consensus-illumina` now builds 4 envs instead of 3 (adds `consensus.yaml`); the meta
+  variants pick up `assembly.yaml`, `genome_selection.yaml`, and (nanopore) `medaka.yaml`.
+  `SKELETON_PLACEHOLDERS` grew the reference-assembly placeholders needed for the expanded
+  DAG.
+- **Critical:** first pipeline run on a fresh install with conda 26.x +
+  conda-libmamba-solver 26.x aborted on `Creating conda environment .../qc.yaml` with a
+  `CreateCondaEnvironmentException`. Root cause is upstream: conda-libmamba-solver's
+  "repodata shards" optimization queries `repodata_shards.msgpack.zst` from bioconda, which
+  does not publish one; the resulting HTTP 404 trips conda's `RepodataIsEmpty` constructor,
+  which calls `response.json()` on the non-JSON 404 body and crashes inside conda's own
+  error path. Fixed by the `environment.yml` toolchain pin (see "Changed") and structurally
+  neutralized by `viralunity setup` (see "Added"): containerless pipeline runs no longer
+  touch the host solver after the cache is pre-warmed.
 
 ## [1.1.0] - 2026-05-21
 
