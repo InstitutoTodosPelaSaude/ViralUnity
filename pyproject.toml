@@ -62,7 +62,7 @@ version = { attr = "viralunity.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["viralunity*"]
-exclude = ["test*", "docs*", "docs-pt*"]
+exclude = ["test*", "docs*"]
 
 [tool.setuptools.package-data]
 "viralunity.scripts" = ["*.smk", "**/*.smk", "envs/*.yaml"]

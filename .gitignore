@@ -95,4 +95,3 @@ test/dryrun_output/
 test/empirical/.cache/
 # Documentation builds
 docs/_build/
-docs-pt/_build/
