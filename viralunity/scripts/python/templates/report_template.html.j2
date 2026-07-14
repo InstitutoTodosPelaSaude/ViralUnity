@@ -64,10 +64,9 @@ select {
 label.control { font-size: 0.85rem; color: var(--text-secondary); margin-right: 6px; }
 table.stats-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 table.stats-table th, table.stats-table td {
-  padding: 7px 12px; text-align: right; white-space: nowrap;
+  padding: 7px 14px; text-align: center; white-space: nowrap;
   border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
 }
-table.stats-table th:first-child, table.stats-table td:first-child { text-align: left; }
 table.stats-table th {
   cursor: pointer; user-select: none; color: var(--text-secondary);
   font-weight: 600; position: sticky; top: 0; background: var(--card-bg);
@@ -76,6 +75,8 @@ table.stats-table th:hover { color: var(--text-primary); }
 table.stats-table tbody tr:hover { background: var(--hover); }
 .sort-arrow { font-size: 0.7em; color: var(--text-muted); margin-left: 4px; }
 .plot-holder { min-height: 60px; }
+.chart-note { font-size: 0.8rem; color: var(--text-muted); margin: 8px 4px 0; }
+.run-meta { font-size: 0.85rem; color: var(--text-secondary); margin: 0 4px 16px; }
 </style>
 </head>
 <body data-palette="{{ palette_light|join(',') }}">
@@ -87,6 +88,14 @@ table.stats-table tbody tr:hover { background: var(--hover); }
 
   <p class="section-title">Overview</p>
 
+  {% if metadata %}
+  <p class="run-meta">
+    {{ metadata.platform|capitalize }} &middot; {{ metadata.library_layout }}-end
+    {%- if metadata.primer_scheme %} &middot; primers: {{ metadata.primer_scheme }}{% endif %}
+    {%- if not metadata.qc_performed %} &middot; no read-QC step (Nanopore){% endif %}
+  </p>
+  {% endif %}
+
   <div class="card">
     <h2>Assembly statistics</h2>
     {{ stats_table_html|safe }}
@@ -95,6 +104,7 @@ table.stats-table tbody tr:hover { background: var(--hover); }
   <div class="card">
     <h2>Reads per sample</h2>
     {{ reads_fig_html|safe }}
+    {% if reads_note %}<p class="chart-note">{{ reads_note }}</p>{% endif %}
   </div>
 
   <div class="card">
@@ -155,11 +165,12 @@ function toggleTheme() {
   themeCharts();
 }
 function themeCharts() {
+  // Gridlines use a semi-transparent gray that reads on both themes, so only
+  // the font colour needs to flip. Applying font.color globally also covers
+  // multi-axis subplots (the reads figure) that per-axis keys would miss.
   const dark = isDark();
   const upd = {
     'font.color': dark ? '#c3c2b7' : '#52514e',
-    'xaxis.gridcolor': dark ? '#2c2c2a' : '#e1e0d9',
-    'yaxis.gridcolor': dark ? '#2c2c2a' : '#e1e0d9',
     'paper_bgcolor': 'rgba(0,0,0,0)',
     'plot_bgcolor': 'rgba(0,0,0,0)',
   };
@@ -201,7 +212,13 @@ function sortTable(th) {
 }
 
 /* ---- lazy per-sample coverage plots ---- */
-function coverageLayout(title) {
+// Log10 range for a depth axis — must match Python's _log_depth_range: floor at
+// 1 (10^0), top = 1.5x the data max but never below 150, so 20x/100x always show.
+function logDepthRange(maxDepth) {
+  const top = Math.max(150, (maxDepth || 0) * 1.5);
+  return [0, Math.log10(top)];
+}
+function coverageLayout(title, maxDepth) {
   const dark = isDark();
   return {
     width: FIG_WIDTH, height: FIG_HEIGHT, title: {text: title},
@@ -209,8 +226,9 @@ function coverageLayout(title) {
     paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
     font: {family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 13,
            color: dark ? '#c3c2b7' : '#52514e'},
-    xaxis: {title: {text: 'Genome position'}, gridcolor: dark ? '#2c2c2a' : '#e1e0d9', zeroline: false},
-    yaxis: {title: {text: 'Depth (log)'}, type: 'log', gridcolor: dark ? '#2c2c2a' : '#e1e0d9', zeroline: false},
+    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: {title: {text: 'Depth (log)'}, type: 'log', range: logDepthRange(maxDepth),
+            gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
     hovermode: 'x unified', showlegend: false,
     shapes: [
       {type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 20, y1: 20, line: {color: '#898781', width: 1, dash: 'dot'}},
@@ -231,8 +249,11 @@ function showSample(sample) {
     div.id = 'sample-cov-' + i;
     holder.appendChild(div);
     const label = e.label ? (sample + ' — ' + e.label) : sample;
-    const trace = {x: e.x, y: e.y, mode: 'lines', line: {width: 2, color: '#2a78d6'}, name: label};
-    Plotly.newPlot(div, [trace], coverageLayout(label), {responsive: false, displayModeBar: false});
+    const maxDepth = e.y.length ? Math.max.apply(null, e.y) : 0;
+    // Clamp zeros to 1 so the log axis can render them (shown at the floor).
+    const y = e.y.map(function (v) { return Math.max(1, v); });
+    const trace = {x: e.x, y: y, mode: 'lines', line: {width: 2, color: '#2a78d6'}, name: label};
+    Plotly.newPlot(div, [trace], coverageLayout(label, maxDepth), {responsive: false, displayModeBar: false});
   });
   renderSampleStats(sample);
 }

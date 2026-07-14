@@ -22,6 +22,7 @@ import plotly.graph_objects as go
 from viralunity.scripts.python.generate_consensus_report import (
     build_coverage_bar_chart,
     build_reads_histogram,
+    build_report_metadata,
     build_stats_table_html,
     dedupe_and_sum_reads,
     downsample_min_pool,
@@ -129,9 +130,8 @@ class TestReadStatsAndTable(unittest.TestCase):
     def test_table_formats_percentages_and_depth(self):
         df = pd.read_csv(io.StringIO(UNSEG_CSV))
         html = build_stats_table_html(df)
-        # percentage columns are fractions in [0,1] -> rendered x100 with a % suffix.
+        # horizontal_coverage is a fraction in [0,1] -> rendered x100 with %.
         self.assertIn("99.6%", html)  # 0.99595... -> 99.6%
-        self.assertIn("94.8%", html)  # 0.94759... -> 94.8%
         # depth is rounded for display.
         self.assertIn("3245.2", html)
         # raw fraction strings must not leak through.
@@ -139,6 +139,56 @@ class TestReadStatsAndTable(unittest.TestCase):
         # sample names appear verbatim.
         self.assertIn("sample-A", html)
         self.assertIn("sample-B", html)
+
+    def test_table_drops_percentage_above_columns_and_humanizes_headers(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df)
+        # the percentage_above_*x columns are removed entirely...
+        self.assertNotIn("percentage_above", html)
+        self.assertNotIn("94.8%", html)  # was percentage_above_1000x for sample-A
+        # ...raw snake_case headers are replaced with human-readable labels.
+        self.assertNotIn("sample_name", html)
+        self.assertNotIn("average_depth", html)
+        self.assertIn(">Sample<", html)
+        self.assertIn("Total reads", html)
+        self.assertIn("Mean depth", html)
+        self.assertIn("Genome coverage", html)
+
+
+class TestReportMetadata(unittest.TestCase):
+    def test_illumina_config_is_paired_with_qc(self):
+        meta = build_report_metadata({"data": "illumina", "scheme": "NA"}, "/no/dir")
+        self.assertEqual(meta["platform"], "illumina")
+        self.assertEqual(meta["library_layout"], "paired")
+        self.assertTrue(meta["qc_performed"])
+        self.assertIsNone(meta["primer_scheme"])
+
+    def test_nanopore_config_is_single_without_qc(self):
+        meta = build_report_metadata({"data": "nanopore", "scheme": "NA"}, "/no/dir")
+        self.assertEqual(meta["platform"], "nanopore")
+        self.assertEqual(meta["library_layout"], "single")
+        self.assertFalse(meta["qc_performed"])
+
+    def test_primer_scheme_kept_when_not_na(self):
+        meta = build_report_metadata(
+            {"data": "illumina", "scheme": "schemes/sarscov2.primers.bed"}, "/no/dir"
+        )
+        self.assertEqual(meta["primer_scheme"], "schemes/sarscov2.primers.bed")
+
+    def test_infers_illumina_from_qc_dir_when_no_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "qc"))
+            meta = build_report_metadata(None, d)
+        self.assertEqual(meta["platform"], "illumina")
+        self.assertEqual(meta["library_layout"], "paired")
+        self.assertTrue(meta["qc_performed"])
+
+    def test_infers_nanopore_when_no_config_and_no_qc_dir(self):
+        with tempfile.TemporaryDirectory() as d:
+            meta = build_report_metadata(None, d)
+        self.assertEqual(meta["platform"], "nanopore")
+        self.assertEqual(meta["library_layout"], "single")
+        self.assertFalse(meta["qc_performed"])
 
 
 class TestLoadBasewiseTable(unittest.TestCase):
