@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ViralUnity consensus report</title>
+<script>{{ plotly_js|safe }}</script>
+<style>
+:root {
+  --page-bg: #f9f9f7;
+  --card-bg: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --hover: rgba(42,120,214,0.08);
+}
+:root[data-theme="dark"] {
+  --page-bg: #0d0d0d;
+  --card-bg: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --border: rgba(255,255,255,0.10);
+  --accent: #3987e5;
+  --hover: rgba(57,135,229,0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page-bg);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 28px; border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 20px 64px; }
+.section-title {
+  font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 28px 4px 12px;
+}
+.card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px; margin-bottom: 18px;
+  overflow-x: auto;
+}
+.card h2 { font-size: 1rem; margin: 0 0 14px; font-weight: 600; }
+.theme-toggle {
+  background: var(--card-bg); border: 1px solid var(--border);
+  color: var(--text-secondary); border-radius: 8px; padding: 7px 12px;
+  cursor: pointer; font-size: 0.85rem;
+}
+.theme-toggle:hover { background: var(--hover); }
+select {
+  background: var(--card-bg); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 8px; padding: 7px 10px;
+  font-size: 0.9rem; margin: 0 8px 14px 0;
+}
+label.control { font-size: 0.85rem; color: var(--text-secondary); margin-right: 6px; }
+table.stats-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+table.stats-table th, table.stats-table td {
+  padding: 7px 12px; text-align: right; white-space: nowrap;
+  border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+table.stats-table th:first-child, table.stats-table td:first-child { text-align: left; }
+table.stats-table th {
+  cursor: pointer; user-select: none; color: var(--text-secondary);
+  font-weight: 600; position: sticky; top: 0; background: var(--card-bg);
+}
+table.stats-table th:hover { color: var(--text-primary); }
+table.stats-table tbody tr:hover { background: var(--hover); }
+.sort-arrow { font-size: 0.7em; color: var(--text-muted); margin-left: 4px; }
+.plot-holder { min-height: 60px; }
+</style>
+</head>
+<body data-palette="{{ palette_light|join(',') }}">
+<header>
+  <h1>ViralUnity consensus report{% if segmented %} <span style="color:var(--text-muted);font-weight:400">· segmented</span>{% endif %}</h1>
+  <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">Dark mode</button>
+</header>
+<main>
+
+  <p class="section-title">Overview</p>
+
+  <div class="card">
+    <h2>Assembly statistics</h2>
+    {{ stats_table_html|safe }}
+  </div>
+
+  <div class="card">
+    <h2>Reads per sample</h2>
+    {{ reads_fig_html|safe }}
+  </div>
+
+  <div class="card">
+    <h2>Average depth (log scale)</h2>
+    {{ depth_fig_html|safe }}
+  </div>
+
+  <div class="card">
+    <h2>Aggregated coverage</h2>
+    {% if segmented %}
+    <div>
+      <label class="control" for="aggSegmentSelect">Segment</label>
+      <select id="aggSegmentSelect" onchange="showPanel('agg-panel', this.value)">
+        {% for panel in aggregated_panels %}
+        <option value="{{ panel.segment }}">{{ panel.segment }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    {% for panel in aggregated_panels %}
+    <div class="agg-panel" data-key="{{ panel.segment }}" style="display: {{ 'block' if loop.first else 'none' }};">
+      {{ panel.html|safe }}
+    </div>
+    {% endfor %}
+  </div>
+
+  <p class="section-title">Per-sample detail</p>
+
+  <div class="card">
+    <h2>Coverage by sample</h2>
+    <div>
+      <label class="control" for="sampleSelect">Sample</label>
+      <select id="sampleSelect" onchange="showSample(this.value)">
+        {% for s in samples %}
+        <option value="{{ s }}">{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div id="sample-stats"></div>
+    <div id="sample-coverage" class="plot-holder"></div>
+  </div>
+
+</main>
+
+<script id="coverageData" type="application/json">{{ coverage_json|safe }}</script>
+<script id="statsData" type="application/json">{{ stats_by_sample|safe }}</script>
+<script>
+const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
+const STATS = JSON.parse(document.getElementById('statsData').textContent);
+const FIG_WIDTH = 900, FIG_HEIGHT = 420;
+
+/* ---- theme ---- */
+function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+function toggleTheme() {
+  const dark = !isDark();
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.getElementById('theme-btn').textContent = dark ? 'Light mode' : 'Dark mode';
+  themeCharts();
+}
+function themeCharts() {
+  const dark = isDark();
+  const upd = {
+    'font.color': dark ? '#c3c2b7' : '#52514e',
+    'xaxis.gridcolor': dark ? '#2c2c2a' : '#e1e0d9',
+    'yaxis.gridcolor': dark ? '#2c2c2a' : '#e1e0d9',
+    'paper_bgcolor': 'rgba(0,0,0,0)',
+    'plot_bgcolor': 'rgba(0,0,0,0)',
+  };
+  document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    try { Plotly.relayout(gd, upd); } catch (e) { /* not yet drawn */ }
+  });
+}
+
+/* ---- generic display:none panel toggle (aggregated segment switch) ---- */
+function showPanel(cls, key) {
+  document.querySelectorAll('.' + cls).forEach(function (p) {
+    p.style.display = (p.getAttribute('data-key') === key) ? 'block' : 'none';
+  });
+  themeCharts();
+}
+
+/* ---- client-side table sort ---- */
+function sortTable(th) {
+  const table = th.closest('table');
+  const idx = parseInt(th.getAttribute('data-col'), 10);
+  const asc = th.getAttribute('data-asc') !== 'true';
+  const rows = Array.from(table.tBodies[0].rows);
+  rows.sort(function (a, b) {
+    const av = a.cells[idx].getAttribute('data-sort');
+    const bv = b.cells[idx].getAttribute('data-sort');
+    const an = parseFloat(av), bn = parseFloat(bv);
+    let cmp;
+    if (!isNaN(an) && !isNaN(bn)) cmp = an - bn;
+    else cmp = String(av).localeCompare(String(bv));
+    return asc ? cmp : -cmp;
+  });
+  rows.forEach(function (r) { table.tBodies[0].appendChild(r); });
+  table.querySelectorAll('th').forEach(function (h) {
+    h.setAttribute('data-asc', 'false');
+    const arr = h.querySelector('.sort-arrow'); if (arr) arr.textContent = '';
+  });
+  th.setAttribute('data-asc', asc ? 'true' : 'false');
+  const arrow = th.querySelector('.sort-arrow'); if (arrow) arrow.textContent = asc ? '▲' : '▼';
+}
+
+/* ---- lazy per-sample coverage plots ---- */
+function coverageLayout(title) {
+  const dark = isDark();
+  return {
+    width: FIG_WIDTH, height: FIG_HEIGHT, title: {text: title},
+    margin: {l: 60, r: 30, t: 50, b: 60},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: {family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 13,
+           color: dark ? '#c3c2b7' : '#52514e'},
+    xaxis: {title: {text: 'Genome position'}, gridcolor: dark ? '#2c2c2a' : '#e1e0d9', zeroline: false},
+    yaxis: {title: {text: 'Depth (log)'}, type: 'log', gridcolor: dark ? '#2c2c2a' : '#e1e0d9', zeroline: false},
+    hovermode: 'x unified', showlegend: false,
+    shapes: [
+      {type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 20, y1: 20, line: {color: '#898781', width: 1, dash: 'dot'}},
+      {type: 'line', xref: 'paper', x0: 0, x1: 1, y0: 100, y1: 100, line: {color: '#898781', width: 1, dash: 'dot'}}
+    ],
+    annotations: [
+      {xref: 'paper', x: 1, y: 20, yref: 'y', text: '20x', showarrow: false, xanchor: 'right', font: {color: '#898781', size: 11}},
+      {xref: 'paper', x: 1, y: 100, yref: 'y', text: '100x', showarrow: false, xanchor: 'right', font: {color: '#898781', size: 11}}
+    ]
+  };
+}
+function showSample(sample) {
+  const entries = COVERAGE[sample] || [];
+  const holder = document.getElementById('sample-coverage');
+  holder.innerHTML = '';
+  entries.forEach(function (e, i) {
+    const div = document.createElement('div');
+    div.id = 'sample-cov-' + i;
+    holder.appendChild(div);
+    const label = e.label ? (sample + ' — ' + e.label) : sample;
+    const trace = {x: e.x, y: e.y, mode: 'lines', line: {width: 2, color: '#2a78d6'}, name: label};
+    Plotly.newPlot(div, [trace], coverageLayout(label), {responsive: false, displayModeBar: false});
+  });
+  renderSampleStats(sample);
+}
+function renderSampleStats(sample) {
+  const rows = STATS[sample] || [];
+  const box = document.getElementById('sample-stats');
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const cols = Object.keys(rows[0]);
+  let html = '<table class="stats-table"><thead><tr>';
+  cols.forEach(function (c) { html += '<th>' + c + '</th>'; });
+  html += '</tr></thead><tbody>';
+  rows.forEach(function (r) {
+    html += '<tr>';
+    cols.forEach(function (c) { html += '<td>' + r[c] + '</td>'; });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  box.innerHTML = html;
+}
+
+/* ---- init ---- */
+window.addEventListener('load', function () {
+  themeCharts();
+  const first = document.getElementById('sampleSelect');
+  if (first && first.value) showSample(first.value);
+});
+</script>
+</body>
+</html>

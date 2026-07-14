@@ -24,6 +24,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from plotly.offline import get_plotlyjs
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -221,14 +222,23 @@ def build_stats_table_html(df: pd.DataFrame) -> str:
 # Figure builders
 # --------------------------------------------------------------------------- #
 def _base_layout(**kwargs) -> dict:
+    # Transparent surfaces + muted grid so the chart blends into the card in
+    # both light and dark; the page's theme toggle relayouts font/grid colour.
     layout = dict(
         width=FIG_WIDTH,
         height=FIG_HEIGHT,
         margin=dict(l=60, r=30, t=50, b=60),
-        template="plotly_white",
-        font=dict(family='system-ui, -apple-system, "Segoe UI", sans-serif', size=13),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(
+            family='system-ui, -apple-system, "Segoe UI", sans-serif',
+            size=13,
+            color="#52514e",
+        ),
         colorway=PALETTE_LIGHT,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis=dict(gridcolor="rgba(137,135,129,0.25)", zeroline=False),
+        yaxis=dict(gridcolor="rgba(137,135,129,0.25)", zeroline=False),
     )
     layout.update(kwargs)
     return layout
@@ -425,7 +435,7 @@ def render_report(output_dir: str) -> str:
     )
     template = env.get_template(TEMPLATE_NAME)
     return template.render(
-        plotly_js=pio.get_plotlyjs(),
+        plotly_js=get_plotlyjs(),
         segmented=segmented,
         samples=samples,
         segments=[s or "" for s in segments],
