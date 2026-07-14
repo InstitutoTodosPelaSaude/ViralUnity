@@ -20,7 +20,6 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
-    build_coverage_bar_chart,
     build_reads_histogram,
     build_report_metadata,
     build_stats_table_html,
@@ -256,16 +255,6 @@ class TestFigureBuilders(unittest.TestCase):
         fig = build_reads_histogram(df)
         self.assertIsInstance(fig, go.Figure)
         self.assertGreaterEqual(len(fig.data), 1)
-
-    def test_coverage_bar_has_20x_100x_guides(self):
-        df = pd.read_csv(io.StringIO(UNSEG_CSV))
-        fig = build_coverage_bar_chart(df, segmented=False)
-        self.assertIsInstance(fig, go.Figure)
-        annotations = " ".join(a.text or "" for a in fig.layout.annotations)
-        self.assertIn("20x", annotations)
-        self.assertIn("100x", annotations)
-        # depth chart uses a log y-axis.
-        self.assertEqual(fig.layout.yaxis.type, "log")
 
 
 if __name__ == "__main__":

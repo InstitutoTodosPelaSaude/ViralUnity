@@ -454,29 +454,6 @@ def build_reads_histogram(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def build_coverage_bar_chart(df: pd.DataFrame, segmented: bool) -> go.Figure:
-    """Log-y bar of average depth (one bar per sample x segment row).
-
-    A single measure -> one hue for every bar. 20x/100x guide lines annotated.
-    """
-    if segmented:
-        labels = [f"{s} | {seg}" for s, seg in zip(df["sample_name"], df["segment"])]
-    else:
-        labels = df["sample_name"].tolist()
-    max_depth = float(df["average_depth"].max()) if len(df) else 100.0
-    fig = go.Figure()
-    fig.add_bar(x=labels, y=df["average_depth"], marker_color=SERIES_1_LIGHT, name="Average depth")
-    fig.update_layout(
-        _base_layout(showlegend=False),
-        yaxis_type="log",
-        yaxis_range=_log_depth_range(max_depth),
-        yaxis_title="Mean depth (log)",
-        xaxis_title="Sample" + (" x segment" if segmented else ""),
-    )
-    _add_depth_guides(fig)
-    return fig
-
-
 def build_aggregated_coverage_line_plot(
     per_sample_series: Dict[str, Tuple[np.ndarray, np.ndarray]], title: str
 ) -> go.Figure:
@@ -589,7 +566,6 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired)
     reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df)))
-    depth_fig_html = _fig_to_html(build_coverage_bar_chart(df, segmented))
 
     # Aggregated coverage: one panel per segment (segments have different lengths).
     aggregated_panels = []
@@ -640,7 +616,6 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
         stats_table_html=stats_table_html,
         reads_fig_html=reads_fig_html,
         reads_note=reads_note,
-        depth_fig_html=depth_fig_html,
         aggregated_panels=aggregated_panels,
         coverage_json=json.dumps(coverage_json),
         stats_by_sample=json.dumps(stats_by_sample),

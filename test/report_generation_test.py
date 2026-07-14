@@ -58,8 +58,8 @@ class _ReportCase:
 
     def test_has_prerendered_plotly_figures(self):
         html = self._render()
-        # reads histogram + depth bar + >=1 aggregated panel are pre-rendered.
-        self.assertGreaterEqual(html.count("Plotly.newPlot"), 3)
+        # reads histogram + >=1 aggregated panel are pre-rendered.
+        self.assertGreaterEqual(html.count("Plotly.newPlot"), 2)
 
 
 class TestUnsegmentedReport(_ReportCase, unittest.TestCase):
