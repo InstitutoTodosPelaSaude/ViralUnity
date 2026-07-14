@@ -257,6 +257,21 @@ class TestFigureBuilders(unittest.TestCase):
         self.assertIsInstance(fig, go.Figure)
         self.assertGreaterEqual(len(fig.data), 1)
 
+    def test_throughput_has_distinct_hues_and_mapped_percent_panel(self):
+        df = dedupe_and_sum_reads(pd.read_csv(io.StringIO(UNSEG_CSV)))
+        fig = build_reads_histogram(df, paired=True)
+        by_name = {t.name: t for t in fig.data}
+        self.assertEqual(set(by_name), {"Total reads", "QC-passed reads", "Mapped %"})
+        # three distinct hues, none dimmed by opacity.
+        colors = {t.marker.color for t in fig.data}
+        self.assertEqual(len(colors), 3)
+        for t in fig.data:
+            self.assertIn(t.opacity, (None, 1.0))
+        # lower panel is the mapping rate on a fixed 0-100 axis.
+        mapped = by_name["Mapped %"]
+        self.assertAlmostEqual(mapped.y[0], 643219 / (2 * 330568) * 100, places=1)
+        self.assertEqual(tuple(fig.layout.yaxis2.range), (0, 100))
+
     def test_aggregated_coverage_is_linear_with_honest_zeros(self):
         series = {"sample-A": (np.array([1, 2, 3, 4]), np.array([0.0, 10.0, 100.0, 0.0]))}
         fig = build_aggregated_coverage_line_plot(series, "Aggregated coverage")

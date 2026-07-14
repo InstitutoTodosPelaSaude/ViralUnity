@@ -102,9 +102,8 @@ table.stats-table tbody tr:hover { background: var(--hover); }
   </div>
 
   <div class="card">
-    <h2>Reads per sample</h2>
+    <h2>Sequencing throughput</h2>
     {{ reads_fig_html|safe }}
-    {% if reads_note %}<p class="chart-note">{{ reads_note }}</p>{% endif %}
   </div>
 
   <div class="card">

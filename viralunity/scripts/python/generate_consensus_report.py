@@ -391,28 +391,36 @@ def _add_depth_guides(fig: go.Figure) -> None:
     )
 
 
-def build_reads_histogram(df: pd.DataFrame) -> go.Figure:
-    """Reads per sample as two stacked panels sharing the sample x-axis.
+def build_reads_histogram(df: pd.DataFrame, paired: bool = True) -> go.Figure:
+    """Sequencing throughput per sample, as two stacked panels sharing the x-axis.
 
     Top panel: total vs QC-passed reads. These are a subset relationship
     (QC-passed <= total), so they are overlaid — the QC-passed bar sits in front
-    of the total bar and the remainder is the reads dropped in QC. Bottom panel:
-    mapped reads (a single measure, its own hue).
+    of the total bar and the blue remainder above it is the reads dropped in QC.
+    Bottom panel: the **mapping rate** (``mapped / QC-passed``, denominator
+    doubled when paired) on a fixed 0-100 axis, so the chart tells the same story
+    as the table's Mapped % column instead of an absolute count on a second scale.
+
+    The three series get distinct hues (blue / green / orange) at full opacity
+    with a legend, so identity survives colour-blindness and screenshots.
     """
     samples = df["sample_name"].tolist()
+    mapped_pct = [
+        _mapping_rate(m, q, paired)
+        for m, q in zip(df["number_of_mapped_reads"], df["number_of_trim_paired_reads"])
+    ]
     fig = make_subplots(
         rows=2,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.14,
-        subplot_titles=("Total and QC-passed reads", "Mapped reads"),
+        vertical_spacing=0.22,
+        subplot_titles=("Total and QC-passed reads", "Mapped %"),
     )
     fig.add_bar(
         x=samples,
         y=df["number_of_reads"],
         name="Total reads",
         marker_color=PALETTE_LIGHT[0],
-        opacity=0.4,
         row=1,
         col=1,
     )
@@ -420,15 +428,16 @@ def build_reads_histogram(df: pd.DataFrame) -> go.Figure:
         x=samples,
         y=df["number_of_trim_paired_reads"],
         name="QC-passed reads",
-        marker_color=PALETTE_LIGHT[0],
+        marker_color=PALETTE_LIGHT[1],
         row=1,
         col=1,
     )
     fig.add_bar(
         x=samples,
-        y=df["number_of_mapped_reads"],
-        name="Mapped reads",
-        marker_color=PALETTE_LIGHT[1],
+        y=mapped_pct,
+        name="Mapped %",
+        marker_color=PALETTE_LIGHT[2],
+        hovertemplate="%{x}<br>%{y:.2f}% mapped<extra></extra>",
         row=2,
         col=1,
     )
@@ -444,7 +453,9 @@ def build_reads_histogram(df: pd.DataFrame) -> go.Figure:
         legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0),
     )
     fig.update_xaxes(gridcolor=GRID_COLOR, zeroline=False)
-    fig.update_yaxes(gridcolor=GRID_COLOR, zeroline=False, rangemode="tozero", title_text="Reads")
+    fig.update_yaxes(gridcolor=GRID_COLOR, zeroline=False, rangemode="tozero")
+    fig.update_yaxes(title_text="Reads", row=1, col=1)
+    fig.update_yaxes(title_text="Mapped %", range=[0, 100], row=2, col=1)
     fig.update_xaxes(title_text="Sample", row=2, col=1)
     return fig
 
@@ -541,7 +552,7 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
 
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired)
-    reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df)))
+    reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df), paired))
 
     # Aggregated coverage: one panel per segment (segments have different lengths).
     aggregated_panels = []
@@ -578,10 +589,6 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
 
     stats_by_sample = _stats_rows_by_sample(df, segmented, paired)
 
-    reads_note = (
-        "Top panel: read-pair counts. Bottom panel: individual read counts." if paired else ""
-    )
-
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
         autoescape=select_autoescape(["html", "xml"]),
@@ -595,7 +602,6 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
         segments=[s or "" for s in segments],
         stats_table_html=stats_table_html,
         reads_fig_html=reads_fig_html,
-        reads_note=reads_note,
         aggregated_panels=aggregated_panels,
         coverage_json=json.dumps(coverage_json),
         stats_by_sample=json.dumps(stats_by_sample),
