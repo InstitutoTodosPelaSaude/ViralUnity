@@ -115,6 +115,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
             variant_quality=args.get("variant_quality", 20),
             variant_depth=args.get("variant_depth", 10),
             minimum_map_quality=args.get("minimum_map_quality", 30),
+            generate_html_report=args.get("generate_html_report", True),
         )
 
     # Add Illumina-specific settings if needed
@@ -131,6 +132,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
             af_threshold=args.get("af_threshold", 0.51),
             af_isnv_threshold=args.get("af_isnv_threshold", 0),
             run_isnv=args.get("run_isnv", False),
+            generate_html_report=args.get("generate_html_report", True),
         )
 
     # Add resource settings
