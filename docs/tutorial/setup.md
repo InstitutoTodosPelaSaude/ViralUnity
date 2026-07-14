@@ -14,6 +14,10 @@ conda activate viralunity
 pip install -e .
 ```
 
+```{tip}
+For everyday use you can simply `pip install viralunity` (see [Installation](../installation.md#install-from-pypi-recommended)). This tutorial clones the repository because later steps point at bundled reference files under `my_results/`. Either way, conda/mamba must be available at runtime.
+```
+
 Verify:
 
 ```bash

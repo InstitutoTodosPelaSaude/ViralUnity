@@ -20,7 +20,7 @@ raw FASTQ
   ──► [host depletion: Deacon  OR  minimap2 vs --host-reference]
   │
   │   summary filter chain, applied to every classifier track:
-  │     RPM/RPKM ──► [.nr, contig tracks] ──► bleed ──► [.neg] ──► [.ictv]
+  │     RPM/RPKM ──► [.nr, contig tracks] ──► [.ctgstats, contig tracks] ──► bleed ──► [.neg] ──► [.ictv]
   │
   ├─► Kraken2 on reads          ──► filter chain ──► Krona (raw + filtered)
   ├─► [DIAMOND blastx on reads] ──► filter chain ──► Krona (raw + filtered)
@@ -32,7 +32,7 @@ raw FASTQ
   └─► MultiQC report (Illumina only)
 ```
 
-The output of every classifier — reads or contigs — flows through the same cumulative cross-sample summary stack: a raw count table, an RPM-normalised table (and optionally RPKM), optionally an NR-validated table (contig tracks), a bleed-filtered table, optionally a negative-control-enrichment table, and optionally an ICTV vertebrate-virus table. Each step appends one suffix to a single growing filename — `…_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv` — so the longest-named file is the fully filtered summary. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the filters.
+The output of every classifier — reads or contigs — flows through the same cumulative cross-sample summary stack: a raw count table, an RPM-normalised table (and optionally RPKM), optionally an NR-validated table (contig tracks), a bleed-filtered table, optionally a negative-control-enrichment table, and optionally an ICTV vertebrate-virus table. Each step appends one suffix to a single growing filename — `…_taxa_summary_{RPM|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` — so the longest-named file is the fully filtered summary. Each classifier also gets a *raw* and a *filtered* Krona HTML per sample so you can compare the unfiltered hits against what survives the filters.
 
 ## Decision matrix — what to turn on
 
@@ -80,16 +80,21 @@ samples/<sample>/
 └── kraken2_reads.filtered.krona.html  # same, but pruned to taxa that pass the bleed filter
 metagenomics/taxonomic_assignments/kraken2_reads/
 ├── results/<sample>.report.txt
-├── kraken2_reads_taxa_summary.tsv         # per-rank counts (family/genus/species)
-├── kraken2_reads_taxa_summary_RPM.tsv     # adds total_reads + RPM columns
-└── kraken2_reads_taxa_summary_RPM.bleed.tsv  # adds bleed_threshold + bleed_pass
+└── summaries/
+    ├── species/  kraken2_reads_species_taxa_summary_RPM.bleed.tsv   # ── the table you want ──
+    ├── genus/    kraken2_reads_genus_taxa_summary_RPM.bleed.tsv
+    ├── family/   kraken2_reads_family_taxa_summary_RPM.bleed.tsv
+    └── full/                                     # internal: the cumulative chain, all ranks in one table
+        ├── kraken2_reads_taxa_summary.tsv            # raw per-rank counts (family/genus/species)
+        ├── kraken2_reads_taxa_summary_RPM.tsv        # adds total_reads + rpm columns
+        └── kraken2_reads_taxa_summary_RPM.bleed.tsv  # adds bleed_threshold + bleed_pass
 ```
 
 How to read them:
 
 - **`samples/<sample>/kraken2_reads.report.txt`** — Kraken2's own per-taxon report (5 columns: percent, count, count-direct, rank, taxid, name). Use it as a familiar starting point if you know Kraken2 already.
 - **`samples/<sample>/kraken2_reads.krona.html`** — open it in a browser. The interactive sunburst lets you drill from "Viruses" down to specific species. The `.filtered.krona.html` next to it is the same picture pruned to taxa that survived the bleed filter (see [Understanding the filters](#understanding-the-filters) below). Use the raw plot to explore, the filtered plot to act.
-- **The three TSVs** progress: raw counts → +RPM → +bleed filter. Each row is one `(sample, tool, mode, rank, taxid)` tuple. Open the `.bleed.tsv` in your spreadsheet of choice and filter to `bleed_pass == True` to get the call list.
+- **The summary tables** live under `.../kraken2_reads/summaries/`. The browsable deliverable is one table per rank in `species/`, `genus/`, and `family/` (most users open `species/`, where each row is a `(sample, tool, mode, taxid)` tuple with `family` + `genus` names propagated in as columns). The `full/` subdirectory holds the internal cumulative chain — raw counts → +RPM → +bleed, one growing filename — for auditing each step. Open the `species/` table (or `full/*.bleed.tsv`) in your spreadsheet of choice and filter to `bleed_pass == True` to get the call list.
 
 ```{tip}
 For a reference output, compare against `my_results/test_meta_illumina/`. Its config (`my_results/config_meta_illumina.yml`) corresponds to Step D below — the full pipeline.
@@ -231,7 +236,7 @@ Outputs follow the same layout as the Illumina full run; the differences are the
 Real metagenomic data is noisy. Without cross-sample filtering, every sample looks like it contains thirty different viruses — most of them index-hopping, kit contamination, or extremely low-level cross-sample bleed during sequencing. ViralUnity's filtering chain is designed to suppress those signals while preserving real positives.
 
 The taxa summary is a single filename that grows one suffix per step —
-`<classifier>_taxa_summary_{RPM|RPKM}[.nr].bleed[.neg][.ictv].tsv` — so the
+`<classifier>_taxa_summary_{RPM|RPKM}[.nr][.ctgstats].bleed[.neg][.ictv].tsv` — so the
 longest-named file for a track is its fully-filtered summary. Each step:
 
 | Suffix (cumulative)   | What it adds                                                                                                  |
@@ -239,6 +244,7 @@ longest-named file for a track is its fully-filtered summary. Each step:
 | `_taxa_summary.tsv`   | Raw counts, one row per `(sample, tool, mode, rank, taxid)`.                                                   |
 | `…_RPM` / `…_RPKM`     | The normalisation base (one or the other). `_RPM` adds `total_reads` + `rpm`; `_RPKM` also adds `genome_length_bp`, `n_genomes`, `rpkm` (only when `--viral-genomes`/`--viral-taxids` are set). |
 | `….nr`                | **Contig tracks only, `--run-nr-validation`.** Adds `nr_pass`; contigs the NR LCA calls non-viral are removed (see below). |
+| `….ctgstats`          | **Contig tracks only, with `--viral-genomes`.** Adds `largest_contig_bp`, `largest_contig_ref_coverage_pct`, `largest_contig_median_depth` (columns only; no rows removed — see below). |
 | `….bleed`             | Adds `bleed_metric`, `bleed_max`, `bleed_threshold`, `bleed_applied`, `bleed_pass`. (Always produced.)         |
 | `….neg`               | `--negative-controls` only. Adds enrichment stats (`neg_metric`, `fold_enrichment`, `log10_ratio`, `z_score`, `neg_pass`, …). |
 | `….ictv`              | `--run-ictv-host-filter` only. Removes taxa outside the ICTV vertebrate-infecting-virus allowlist (see below). |
@@ -298,15 +304,16 @@ The sample IDs must match the sample sheet exactly (no `sample-` prefix). For ea
 | Controls | Gate | Option |
 |---|---|---|
 | 0 | no filter (`neg_pass = NA`) | — |
+| ≥ 1, taxon absent from every control | auto-pass (`neg_decision = absent_from_controls`) | — |
 | 1 | `log10_ratio ≥ threshold` | `--log10-ratio-threshold` (default 1.0, i.e. 10-fold) |
 | ≥ 2 | `z_score ≥ threshold` | `--z-score-threshold` (default 3.0) |
 | ≥ 2, SD = 0 | falls back to log10-ratio | — |
 
 `log10_ratio = log10((sample + pc) / (control_mean + pc))` where `pc` is `--enrichment-pseudocount` (default 1.0). All metrics are recorded in `*.neg.tsv` for full traceability: `fold_enrichment`, `log10_ratio`, `z_score`, `control_mean`, `control_sd`, `neg_metric`, `neg_decision`, and the thresholds and pseudocount used.
 
-Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` — a taxon absent from every control, or seen at an identical level in all of them — the z-score is `NA` (no division by zero) and the gate falls back to the log10-ratio.
+Control statistics use **zero-fill**: a taxon not detected in a given control counts as `0` there, so `control_mean`/`control_sd` are computed over *all* declared controls (not only the ones where the taxon happens to appear), and the z-score uses that same denominator. When the control SD is `0` but the taxon *was* seen in the controls (an identical non-zero level in every one), the z-score is `NA` (no division by zero) and the gate falls back to the log10-ratio. A taxon absent from *every* control is handled separately — it auto-passes (see the next paragraph) rather than falling back.
 
-The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from the control rows are given a zero background — they pass the enrichment gate easily (conservative choice).
+The bleed and negative filters compose: a row appears as a *call* only if it has `bleed_pass == True` **and** (when negative controls were configured) `neg_pass == True`. Taxa absent from *every* negative control (`control_max == 0`) auto-pass with `neg_decision = "absent_from_controls"`: their enrichment ratios (`fold_enrichment`, `log10_ratio`, and the aggregate variants) would only reflect the sample's own abundance against the pseudocount, so those columns are blanked to NA and every enrichment gate — including `neg_pass` — is set True. Absence from the controls is itself evidence the taxon is not control-borne (the z-score gates `neg_pass_5`/`neg_pass_10` stay NA).
 
 **Aggregate (pooled) control.** Alongside the per-control z-score, the step also reports a complementary view that treats *all* negative controls as one pooled library: `pooled_control_metric` = Σ(control metric × control library size) / Σ(control library size) — i.e. raw reads pooled across controls, so a deeply-sequenced control legitimately counts more (a taxon absent from a control contributes 0). From it come `agg_fold_enrichment`, `agg_log10_ratio`, and `agg_fold_enrichment_10x_pass`/`agg_fold_enrichment_100x_pass`. This is *diagnostic only* — it does not change `neg_pass` — but it catches widespread, high-variance contamination whose per-control variance inflates the z-score denominator and can mask the signal. (If `total_reads` is unavailable, controls are weighted equally, making the pool a plain zero-filled mean.)
 
@@ -316,7 +323,7 @@ The bleed and negative filters compose: a row appears as a *call* only if it has
 
 This catches the common false positive where a de novo contig gets a viral hit from the (smaller) viral DIAMOND database but is really host/bacterial/vector sequence that only the full nr database can disambiguate.
 
-### Largest-contig statistics (diamond_contigs, with `--viral-genomes`)
+### Largest-contig statistics (both contig tracks, with `--viral-genomes`)
 
 When `--viral-genomes` is supplied, **both contig tracks** (`diamond_contigs` and `kraken2_contigs`) add three cheap columns per taxon (the `.ctgstats` chain step): `largest_contig_bp` — the length of the largest de novo viral contig assigned to that taxon — `largest_contig_ref_coverage_pct` — that length as a percentage of the reference genome (`largest_contig_bp / genome_length_bp × 100`) — and `largest_contig_median_depth` — that contig's median per-position depth. Each track remaps the host-filtered reads to its own viral contigs (the contigs it classified as viral) and runs `samtools depth -a`, so the depth reflects that track's own assignment. Together the three columns are a quick proxy for how much of the genome assembled and how deeply it was covered: e.g. a 7,000 bp contig for a 10 kb virus gives `largest_contig_ref_coverage_pct ≈ 70` at, say, 1,000× median depth — suggesting most of the genome is well covered without any extra heavy compute, a handy signal for deciding whether a reference assembly is worth attempting. The percentage is reported raw and **uncapped**, so a value above 100% means the largest contig is longer than the median reference (over-assembly, a chimeric contig, or a longer strain), and it is `NA` where no reference length is available (so it is approximate at family/genus ranks). *Caveat:* contig length is a proxy for, not a direct measure of, the fraction of the reference genome covered (a long contig can still be partial or chimeric) — this is a preliminary estimate, not a substitute for read remapping to the reference and consensus calling. It also assumes a **monopartite (non-segmented) genome**: `largest_contig_ref_coverage_pct` divides by `genome_length_bp`, which for a segmented virus is a median *segment* length (see the RPKM note above), while a de novo contig spans at most one segment. So for segmented viruses (influenza, bunyaviruses, etc.) this column reflects the largest single segment relative to the median segment — routinely >100% and *not* a whole-genome completeness measure. The read-level tracks (`kraken2_reads`, `diamond_reads`) have no contigs and so do not carry these columns.
 
@@ -324,7 +331,7 @@ Alongside `nr_pass`, the `.nr` step appends `nr_is_virus`, `nr_species_correct`,
 
 ### ICTV vertebrate-virus filter (optional)
 
-`--run-ictv-host-filter` drops taxa outside a curated allowlist of vertebrate-infecting virus lineages — phages, plant/fungal/algal/invertebrate-only viruses, and giant viruses. It applies to **all four tracks** and is the last step in the chain (`.ictv`). The allowlist is a taxid file passed with `--ictv-vertebrate-taxids-file`, built from the ICTV Virus Metadata Resource (VMR) by `viralunity get-databases ictv-vertebrate-taxids` (which wraps `build_ictv_vertebrate_taxids.py`). Matching is lineage-aware: a taxon is kept when any ancestor in its lineage is on the allowlist, so strain- and species-level hits under an allowed genus/family survive. Removed rows are logged to a `*.dropped.tsv` sidecar.
+`--run-ictv-host-filter` drops taxa outside a curated allowlist of vertebrate-infecting virus lineages — phages, plant/fungal/algal/invertebrate-only viruses, and giant viruses. It applies to **all four tracks** and is the last step in the chain (`.ictv`). The allowlist is a taxid file passed with `--ictv-vertebrate-taxids-file`, built from the ICTV Virus Metadata Resource (VMR) by the `build_ictv_vertebrate_taxids.py` script (see the [Commands reference](../commands.md#taxonomic-false-positive-filters-optional) for how to build it). Matching is lineage-aware: a taxon is kept when any ancestor in its lineage is on the allowlist, so strain- and species-level hits under an allowed genus/family survive. Removed rows are logged to a `*.dropped.tsv` sidecar.
 
 Use it when your samples are vertebrate (clinical/animal) and you want to suppress the large background of environmental phages and non-vertebrate viruses that classifiers surface.
 
