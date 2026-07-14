@@ -1,0 +1,6 @@
+samples:
+  barcode05:
+    - reads/barcode05.fastq.gz
+data: nanopore
+output: out/
+scheme: NA
