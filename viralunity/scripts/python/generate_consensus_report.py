@@ -312,6 +312,65 @@ def parse_primer_bed(path: str, contig: str) -> List[dict]:
     return result
 
 
+def resolve_annotation_path(output_dir: str, kind: str, segment: Optional[str] = None) -> str:
+    """Reconstruct the staged annotation path for a track ``kind``.
+
+    The pipeline stages annotation files under ``<output>/annotation/`` (see the
+    ``stage_*`` rules). Primer BED is a single file; gene GFF3 is per-segment in
+    segmented mode.
+    """
+    base = os.path.join(output_dir, "annotation")
+    if kind == "primer":
+        return os.path.join(base, "primer_scheme.bed")
+    if segment:
+        return os.path.join(base, f"{segment}.gene_annotation.gff3")
+    return os.path.join(base, "gene_annotation.gff3")
+
+
+def build_annotation_model(
+    output_dir: str,
+    segments: List[Optional[str]],
+    contig_by_segment: Dict[Optional[str], str],
+) -> dict:
+    """Assemble the per-segment annotation-track model from staged files.
+
+    For each segment with a known coverage contig, read the staged gene GFF3 and
+    primer BED (if present on disk) and build ordered lanes matched to that
+    contig. Returns ``{"by_segment": {seg_label: {"lanes": [...]}},
+    "has_genes": bool, "has_primers": bool}``. Segments with no drawable feature
+    are omitted; presence is decided by staged-file existence (no file -> no
+    track), so a run without annotation yields empty lanes and false flags.
+    """
+    by_segment: Dict[str, dict] = {}
+    has_genes = False
+    has_primers = False
+
+    for segment in segments:
+        contig = contig_by_segment.get(segment)
+        if not contig:
+            continue
+        lanes: List[dict] = []
+
+        gene_path = resolve_annotation_path(output_dir, "gene", segment)
+        if os.path.exists(gene_path):
+            gene_features = parse_gff3(gene_path, contig)
+            if gene_features:
+                lanes.append({"kind": "gene", "label": "Genes", "features": gene_features})
+                has_genes = True
+
+        primer_path = resolve_annotation_path(output_dir, "primer")
+        if os.path.exists(primer_path):
+            for lane in parse_primer_bed(primer_path, contig):
+                if lane["features"]:
+                    lanes.append({"kind": "primer", **lane})
+                    has_primers = True
+
+        if lanes:
+            by_segment[segment or ""] = {"lanes": lanes}
+
+    return {"by_segment": by_segment, "has_genes": has_genes, "has_primers": has_primers}
+
+
 # --------------------------------------------------------------------------- #
 # Run metadata
 # --------------------------------------------------------------------------- #
@@ -847,16 +906,20 @@ def build_kpi_summary(
 def _load_coverage_cache(output_dir: str, df: pd.DataFrame, segmented: bool) -> Tuple[
     Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]],
     Dict[Tuple[str, Optional[str]], int],
+    Dict[Optional[str], str],
 ]:
     """Load + downsample every (sample, segment) coverage track exactly once.
 
-    Returns ``(cache, lengths)``: ``cache`` maps each key to the downsampled
-    ``(positions, depths)`` for plotting; ``lengths`` maps it to the true
-    pre-downsample track length (row count), used for length-weighting the
-    whole-genome KPI figures on segmented runs.
+    Returns ``(cache, lengths, contig_by_segment)``: ``cache`` maps each key to
+    the downsampled ``(positions, depths)`` for plotting; ``lengths`` maps it to
+    the true pre-downsample track length (row count), used for length-weighting
+    the whole-genome KPI figures on segmented runs; ``contig_by_segment`` maps
+    each segment to its coverage contig name (column 1 of the coverage table),
+    the join key for aligning annotation features.
     """
     cache: Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]] = {}
     lengths: Dict[Tuple[str, Optional[str]], int] = {}
+    contig_by_segment: Dict[Optional[str], str] = {}
     for _, row in df.iterrows():
         sample = row["sample_name"]
         segment = row["segment"] if segmented else None
@@ -865,9 +928,11 @@ def _load_coverage_cache(output_dir: str, df: pd.DataFrame, segmented: bool) -> 
         if table.empty:
             cache[(sample, segment)] = (np.array([]), np.array([]))
             continue
+        if segment not in contig_by_segment:
+            contig_by_segment[segment] = str(table["reference_id"].iloc[0])
         pos, depth = downsample_min_pool(table["position"].to_numpy(), table["depth"].to_numpy())
         cache[(sample, segment)] = (pos, depth)
-    return cache, lengths
+    return cache, lengths, contig_by_segment
 
 
 def _fig_to_html(fig: go.Figure) -> str:
@@ -905,8 +970,9 @@ def render_report(
     samples = _ordered_unique(df["sample_name"].tolist())
     segments = _ordered_unique(df["segment"].tolist()) if segmented else [None]
 
-    cache, coverage_lengths = _load_coverage_cache(output_dir, df, segmented)
+    cache, coverage_lengths, contig_by_segment = _load_coverage_cache(output_dir, df, segmented)
     kpi_summary = build_kpi_summary(df, coverage_lengths, segmented)
+    annotation_model = build_annotation_model(output_dir, segments, contig_by_segment)
 
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired)
@@ -984,6 +1050,9 @@ def render_report(
         aggregated_panels=aggregated_panels,
         coverage_json=_json_for_script(coverage_json),
         stats_by_sample=_json_for_script(stats_by_sample),
+        annotation_json=_json_for_script(annotation_model["by_segment"]),
+        has_genes=annotation_model["has_genes"],
+        has_primers=annotation_model["has_primers"],
         palette_light=PALETTE_LIGHT,
         palette_dark=PALETTE_DARK,
     )

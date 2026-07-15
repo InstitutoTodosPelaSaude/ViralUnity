@@ -23,8 +23,10 @@ import plotly.graph_objects as go
 from viralunity.scripts.python.generate_consensus_report import (
     EMPHASIS_MUTED,
     _json_for_script,
+    _load_coverage_cache,
     _stats_rows_by_sample,
     build_aggregated_coverage_line_plot,
+    build_annotation_model,
     build_kpi_summary,
     build_reads_histogram,
     build_report_metadata,
@@ -36,6 +38,7 @@ from viralunity.scripts.python.generate_consensus_report import (
     parse_gff3,
     parse_primer_bed,
     read_stats_summary,
+    resolve_annotation_path,
     resolve_basewise_path,
 )
 
@@ -447,6 +450,74 @@ class TestParsePrimerBed(unittest.TestCase):
         )
         lanes = parse_primer_bed(bed, "chrA")
         self.assertEqual([ln["label"] for ln in lanes], ["Pool A", "Pool B", "Pool C"])
+
+
+class TestResolveAnnotationPath(unittest.TestCase):
+    def test_primer_path(self):
+        self.assertEqual(
+            resolve_annotation_path("/out/", "primer"),
+            "/out/annotation/primer_scheme.bed",
+        )
+
+    def test_gene_path_unsegmented(self):
+        self.assertEqual(
+            resolve_annotation_path("/out/", "gene"),
+            "/out/annotation/gene_annotation.gff3",
+        )
+
+    def test_gene_path_segmented(self):
+        self.assertEqual(
+            resolve_annotation_path("/out/", "gene", segment="S1"),
+            "/out/annotation/S1.gene_annotation.gff3",
+        )
+
+
+class TestCoverageCacheContigCapture(unittest.TestCase):
+    def test_captures_contig_name_per_segment(self):
+        with tempfile.TemporaryDirectory() as d:
+            cov_dir = os.path.join(d, "assembly", "coverage_stats")
+            os.makedirs(cov_dir)
+            with open(os.path.join(cov_dir, "sample-A.table_cov_basewise.txt"), "w") as fh:
+                fh.write("chrTEST\t1\t10\nchrTEST\t2\t20\n")
+            df = pd.DataFrame({"sample_name": ["sample-A"]})
+            _cache, _lengths, contigs = _load_coverage_cache(d, df, segmented=False)
+        self.assertEqual(contigs[None], "chrTEST")
+
+
+class TestBuildAnnotationModel(unittest.TestCase):
+    def _dir_with_annotation(self):
+        d = tempfile.mkdtemp()
+        ann = os.path.join(d, "annotation")
+        os.makedirs(ann)
+        with open(os.path.join(ann, "gene_annotation.gff3"), "w") as fh:
+            fh.write("chrTEST\tx\tgene\t1\t100\t.\t+\t.\tName=G1\n")
+        with open(os.path.join(ann, "primer_scheme.bed"), "w") as fh:
+            fh.write("chrTEST\t0\t20\ts_1_LEFT\tp1\n")
+            fh.write("chrTEST\t80\t100\ts_1_RIGHT\tp1\n")
+        return d
+
+    def test_builds_gene_and_primer_lanes(self):
+        d = self._dir_with_annotation()
+        model = build_annotation_model(d, [None], {None: "chrTEST"})
+        self.assertTrue(model["has_genes"])
+        self.assertTrue(model["has_primers"])
+        lanes = model["by_segment"][""]["lanes"]
+        kinds = [ln["kind"] for ln in lanes]
+        self.assertIn("gene", kinds)
+        self.assertIn("primer", kinds)
+
+    def test_no_annotation_dir_is_empty_with_flags_false(self):
+        with tempfile.TemporaryDirectory() as d:
+            model = build_annotation_model(d, [None], {None: "chrTEST"})
+        self.assertFalse(model["has_genes"])
+        self.assertFalse(model["has_primers"])
+        self.assertEqual(model["by_segment"], {})
+
+    def test_contig_mismatch_draws_no_features(self):
+        d = self._dir_with_annotation()
+        model = build_annotation_model(d, [None], {None: "chrOTHER"})
+        self.assertFalse(model["has_genes"])
+        self.assertFalse(model["has_primers"])
 
 
 class TestFigureBuilders(unittest.TestCase):
