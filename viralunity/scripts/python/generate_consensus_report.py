@@ -91,6 +91,16 @@ SERIES_1_LIGHT = "#2a78d6"
 EMPHASIS_MUTED = "#898781"  # recessive ink for >8-series line plots
 MAX_CATEGORICAL = 8
 
+# Annotation-track hues (gene + primer), deliberately low-chroma and outside the
+# categorical palette so a track never reads as a data series or collides with
+# the depth-series blue (PALETTE_LIGHT[0]). Pools A/B share the primer hue (the
+# lane label distinguishes them). Border hexes; the JS builds a translucent fill
+# from each. Validated in palette_validation_test.py.
+TRACK_GENE_COLOR = "#5b6b7f"
+TRACK_GENE_COLOR_DARK = "#98a3b4"
+TRACK_PRIMER_COLOR = "#4f7d6a"
+TRACK_PRIMER_COLOR_DARK = "#8bb4a2"
+
 FIG_WIDTH = 900
 FIG_HEIGHT = 420
 
@@ -1051,10 +1061,10 @@ def render_report(
         coverage_json=_json_for_script(coverage_json),
         stats_by_sample=_json_for_script(stats_by_sample),
         annotation_json=_json_for_script(annotation_model["by_segment"]),
-        has_genes=annotation_model["has_genes"],
-        has_primers=annotation_model["has_primers"],
         palette_light=PALETTE_LIGHT,
         palette_dark=PALETTE_DARK,
+        track_genes=f"{TRACK_GENE_COLOR},{TRACK_GENE_COLOR_DARK}",
+        track_primers=f"{TRACK_PRIMER_COLOR},{TRACK_PRIMER_COLOR_DARK}",
     )
 
 

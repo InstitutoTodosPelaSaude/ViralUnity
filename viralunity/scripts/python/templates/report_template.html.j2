@@ -162,7 +162,8 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 }
 </style>
 </head>
-<body data-palette="{{ palette_light|join(',') }}" data-palette-dark="{{ palette_dark|join(',') }}">
+<body data-palette="{{ palette_light|join(',') }}" data-palette-dark="{{ palette_dark|join(',') }}"
+      data-track-genes="{{ track_genes }}" data-track-primers="{{ track_primers }}">
 <header>
   <h1>ViralUnity consensus report{% if segmented %} <span style="color:var(--text-muted);font-weight:400">· segmented</span>{% endif %}</h1>
   <div class="header-actions">
@@ -355,6 +356,16 @@ function recolorCharts() {
   if (tc) tc.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
     try { Plotly.restyle(gd, {'marker.color': [pal[0], pal[1], pal[2]]}); } catch (e) {}
   });
+  // Annotation-track bars carry their kind on the trace; recolour each to the
+  // theme's track hue (trackColors reads the theme). Targeted by index so the
+  // depth line and sample series in the same figure are untouched.
+  document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    (gd.data || []).forEach(function (tr, i) {
+      if (!tr._track) return;
+      const c = trackColors(tr._trackKind);
+      try { Plotly.restyle(gd, {'marker.color': c.fill, 'marker.line.color': c.line}, [i]); } catch (e) {}
+    });
+  });
 }
 
 /* ---- generic display:none panel toggle (aggregated segment switch) ---- */
@@ -488,16 +499,20 @@ function depthForScale(y, scale) {
    independent of the depth axis type (the Linear/Log10 toggle only rebuilds
    y). The same helper feeds the aggregated, by-sample and by-segment views. */
 var TRACK_LANE_PX = 26, TRACK_GAP_PX = 16, DEPTH_PX = FIG_HEIGHT;
+function _hexToRgba(hex, alpha) {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return hex;
+  return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) +
+         ',' + parseInt(h.slice(4, 6), 16) + ',' + alpha + ')';
+}
+// Track border/fill for a lane kind, from the server-set body attributes
+// (Python is the single source; light/dark picked by theme). Fill is the border
+// hue at low alpha so bars read as recessive annotation, not a data series.
 function trackColors(kind) {
-  // Theme-aware fills are wired in recolorCharts; these initial values read on
-  // both surfaces and stay clear of the depth-series hue.
-  const dark = isDark();
-  if (kind === 'gene') {
-    return dark ? {fill: 'rgba(160,164,173,0.30)', line: '#a3a7b0'}
-                : {fill: 'rgba(90,94,104,0.22)', line: '#6b7280'};
-  }
-  return dark ? {fill: 'rgba(120,170,235,0.34)', line: '#7db0e6'}
-              : {fill: 'rgba(42,120,214,0.26)', line: '#2a78d6'};
+  const attr = kind === 'gene' ? 'data-track-genes' : 'data-track-primers';
+  const pair = (document.body.getAttribute(attr) || '').split(',');
+  const line = (isDark() ? pair[1] : pair[0]) || '#5b6b7f';
+  return {fill: _hexToRgba(line, isDark() ? 0.34 : 0.24), line: line};
 }
 // Build the y2 bar traces for one segment's lanes. Genes lane(s) sit on top,
 // primer pool lanes below. opts.showGenes / opts.showPrimers (default true)
@@ -527,7 +542,7 @@ function annotationTraces(segLabel, opts) {
       textposition: 'inside', insidetextanchor: 'middle', cliponaxis: false,
       hovertext: feats.map(function (f) { return f.name + ' (' + f.start + '–' + f.end + ')'; }),
       hoverinfo: 'text', showlegend: false, name: ln.label,
-      _track: true
+      _track: true, _trackKind: ln.kind
     };
   });
   return {traces: traces, nLanes: n, ticktext: ticktext};
@@ -566,6 +581,7 @@ function statsTableHTML(rows) {
 
 /* ---- "By sample" view: one sample, its coverage across segments ---- */
 var covScale = 'linear';
+var covTracks = {showGenes: true, showPrimers: true};
 var currentSample = null;
 function plotCoverage(holderId, entries, labelFor, scale, trackOpts) {
   const holder = document.getElementById(holderId);
@@ -589,7 +605,7 @@ function showSample(sample) {
   const entries = COVERAGE[sample] || [];
   plotCoverage('sample-coverage', entries, function (e) {
     return e.label ? (sample + ' — ' + e.label) : sample;
-  }, covScale);
+  }, covScale, covTracks);
   renderSampleStats(sample);
 }
 function renderSampleStats(sample) {
@@ -607,6 +623,7 @@ function injectScaleToggle(controls, onChange) {
    selector, so it stacks every sample's coverage. The <details> structure is
    server-rendered (see the template); the JS below only wires behaviour. */
 var segCovScale = 'linear';
+var segTracks = {showGenes: true, showPrimers: true};
 var currentSegment = null;
 // Current segment choice: the selector's value on a segmented run, else '' (the
 // single whole-genome view).
@@ -631,7 +648,7 @@ function showSegment(segment) {
   });
   plotCoverage('segment-coverage', entries, function (e) {
     return segment ? (e._sample + ' — ' + segment) : e._sample;
-  }, segCovScale);
+  }, segCovScale, segTracks);
   // The per-segment stats table (one row per sample) is a useful focused subset
   // for a segmented run; for an unsegmented run it would duplicate Assembly
   // statistics, so it is omitted.
@@ -662,6 +679,7 @@ function enhanceAggregatedToggle() {
   // can be appended fresh on every rebuild without accumulating duplicates.
   plots.forEach(function (gd) { if (!gd._depthData) gd._depthData = (gd.data || []).slice(); });
   const setScale = function (s) {
+    aggScale = s;
     plots.forEach(function (gd) {
       const panel = gd.closest('.agg-panel');
       const logRange = panel ? panel.getAttribute('data-log-range').split(',').map(Number) : undefined;
@@ -681,12 +699,68 @@ function enhanceAggregatedToggle() {
   const toggle = scaleToggleEl('linear', setScale);
   // Place the toggle after the segment selector when present, else after the heading.
   (card.querySelector('select') || card.querySelector('h2')).insertAdjacentElement('afterend', toggle);
-  // Draw the annotation tracks on load (the server render is depth-only). Skip
-  // entirely when no annotation was staged, so a plain run is unchanged.
-  if (Object.keys(ANNOT).length) setScale('linear');
+  // Draw the annotation tracks on load (the server render is depth-only), and
+  // offer the Genes/Primers on-off chips next to the scale toggle. Skip entirely
+  // when no annotation was staged, so a plain run is unchanged.
+  if (Object.keys(ANNOT).length) {
+    setScale('linear');
+    var chips = buildTrackToggles(aggTracks, function () { setScale(aggScale); });
+    if (chips) toggle.insertAdjacentElement('afterend', chips);
+  }
 }
-// Track visibility for the aggregated view (both on until the toggles wire in).
-function aggTrackOpts() { return {showGenes: true, showPrimers: true}; }
+/* ---- annotation-track on/off chips (Genes / Primers) ----
+   One chip per track kind that is actually present, default on, styled like the
+   scale toggle (aria-pressed). Toggling re-renders the affected view via the
+   same Plotly.react/newPlot path the scale toggle uses (never a yaxis.type
+   relayout), recomputing lanes so hiding a track reclaims its row. */
+var aggTracks = {showGenes: true, showPrimers: true};
+var aggScale = 'linear';
+function aggTrackOpts() { return aggTracks; }
+// Which track kinds exist anywhere in the embedded model.
+function annotKinds() {
+  var genes = false, primers = false;
+  Object.keys(ANNOT).forEach(function (k) {
+    (ANNOT[k].lanes || []).forEach(function (ln) {
+      if (ln.kind === 'gene') genes = true; else primers = true;
+    });
+  });
+  return {genes: genes, primers: primers};
+}
+function trackToggleEl(label, initialOn, onChange) {
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.className = initialOn ? 'active' : '';
+  b.setAttribute('aria-pressed', initialOn ? 'true' : 'false');
+  b.addEventListener('click', function () {
+    var on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.classList.toggle('active', on);
+    onChange(on);
+  });
+  return b;
+}
+// Build the present chips as a .scale-toggle group (or null if no track kind
+// exists). `state` is mutated on toggle; `rerender` redraws the view.
+function buildTrackToggles(state, rerender) {
+  var kinds = annotKinds();
+  if (!kinds.genes && !kinds.primers) return null;
+  var wrap = document.createElement('div');
+  wrap.className = 'scale-toggle track-toggles';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Annotation tracks');
+  if (kinds.genes) {
+    wrap.appendChild(trackToggleEl('Genes', state.showGenes !== false, function (on) {
+      state.showGenes = on; rerender();
+    }));
+  }
+  if (kinds.primers) {
+    wrap.appendChild(trackToggleEl('Primers', state.showPrimers !== false, function (on) {
+      state.showPrimers = on; rerender();
+    }));
+  }
+  return wrap;
+}
 
 /* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
 var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
@@ -813,6 +887,15 @@ window.addEventListener('load', function () {
     function (s) { segCovScale = s; showSegment(currentSegmentChoice()); },
     function () { showSegment(currentSegmentChoice()); }
   );
+  // Genes/Primers chips alongside each detail view's scale toggle.
+  var sampleChips = buildTrackToggles(covTracks, function () {
+    if (currentSample) showSample(currentSample);
+  });
+  var sampleControls = document.querySelector('#by-sample-details .chart-controls');
+  if (sampleChips && sampleControls) sampleControls.appendChild(sampleChips);
+  var segChips = buildTrackToggles(segTracks, function () { showSegment(currentSegmentChoice()); });
+  var segControls = document.querySelector('#by-segment-details .chart-controls');
+  if (segChips && segControls) segControls.appendChild(segChips);
 
   [themeCharts, initKpiControls, enhanceSortHeaders, enhanceAggregatedToggle].forEach(function (fn) {
     try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }

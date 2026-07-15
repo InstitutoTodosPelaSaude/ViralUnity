@@ -158,6 +158,12 @@ class TestReportSnapshot(unittest.TestCase):
         app = _app_js(html)
         self.assertIn("annotationTraces", app)
         self.assertIn("yaxis2", app)
+        # Genes/Primers on-off chips are wired (built from the present kinds).
+        self.assertIn("buildTrackToggles", app)
+        self.assertIn("annotKinds", app)
+        # track hues are theme-driven from server-set body attributes.
+        self.assertIn("data-track-genes", html)
+        self.assertIn("data-track-primers", html)
 
     def test_no_annotation_fixtures_have_empty_annotation_block(self):
         # Regression fence: runs without staged annotation embed an empty model,

@@ -19,6 +19,10 @@ from viralunity.scripts.python.generate_consensus_report import (
     MAX_CATEGORICAL,
     PALETTE_DARK,
     PALETTE_LIGHT,
+    TRACK_GENE_COLOR,
+    TRACK_GENE_COLOR_DARK,
+    TRACK_PRIMER_COLOR,
+    TRACK_PRIMER_COLOR_DARK,
 )
 
 # Card surfaces the hues are drawn against (from the template's CSS variables).
@@ -157,6 +161,49 @@ class TestPaletteValidation(unittest.TestCase):
                 MIN_LIGHT_CONTRAST,
                 f"light hue {hexval} contrast {ratio:.2f} < floor {MIN_LIGHT_CONTRAST}",
             )
+
+
+class TestTrackColorValidation(unittest.TestCase):
+    """The annotation-track hues must read on their surface and stay clearly
+    distinct from the depth-series blue (PALETTE_LIGHT[0]) so a track never
+    reads as a data series."""
+
+    # Floor below the measured track-vs-depth separation, and the same surface
+    # contrast floors the categorical palette uses.
+    MIN_TRACK_VS_SERIES_DELTA_E = 15.0
+
+    def test_track_hues_are_well_formed(self):
+        for hexval in (
+            TRACK_GENE_COLOR,
+            TRACK_GENE_COLOR_DARK,
+            TRACK_PRIMER_COLOR,
+            TRACK_PRIMER_COLOR_DARK,
+        ):
+            self.assertRegex(hexval, r"^#[0-9a-fA-F]{6}$")
+
+    def test_track_hues_clear_surface_contrast(self):
+        light = _hex_to_rgb(LIGHT_SURFACE)
+        dark = _hex_to_rgb(DARK_SURFACE)
+        for hexval in (TRACK_GENE_COLOR, TRACK_PRIMER_COLOR):
+            self.assertGreaterEqual(
+                _contrast(_hex_to_rgb(hexval), light), MIN_LIGHT_CONTRAST, hexval
+            )
+        for hexval in (TRACK_GENE_COLOR_DARK, TRACK_PRIMER_COLOR_DARK):
+            self.assertGreaterEqual(_contrast(_hex_to_rgb(hexval), dark), MIN_DARK_CONTRAST, hexval)
+
+    def test_track_hues_are_distinct_from_depth_series(self):
+        depth = _hex_to_rgb(PALETTE_LIGHT[0])
+        for hexval in (TRACK_GENE_COLOR, TRACK_PRIMER_COLOR):
+            delta = _delta_e76(_hex_to_rgb(hexval), depth)
+            self.assertGreaterEqual(
+                delta,
+                self.MIN_TRACK_VS_SERIES_DELTA_E,
+                f"track hue {hexval} deltaE {delta:.1f} from depth blue too close",
+            )
+
+    def test_track_hues_are_distinct_from_each_other(self):
+        delta = _delta_e76(_hex_to_rgb(TRACK_GENE_COLOR), _hex_to_rgb(TRACK_PRIMER_COLOR))
+        self.assertGreaterEqual(delta, 5.0, f"gene/primer deltaE {delta:.1f} too close")
 
 
 if __name__ == "__main__":
