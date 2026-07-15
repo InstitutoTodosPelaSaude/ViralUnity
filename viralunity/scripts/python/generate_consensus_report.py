@@ -14,6 +14,7 @@ resolves inputs exactly like the workflow does.
 """
 
 import argparse
+import html
 import json
 import logging
 import math
@@ -178,6 +179,54 @@ def build_report_metadata(config: Optional[dict], output_dir: str) -> Dict[str, 
         "primer_scheme": primer_scheme,
         "qc_performed": paired,
     }
+
+
+def _render_config_value(value) -> str:
+    """Escaped HTML for one config value (scalars, lists, and nested dicts)."""
+    if value is None or value == "":
+        return '<span class="cfg-null">—</span>'
+    if isinstance(value, dict):
+        if not value:
+            return '<span class="cfg-null">—</span>'
+        rows = "".join(
+            f'<div class="cfg-row"><span class="cfg-key">{html.escape(str(k))}</span>'
+            f'<span class="cfg-val">{_render_config_value(v)}</span></div>'
+            for k, v in value.items()
+        )
+        return f'<div class="cfg-nested">{rows}</div>'
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return '<span class="cfg-null">—</span>'
+        items = "".join(f"<li>{_render_config_value(v)}</li>" for v in value)
+        return f'<ul class="cfg-list">{items}</ul>'
+    return html.escape(str(value))
+
+
+def build_config_panel_html(config: Optional[dict]) -> str:
+    """Render the full run config as escaped, grouped key–value blocks.
+
+    Everything in the config is shown (a memory of exactly what was run); the
+    per-rule ``*_cpus``/``*_ram`` keys are split into a separate "Resources"
+    group. Returns ``""`` when no config is available (the panel is then omitted).
+    """
+    if not config:
+        return ""
+    resources = {k: v for k, v in config.items() if k.endswith(("_cpus", "_ram"))}
+    params = {k: v for k, v in config.items() if k not in resources}
+
+    def section(title: str, data: dict) -> str:
+        if not data:
+            return ""
+        rows = "".join(
+            f'<div class="cfg-row"><span class="cfg-key">{html.escape(str(k))}</span>'
+            f'<span class="cfg-val">{_render_config_value(v)}</span></div>'
+            for k, v in data.items()
+        )
+        return (
+            f'<h3 class="cfg-section">{html.escape(title)}</h3><div class="cfg-block">{rows}</div>'
+        )
+
+    return section("Parameters", params) + section("Resources", resources)
 
 
 # --------------------------------------------------------------------------- #
@@ -622,14 +671,18 @@ def _fig_to_html(fig: go.Figure) -> str:
     )
 
 
-def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
+def render_report(
+    output_dir: str, metadata: Optional[dict] = None, config: Optional[dict] = None
+) -> str:
     """Build the full self-contained HTML report string for a consensus run.
 
     ``metadata`` is the run-metadata dict from :func:`build_report_metadata`; when
     omitted it is inferred from the output dir (the CLI-on-an-old-dir path).
+    ``config`` is the full run config YAML (as a dict); when given it powers the
+    run-parameters panel, otherwise the panel is omitted.
     """
     if metadata is None:
-        metadata = build_report_metadata(None, output_dir)
+        metadata = build_report_metadata(config, output_dir)
     # On Illumina (paired-end), total/QC-passed counts are read pairs while mapped
     # reads are counted individually; the mapping-rate denominator is doubled to
     # reconcile the units. Driven by the declared library layout, never by ratios.
@@ -691,6 +744,7 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
         metadata=metadata,
         kpi_global=_kpi_display(kpi_summary["global"]),
         kpi_json=json.dumps(kpi_summary),
+        config_panel_html=build_config_panel_html(config),
         segmented=segmented,
         samples=samples,
         segments=[s or "" for s in segments],
@@ -736,12 +790,14 @@ def _stats_rows_by_sample(
     return out
 
 
-def write_report(output_dir: str, dest: str, metadata: Optional[dict] = None) -> None:
+def write_report(
+    output_dir: str, dest: str, metadata: Optional[dict] = None, config: Optional[dict] = None
+) -> None:
     """Render the report and write it to ``dest`` (the shared entry point)."""
-    html = render_report(output_dir, metadata)
+    html_str = render_report(output_dir, metadata, config)
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
     with open(dest, "w") as fh:
-        fh.write(html)
+        fh.write(html_str)
     logger.info("Wrote consensus report: %s", dest)
 
 
@@ -769,8 +825,9 @@ def run_cli():
     )
     args = ap.parse_args()
     dest = args.output_path or os.path.join(args.input_dir, "report.html")
-    metadata = build_report_metadata(load_run_config(args.config_file), args.input_dir)
-    write_report(args.input_dir, dest, metadata)
+    config = load_run_config(args.config_file)
+    metadata = build_report_metadata(config, args.input_dir)
+    write_report(args.input_dir, dest, metadata, config)
 
 
 def load_run_config(config_file: Optional[str]) -> Optional[dict]:
@@ -791,8 +848,9 @@ def load_run_config(config_file: Optional[str]) -> Optional[dict]:
 def run_snakemake():
     output_dir = str(snakemake.params[0])  # noqa: F821
     dest = str(snakemake.output[0])  # noqa: F821
-    metadata = build_report_metadata(dict(snakemake.config), output_dir)  # noqa: F821
-    write_report(output_dir, dest, metadata)
+    config = dict(snakemake.config)  # noqa: F821
+    metadata = build_report_metadata(config, output_dir)
+    write_report(output_dir, dest, metadata, config)
 
 
 if __name__ == "__main__":

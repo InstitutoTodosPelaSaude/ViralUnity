@@ -53,8 +53,9 @@ def report(input_dir, output_path, config_file):
         raise click.ClickException(f"Config file not found: {config_file}")
     dest = output_path or os.path.join(input_dir, "report.html")
     try:
-        metadata = build_report_metadata(load_run_config(config_file), input_dir)
-        write_report(input_dir, dest, metadata)
+        config = load_run_config(config_file)
+        metadata = build_report_metadata(config, input_dir)
+        write_report(input_dir, dest, metadata, config)
         logger.info(f"Consensus report generated: {dest}")
     except Exception as e:
         raise click.ClickException(str(e))

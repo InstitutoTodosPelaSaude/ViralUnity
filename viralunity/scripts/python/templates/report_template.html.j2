@@ -115,12 +115,56 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 .kpi-value { font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text-primary); font-variant-numeric: proportional-nums; }
 .kpi-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 6px; }
 .kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+/* Run-parameters slide-over drawer (a memory of exactly what was run). */
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.params-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 40; }
+.params-drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(460px, 92vw);
+  background: var(--card-bg); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.18); z-index: 50;
+  display: flex; flex-direction: column; transform: translateX(0);
+}
+.params-drawer[hidden], .params-overlay[hidden] { display: none; }
+.params-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.params-title { font-size: 1rem; font-weight: 600; }
+.params-close {
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.params-close:hover { color: var(--text-primary); }
+.params-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.params-body { overflow-y: auto; padding: 8px 20px 24px; }
+.cfg-section {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 20px 0 8px;
+}
+.cfg-block { display: flex; flex-direction: column; }
+.cfg-row {
+  display: grid; grid-template-columns: minmax(120px, 40%) 1fr; gap: 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.83rem;
+}
+.cfg-key { color: var(--text-secondary); word-break: break-word; }
+.cfg-val { color: var(--text-primary); word-break: break-word; font-variant-numeric: tabular-nums; }
+.cfg-null { color: var(--text-muted); }
+.cfg-nested { display: flex; flex-direction: column; gap: 2px; }
+.cfg-nested .cfg-row { border-bottom: none; padding: 2px 0; grid-template-columns: minmax(80px, 45%) 1fr; }
+.cfg-list { margin: 0; padding-left: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  .params-drawer { animation: params-slide 0.16s ease-out; }
+  @keyframes params-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+}
 </style>
 </head>
 <body data-palette="{{ palette_light|join(',') }}">
 <header>
   <h1>ViralUnity consensus report{% if segmented %} <span style="color:var(--text-muted);font-weight:400">· segmented</span>{% endif %}</h1>
-  <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">Dark mode</button>
+  <div class="header-actions">
+    {% if config_panel_html %}<button class="theme-toggle" id="params-btn" onclick="openParams()" aria-haspopup="dialog" aria-expanded="false" aria-controls="params-drawer">Parameters</button>{% endif %}
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">Dark mode</button>
+  </div>
 </header>
 <main>
 
@@ -200,6 +244,17 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   </div>
 
 </main>
+
+{% if config_panel_html %}
+<div class="params-overlay" id="params-overlay" hidden onclick="closeParams()"></div>
+<aside class="params-drawer" id="params-drawer" role="dialog" aria-modal="true" aria-label="Run parameters" hidden>
+  <div class="params-head">
+    <span class="params-title">Run parameters</span>
+    <button class="params-close" id="params-close" onclick="closeParams()" aria-label="Close parameters">&times;</button>
+  </div>
+  <div class="params-body">{{ config_panel_html|safe }}</div>
+</aside>
+{% endif %}
 
 <script id="coverageData" type="application/json">{{ coverage_json|safe }}</script>
 <script id="statsData" type="application/json">{{ stats_by_sample|safe }}</script>
@@ -588,6 +643,27 @@ function initKpiControls() {
   });
   sel.addEventListener('change', function () { renderKpi(KPI.per_segment[sel.value] || KPI.global); });
 }
+
+/* ---- run-parameters slide-over drawer ---- */
+var _paramsPrevFocus = null;
+function openParams() {
+  var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
+  if (!d) return;
+  _paramsPrevFocus = document.activeElement;
+  o.hidden = false; d.hidden = false;
+  var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'true');
+  var close = document.getElementById('params-close'); if (close) close.focus();
+}
+function closeParams() {
+  var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
+  if (!d || d.hidden) return;
+  d.hidden = true; o.hidden = true;
+  var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (_paramsPrevFocus && _paramsPrevFocus.focus) _paramsPrevFocus.focus();
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeParams();
+});
 
 /* ---- init ---- */
 window.addEventListener('load', function () {
