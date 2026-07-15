@@ -161,6 +161,20 @@ class Test_ValidateArgs(unittest.TestCase):
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
+    def test_validate_args_gene_annotation_not_set(
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+    ):
+        """gene_annotation is normalized to 'NA' when not provided."""
+        mock_get_samples.return_value = {"sample1": ["file1.fastq"]}
+        self.args["gene_annotation"] = None
+
+        validate_args(self.args)
+
+        self.assertEqual(self.args["gene_annotation"], "NA")
+
+    @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
+    @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
+    @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_illumina_adapters_not_exist(
         self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
     ):
@@ -191,6 +205,74 @@ class Test_ValidateArgs(unittest.TestCase):
 
         with self.assertRaises(AdaptersNotFoundError):
             validate_args(self.args)
+
+
+class Test_ValidateConsensusGeneAnnotation(unittest.TestCase):
+    """Gene-annotation handling inside the real validate_consensus_requirements."""
+
+    def setUp(self):
+        from viralunity.validators import validate_consensus_requirements
+
+        self._validate = validate_consensus_requirements
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+        self.ref = os.path.join(self.tmp, "ref.fasta")
+        open(self.ref, "w").close()
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _base_args(self, **overrides):
+        args = {
+            "reference": self.ref,
+            "segmented_reference": None,
+            "primer_scheme": None,
+            "gene_annotation": None,
+            "segmented_gene_annotation": None,
+        }
+        args.update(overrides)
+        return args
+
+    def test_no_gene_annotation_is_a_noop(self):
+        """Neither annotation form provided is legal and leaves args untouched."""
+        args = self._base_args()
+        self._validate(args)  # must not raise
+        self.assertIsNone(args["gene_annotation"])
+
+    def test_both_gene_annotation_forms_are_mutually_exclusive(self):
+        from viralunity.exceptions import ValidationError
+
+        gff = os.path.join(self.tmp, "genes.gff3")
+        open(gff, "w").close()
+        args = self._base_args(gene_annotation=gff, segmented_gene_annotation=["S=" + gff])
+        with self.assertRaises(ValidationError):
+            self._validate(args)
+
+    def test_missing_gene_annotation_file_raises(self):
+        from viralunity.exceptions import GeneAnnotationNotFoundError
+
+        args = self._base_args(gene_annotation=os.path.join(self.tmp, "nope.gff3"))
+        with self.assertRaises(GeneAnnotationNotFoundError):
+            self._validate(args)
+
+    def test_segmented_gene_annotation_collapses_to_dict(self):
+        gff_s = os.path.join(self.tmp, "S.gff3")
+        gff_l = os.path.join(self.tmp, "L.gff3")
+        open(gff_s, "w").close()
+        open(gff_l, "w").close()
+        args = self._base_args(segmented_gene_annotation={"S": gff_s, "L": gff_l})
+        self._validate(args)
+        self.assertEqual(args["gene_annotation"], {"S": gff_s, "L": gff_l})
+        self.assertIsNone(args["segmented_gene_annotation"])
+
+    def test_missing_segmented_gene_annotation_file_raises(self):
+        from viralunity.exceptions import GeneAnnotationNotFoundError
+
+        args = self._base_args(
+            segmented_gene_annotation={"S": os.path.join(self.tmp, "missing.gff3")}
+        )
+        with self.assertRaises(GeneAnnotationNotFoundError):
+            self._validate(args)
 
 
 class Test_ValidateSampleSheet(unittest.TestCase):

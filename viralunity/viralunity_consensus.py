@@ -63,14 +63,22 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
     else:
         logger.info("A primer scheme was provided (Amplicon sequencing)...")
 
+    # Handle gene annotation - set to "NA" if not provided (a collapsed
+    # segmented dict is truthy and preserved).
+    if not args.get("gene_annotation"):
+        args["gene_annotation"] = "NA"
+
     # Validate data-type specific requirements
     validate_illumina_requirements(args)
 
     # ``validate_consensus_requirements`` parses ``--segmented-reference``
-    # (``L=/path/L.fasta``) into a dict stored under ``reference``. Now
-    # that the dict exists, resolve its values to absolute paths.
+    # (``L=/path/L.fasta``) into a dict stored under ``reference`` (and the
+    # segmented gene annotation into ``gene_annotation``). Now that the dicts
+    # exist, resolve their values to absolute paths.
     if isinstance(args.get("reference"), dict):
         resolve_path_args(args, ("reference",))
+    if isinstance(args.get("gene_annotation"), dict):
+        resolve_path_args(args, ("gene_annotation",))
 
     logger.info("All arguments validated successfully")
     return samples

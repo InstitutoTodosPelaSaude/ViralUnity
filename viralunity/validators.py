@@ -9,6 +9,7 @@ from viralunity.constants import DataType
 from viralunity.exceptions import (
     AdaptersNotFoundError,
     DiamondDatabaseNotFoundError,
+    GeneAnnotationNotFoundError,
     Kraken2DatabaseNotFoundError,
     KronaDatabaseNotFoundError,
     PrimerSchemeNotFoundError,
@@ -342,6 +343,64 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
         except ViralUnityFileNotFoundError as e:
             raise PrimerSchemeNotFoundError(f"Primer scheme file does not exist: {e}") from e
 
+    _validate_gene_annotation(args)
+
+
+def _validate_gene_annotation(args: Dict[str, Any]) -> None:
+    """Validate the optional gene-annotation GFF3 input.
+
+    Both ``--gene-annotation`` (a single path) and ``--segmented-gene-annotation``
+    (SEGMENT=PATH pairs, collapsed into ``args["gene_annotation"]`` as a dict)
+    are optional and mutually exclusive. Providing neither is legal.
+    """
+    gene_annotation = args.get("gene_annotation")
+    segmented = args.get("segmented_gene_annotation")
+
+    if gene_annotation and segmented:
+        raise ValidationError(
+            "--gene-annotation and --segmented-gene-annotation are mutually "
+            "exclusive. Please provide only one."
+        )
+
+    if segmented:
+        if isinstance(segmented, dict):
+            parsed_segments = segmented
+        else:
+            parsed_segments = {}
+            for entry in segmented:
+                if "=" not in entry:
+                    raise ValidationError(
+                        f"Invalid segmented gene annotation format: '{entry}'. "
+                        f"Expected SEGMENT=PATH (e.g. S=/path/to/S.gff3)"
+                    )
+                segment_name, segment_path = entry.split("=", 1)
+                segment_name = segment_name.strip()
+                segment_path = segment_path.strip()
+                if not segment_name or not segment_path:
+                    raise ValidationError(
+                        f"Invalid segmented gene annotation format: '{entry}'. "
+                        f"Both segment name and path are required."
+                    )
+                parsed_segments[segment_name] = segment_path
+
+        args["gene_annotation"] = parsed_segments
+        args["segmented_gene_annotation"] = None
+        gene_annotation = parsed_segments
+
+    if isinstance(gene_annotation, dict):
+        for segment_name, segment_path in gene_annotation.items():
+            try:
+                validate_file_exists(
+                    segment_path, f"Gene annotation file for segment '{segment_name}'"
+                )
+            except ViralUnityFileNotFoundError as e:
+                raise GeneAnnotationNotFoundError(str(e)) from e
+    elif gene_annotation:
+        try:
+            validate_file_exists(cast(str, gene_annotation), "Gene annotation file")
+        except ViralUnityFileNotFoundError as e:
+            raise GeneAnnotationNotFoundError(f"Gene annotation file does not exist: {e}") from e
+
 
 def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:
     """Validate metagenomics pipeline requirements.
@@ -604,6 +663,7 @@ CONSENSUS_PATH_ARG_KEYS = (
     "output",
     "reference",
     "primer_scheme",
+    "gene_annotation",
     "adapters",
 )
 

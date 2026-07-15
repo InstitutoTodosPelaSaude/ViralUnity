@@ -24,6 +24,7 @@ class ConfigKeys:
     KRONA_DATABASE = "krona_database"
     REFERENCE = "reference"
     SCHEME = "scheme"
+    GENE_ANNOTATION = "gene_annotation"
     ADAPTERS = "adapters"
     MINIMUM_LENGTH = "minimum_length"
     MINIMUM_DEPTH = "minimum_depth"

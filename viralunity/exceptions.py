@@ -84,6 +84,12 @@ class PrimerSchemeNotFoundError(ViralUnityError):
     code = "primer_scheme_not_found"
 
 
+class GeneAnnotationNotFoundError(ViralUnityError):
+    """Raised when a gene-annotation GFF3 file is not found."""
+
+    code = "gene_annotation_not_found"
+
+
 class AdaptersNotFoundError(ViralUnityError):
     """Raised when the Illumina adapter sequences file is not found or not provided."""
 
