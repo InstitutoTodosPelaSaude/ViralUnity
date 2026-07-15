@@ -7,19 +7,25 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
-## [1.3.4] - 2026-07-14
+## [1.4.0] - 2026-07-15
 
 Adds an interactive, self-contained HTML report for consensus runs.
 
 ### Added
 
 - Interactive consensus HTML report: a single offline-openable `report.html`
-  visualizing a consensus run — a sortable assembly-statistics table, a grouped
-  reads histogram, a log-scale average-depth bar chart with 20x/100x guides, an
-  aggregated per-position coverage plot (one panel per segment in segmented
-  mode), and a per-sample coverage viewer. Charts use a colourblind-safe palette
-  and support light/dark mode. Built with Plotly, inlined once so the file has
-  no external dependencies.
+  visualizing a consensus run — a sortable assembly-statistics table; KPI summary
+  tiles (samples analyzed, samples with ≥90% horizontal coverage, median
+  horizontal coverage, median mean depth, with a Global | Per-segment switch on
+  segmented runs); a "Sequencing throughput" chart (total vs QC-passed reads plus
+  a mapping-rate panel); an aggregated per-position coverage plot (one panel per
+  segment in segmented mode) with a Linear/Log10 scale toggle and 20x/100x depth
+  guides; and a per-sample / per-segment coverage viewer. Depth charts default to
+  a linear axis with honest zeros (no coverage reads as a gap, never a false depth
+  of 1). Charts use a colourblind-safe palette and support light/dark mode. Built
+  with Plotly, inlined once so the file has no external dependencies.
+- Run-parameters slide-over drawer showing the full run config, HTML-escaped and
+  behind a focus-trapped modal.
 - `viralunity report --input <consensus-output-dir> [--output report.html]`: a
   standalone subcommand to (re)generate the report from an existing output
   directory without rerunning the pipeline.
@@ -33,7 +39,7 @@ Adds an interactive, self-contained HTML report for consensus runs.
 - New runtime dependencies `plotly` and `jinja2`; the packaged `.j2` template is
   now shipped as package data.
 
-
+## [1.3.3] - 2026-07-14
 
 Documentation-only release: the user-facing docs are brought in line with the
 1.3.2 CLI and behaviour, and the changelog is tidied. No code or workflow changes.

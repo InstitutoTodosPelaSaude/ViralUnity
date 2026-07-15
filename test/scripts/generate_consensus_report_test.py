@@ -11,6 +11,7 @@ Covers the pure, I/O-light helpers that back the interactive consensus report:
 """
 
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -20,6 +21,9 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
+    EMPHASIS_MUTED,
+    _json_for_script,
+    _stats_rows_by_sample,
     build_aggregated_coverage_line_plot,
     build_kpi_summary,
     build_reads_histogram,
@@ -32,6 +36,8 @@ from viralunity.scripts.python.generate_consensus_report import (
     read_stats_summary,
     resolve_basewise_path,
 )
+
+_MODULE = "viralunity.scripts.python.generate_consensus_report"
 
 UNSEG_CSV = (
     "sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,"
@@ -197,6 +203,17 @@ class TestKpiSummary(unittest.TestCase):
         equal = {("sample-A", "S1"): 1000, ("sample-A", "S2"): 1000}
         self.assertEqual(build_kpi_summary(df, equal, segmented=True)["global"]["ge90"], 0)
 
+    def test_segmented_falls_back_to_equal_weight_when_no_track_lengths(self):
+        # Coverage tracks unavailable for every segment (empty lengths) while the
+        # stats CSV is valid: the whole-genome KPIs must reflect the CSV via an
+        # equal-weight mean, not collapse to 0%/0x (regression guard for the
+        # length-weights-vs-CSV-values divergence).
+        df = pd.read_csv(io.StringIO(SEG_CSV))
+        g = build_kpi_summary(df, {}, segmented=True)["global"]
+        self.assertAlmostEqual(g["median_coverage"], (0.95 + 0.80) / 2, places=4)
+        self.assertAlmostEqual(g["median_depth"], (100.0 + 50.0) / 2, places=3)
+        self.assertNotEqual(g["median_coverage"], 0.0)
+
     def test_segmented_per_segment_blocks(self):
         df = pd.read_csv(io.StringIO(SEG_CSV))
         lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
@@ -244,6 +261,19 @@ class TestReportMetadata(unittest.TestCase):
         self.assertEqual(meta["platform"], "nanopore")
         self.assertEqual(meta["library_layout"], "single")
         self.assertFalse(meta["qc_performed"])
+
+    def test_warns_loudly_when_layout_is_inferred(self):
+        # Inferring layout silently drives the mapping-rate x2 denominator, so the
+        # config-less path must warn (a misidentified platform doubles/halves the
+        # reported rate).
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertLogs(_MODULE, level="WARNING") as cm:
+                build_report_metadata(None, d)
+        self.assertTrue(any("inferred platform" in m for m in cm.output))
+
+    def test_no_warning_when_config_declares_layout(self):
+        with self.assertNoLogs(_MODULE, level="WARNING"):
+            build_report_metadata({"data": "illumina", "scheme": "NA"}, "/no/dir")
 
 
 class TestMappingRate(unittest.TestCase):
@@ -316,6 +346,24 @@ class TestFigureBuilders(unittest.TestCase):
         self.assertAlmostEqual(mapped.y[0], 643219 / (2 * 330568) * 100, places=1)
         self.assertEqual(tuple(fig.layout.yaxis2.range), (0, 100))
 
+    def test_aggregated_over_8_samples_falls_back_to_emphasis(self):
+        # >8 series exceeds the CVD-safe categorical ceiling, so identity is no
+        # longer colour-coded: a single muted hue, dimmed, with the legend off
+        # (the stats table carries per-sample identity instead).
+        series = {f"s{i}": (np.array([1, 2, 3]), np.array([10.0, 20.0, 30.0])) for i in range(9)}
+        fig = build_aggregated_coverage_line_plot(series)
+        self.assertFalse(fig.layout.showlegend)
+        self.assertTrue(all(t.line.color == EMPHASIS_MUTED for t in fig.data))
+        self.assertTrue(all(t.opacity == 0.6 for t in fig.data))
+
+    def test_aggregated_8_samples_keeps_categorical_legend(self):
+        # At the 8-series ceiling the categorical palette is still used (legend on,
+        # no forced muted hue).
+        series = {f"s{i}": (np.array([1, 2, 3]), np.array([10.0, 20.0, 30.0])) for i in range(8)}
+        fig = build_aggregated_coverage_line_plot(series)
+        self.assertTrue(fig.layout.showlegend)
+        self.assertFalse(any(t.line.color == EMPHASIS_MUTED for t in fig.data))
+
     def test_aggregated_coverage_is_linear_with_honest_zeros(self):
         series = {"sample-A": (np.array([1, 2, 3, 4]), np.array([0.0, 10.0, 100.0, 0.0]))}
         fig = build_aggregated_coverage_line_plot(series)
@@ -326,6 +374,49 @@ class TestFigureBuilders(unittest.TestCase):
         # y-range is fit to the data and anchored at zero.
         self.assertEqual(fig.layout.yaxis.range[0], 0.0)
         self.assertAlmostEqual(fig.layout.yaxis.range[1], 108.0)
+
+
+def _one_sample_df(name):
+    return pd.DataFrame(
+        [
+            {
+                "sample_name": name,
+                "number_of_reads": 1000,
+                "number_of_trim_paired_reads": 900,
+                "number_of_mapped_reads": 800,
+                "average_depth": 45.5,
+                "horizontal_coverage": 0.6,
+            }
+        ]
+    )
+
+
+class TestHtmlEscaping(unittest.TestCase):
+    """Data-controlled strings (sample/segment names) must not inject markup —
+    the report is a self-contained file designed to be shared."""
+
+    def test_stats_table_escapes_sample_names(self):
+        df = _one_sample_df('"><img src=x onerror=alert(1)>')
+        html = build_stats_table_html(df, paired=False)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+        self.assertIn("&lt;img", html)
+        # the attribute-breaking quote is neutralized too.
+        self.assertNotIn('data-sort=""><img', html)
+
+    def test_stats_rows_by_sample_escapes_cell_values(self):
+        df = _one_sample_df("<b>x</b>")
+        rows = _stats_rows_by_sample(df, segmented=False, paired=False)
+        # the key is the raw name (a JS object key, not HTML); the rendered
+        # "Sample" cell value (inserted via innerHTML client-side) is escaped.
+        self.assertEqual(rows["<b>x</b>"][0]["Sample"], "&lt;b&gt;x&lt;/b&gt;")
+
+    def test_json_for_script_neutralizes_script_breakout(self):
+        payload = {"sample": "</script><script>alert(1)</script>"}
+        s = _json_for_script(payload)
+        self.assertNotIn("</script>", s)
+        self.assertIn("\\u003c", s)
+        # still valid JSON that round-trips back to the original characters.
+        self.assertEqual(json.loads(s), payload)
 
 
 if __name__ == "__main__":

@@ -52,9 +52,13 @@ class TestReportSnapshot(unittest.TestCase):
         # honest zeros: the log clamp is gone; the line breaks at true zeros.
         self.assertNotIn("Math.max(1,", app)
         self.assertIn("connectgaps: false", app)
-        # both progressive-disclosure accordions are built.
-        self.assertIn("By sample", app)
-        self.assertIn("By segment", app)
+        # both progressive-disclosure accordions are server-rendered (structure
+        # present in the HTML, not reconstructed at load by JS).
+        self.assertIn('id="by-sample-details"', html)
+        self.assertIn('id="by-segment-details"', html)
+        self.assertIn("<summary>", html)
+        self.assertIn("By sample", html)
+        self.assertIn("By segment", html)
         # the scale toggle rebuilds via react, NOT a yaxis.type relayout (guards
         # the ~6 s freeze). yaxis.type appears only unquoted in a comment; a real
         # relayout would quote it as an object key.
@@ -85,6 +89,14 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn("10,000", html)
         # paired x2 reconciliation: sample-A mapped 9000 / (2 x 9500) = 47.4%.
         self.assertIn("47.4%", html)
+        # KPI tiles carry the actual server-rendered values (not just the keys):
+        # 2 samples, 1 at >=90% (sample-A 0.995; sample-B 0.70 fails), median
+        # coverage median(0.995,0.70)=0.8475 -> 84.7%, median depth
+        # median(512.4,45.7)=279.05 -> 279.1x (with the x suffix).
+        self.assertIn('data-kpi="samples">2<', html)
+        self.assertIn('data-kpi="ge90">1<', html)
+        self.assertIn('data-kpi="median_coverage">84.7%<', html)
+        self.assertIn('data-kpi="median_depth">279.1×<', html)
 
     def test_nanopore_single_end_snapshot(self):
         html = _render("nanopore")
@@ -95,6 +107,9 @@ class TestReportSnapshot(unittest.TestCase):
         # 256410 / 462000 = 55.5% (undoubled denominator).
         self.assertIn("55.5%", html)
         self.assertIn("462,000", html)
+        # KPI tiles: single sample at 0.982 breadth / 845.3x depth.
+        self.assertIn('data-kpi="median_coverage">98.2%<', html)
+        self.assertIn('data-kpi="median_depth">845.3×<', html)
         # the known zero-coverage run is preserved verbatim in the embedded data
         # (not clamped away): barcode05 begins with five depth-0 positions.
         cov = _coverage_json(html)
@@ -113,6 +128,12 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn("minimum_depth", html)
         self.assertIn(">42<", html)  # the fixture's distinctive minimum_depth value
         self.assertIn(">Resources</h3>", html)
+        # length-weighted whole-genome KPIs land in the right tiles: one sample,
+        # weighted breadth (0.97,0.92 over equal-length tracks) = 0.945 -> 94.5%,
+        # weighted depth (220.5,88.2) = 154.35 -> 154.3x.
+        self.assertIn('data-kpi="samples">1<', html)
+        self.assertIn('data-kpi="median_coverage">94.5%<', html)
+        self.assertIn('data-kpi="median_depth">154.3×<', html)
 
     def test_unsegmented_has_no_per_segment_kpi_switch(self):
         # a single-genome run has nothing to split by, so no Global/Per-segment toggle.

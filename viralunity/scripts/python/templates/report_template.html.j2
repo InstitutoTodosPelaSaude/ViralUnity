@@ -73,6 +73,10 @@ table.stats-table th {
 }
 table.stats-table th:hover { color: var(--text-primary); }
 table.stats-table tbody tr:hover { background: var(--hover); }
+/* Client-rendered per-sample/per-segment tables are read-only (not sortable), so
+   they must not advertise a sort affordance. */
+table.stats-table.stats-static th { cursor: default; }
+table.stats-table.stats-static th:hover { color: var(--text-secondary); }
 .sort-arrow { font-size: 0.7em; color: var(--text-muted); margin-left: 4px; }
 .plot-holder { min-height: 60px; }
 .chart-note { font-size: 0.8rem; color: var(--text-muted); margin: 8px 4px 0; }
@@ -158,7 +162,7 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 }
 </style>
 </head>
-<body data-palette="{{ palette_light|join(',') }}">
+<body data-palette="{{ palette_light|join(',') }}" data-palette-dark="{{ palette_dark|join(',') }}">
 <header>
   <h1>ViralUnity consensus report{% if segmented %} <span style="color:var(--text-muted);font-weight:400">· segmented</span>{% endif %}</h1>
   <div class="header-actions">
@@ -172,8 +176,8 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   {% if segmented %}
   <div class="chart-controls kpi-controls">
     <div class="scale-toggle" role="group" aria-label="KPI scope" id="kpi-scope">
-      <button type="button" class="active" data-scope="global">Global</button>
-      <button type="button" data-scope="segment">Per segment</button>
+      <button type="button" class="active" data-scope="global" aria-pressed="true">Global</button>
+      <button type="button" data-scope="segment" aria-pressed="false">Per segment</button>
     </div>
     <label class="control" for="kpiSegmentSelect" id="kpiSegmentLabel" style="display:none">Segment</label>
     <select id="kpiSegmentSelect" style="display:none">
@@ -203,12 +207,12 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
     {{ stats_table_html|safe }}
   </div>
 
-  <div class="card">
+  <div class="card" id="throughput-card">
     <h2>Sequencing throughput</h2>
     {{ reads_fig_html|safe }}
   </div>
 
-  <div class="card">
+  <div class="card" id="aggregated-card">
     <h2>Aggregated coverage</h2>
     {% if segmented %}
     <div>
@@ -221,27 +225,59 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
     </div>
     {% endif %}
     {% for panel in aggregated_panels %}
-    <div class="agg-panel" data-key="{{ panel.segment }}" style="display: {{ 'block' if loop.first else 'none' }};">
+    <div class="agg-panel" data-key="{{ panel.segment }}"
+         data-log-range="{{ panel.log_range|join(',') }}" data-lin-max="{{ panel.lin_max }}"
+         style="display: {{ 'block' if loop.first else 'none' }};">
       {{ panel.html|safe }}
     </div>
     {% endfor %}
   </div>
 
-  <p class="section-title">Per-sample detail</p>
+  {% if has_coverage %}
+  <p class="section-title">Details</p>
 
   <div class="card">
-    <h2>Coverage by sample</h2>
-    <div>
-      <label class="control" for="sampleSelect">Sample</label>
-      <select id="sampleSelect" onchange="showSample(this.value)">
-        {% for s in samples %}
-        <option value="{{ s }}">{{ s }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div id="sample-stats"></div>
-    <div id="sample-coverage" class="plot-holder"></div>
+    <details class="sample-details" id="by-sample-details">
+      <summary>
+        <span class="sample-summary-title">By sample</span>
+        <span class="sample-summary-hint">Coverage and depth for one sample</span>
+      </summary>
+      <div class="sample-details-body">
+        <div class="chart-controls">
+          <label class="control" for="sampleSelect">Sample</label>
+          <select id="sampleSelect" onchange="showSample(this.value)">
+            {% for s in samples %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div id="sample-stats"></div>
+        <div id="sample-coverage" class="plot-holder"></div>
+      </div>
+    </details>
   </div>
+
+  <div class="card">
+    <details class="sample-details" id="by-segment-details">
+      <summary>
+        <span class="sample-summary-title">By segment</span>
+        <span class="sample-summary-hint">
+          {%- if segmented %}Coverage and depth for one segment, across samples
+          {%- else %}Coverage and depth across all samples{% endif %}</span>
+      </summary>
+      <div class="sample-details-body">
+        <div class="chart-controls">
+          {% if segmented %}
+          <label class="control" for="segmentSelect">Segment</label>
+          <select id="segmentSelect" onchange="showSegment(this.value)">
+            {% for s in segments %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        <div id="segment-stats"></div>
+        <div id="segment-coverage" class="plot-holder"></div>
+      </div>
+    </details>
+  </div>
+  {% endif %}
 
 </main>
 
@@ -267,6 +303,12 @@ const FIG_WIDTH = 900, FIG_HEIGHT = 420;
 
 /* ---- theme ---- */
 function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+// Colourblind-safe categorical palettes (light/dark), read from the server-set
+// body attributes so Python stays the single source of the hues.
+function seriesPalette() {
+  const attr = isDark() ? 'data-palette-dark' : 'data-palette';
+  return (document.body.getAttribute(attr) || '').split(',');
+}
 function toggleTheme() {
   const dark = !isDark();
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
@@ -285,6 +327,30 @@ function themeCharts() {
   };
   document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
     try { Plotly.relayout(gd, upd); } catch (e) { /* not yet drawn */ }
+  });
+  recolorCharts();
+}
+// Series hues are theme-specific (the light hexes are not contrast-safe on the
+// dark surface), so restyle each chart's colours when the theme flips. Server-
+// rendered figures start in the light palette; this brings them to the dark set.
+function recolorCharts() {
+  if (!window.Plotly) return;
+  const pal = seriesPalette();
+  if (!pal.length || !pal[0]) return;
+  // Single-hue coverage line charts (by sample / by segment / aggregated).
+  document.querySelectorAll('#sample-coverage .js-plotly-plot, #segment-coverage .js-plotly-plot')
+    .forEach(function (gd) { try { Plotly.restyle(gd, {'line.color': pal[0]}); } catch (e) {} });
+  // Aggregated coverage: one line per sample (categorical), except the >8-series
+  // emphasis fallback which is a single theme-neutral muted grey — leave it be.
+  document.querySelectorAll('#aggregated-card .js-plotly-plot').forEach(function (gd) {
+    const n = (gd.data || []).length;
+    if (n === 0 || n > 8) return;
+    try { Plotly.restyle(gd, {'line.color': pal.slice(0, n)}); } catch (e) {}
+  });
+  // Sequencing throughput: three categorical bar series (total / QC / mapped).
+  const tc = document.getElementById('throughput-card');
+  if (tc) tc.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    try { Plotly.restyle(gd, {'marker.color': [pal[0], pal[1], pal[2]]}); } catch (e) {}
   });
 }
 
@@ -346,10 +412,15 @@ function scaleToggleEl(initial, onChange) {
     b.type = 'button';
     b.textContent = s === 'linear' ? 'Linear' : 'Log10';
     b.setAttribute('data-scale', s);
+    b.setAttribute('aria-pressed', s === initial ? 'true' : 'false');
     if (s === initial) b.className = 'active';
     b.addEventListener('click', function () {
-      wrap.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+      wrap.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
       b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
       onChange(s);
     });
     wrap.appendChild(b);
@@ -364,12 +435,16 @@ function scaleToggleEl(initial, onChange) {
    Log10 range comes from Python (entry.logRange), computed once, not re-derived
    here. The y-caption is just "Depth" in both modes (the toggle states the
    scale); log ticks are pinned to powers of ten (dtick 1). */
-function depthYAxis(scale, logRange) {
+function depthYAxis(scale, logRange, linRange) {
   const common = {title: {text: 'Depth'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false};
   if (scale === 'log') {
     return Object.assign(common, {type: 'log', range: logRange, dtick: 1});
   }
-  return Object.assign(common, {type: 'linear', rangemode: 'tozero'});
+  // Explicit data-fit range (computed once in Python) rather than autorange;
+  // fall back to tozero if a range wasn't supplied.
+  return linRange
+    ? Object.assign(common, {type: 'linear', range: linRange})
+    : Object.assign(common, {type: 'linear', rangemode: 'tozero'});
 }
 function depthGuides() {
   return {
@@ -383,7 +458,7 @@ function depthGuides() {
     ]
   };
 }
-function coverageLayout(title, scale, logRange) {
+function coverageLayout(title, scale, logRange, linRange) {
   const g = depthGuides();
   return {
     autosize: true, height: FIG_HEIGHT, title: title ? {text: title} : undefined,
@@ -391,7 +466,7 @@ function coverageLayout(title, scale, logRange) {
     paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
     font: themeFont(),
     xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
-    yaxis: depthYAxis(scale, logRange),
+    yaxis: depthYAxis(scale, logRange, linRange),
     hovermode: 'x unified', showlegend: false,
     shapes: g.shapes, annotations: g.annotations
   };
@@ -407,7 +482,7 @@ function depthForScale(y, scale) {
 function statsTableHTML(rows) {
   if (!rows.length) return '';
   const cols = Object.keys(rows[0]);
-  let html = '<table class="stats-table"><thead><tr>';
+  let html = '<table class="stats-table stats-static"><thead><tr>';
   cols.forEach(function (c) { html += '<th>' + c + '</th>'; });
   html += '</tr></thead><tbody>';
   rows.forEach(function (r) {
@@ -429,9 +504,10 @@ function plotCoverage(holderId, entries, labelFor, scale) {
     const div = document.createElement('div');
     div.id = holderId + '-' + i;
     holder.appendChild(div);
+    const lineColor = seriesPalette()[0] || '#2a78d6';
     const trace = {x: e.x, y: depthForScale(e.y, scale), mode: 'lines',
-                   line: {width: 2, color: '#2a78d6'}, name: labelFor(e), connectgaps: false};
-    Plotly.newPlot(div, [trace], coverageLayout(labelFor(e), scale, e.logRange),
+                   line: {width: 2, color: lineColor}, name: labelFor(e), connectgaps: false};
+    Plotly.newPlot(div, [trace], coverageLayout(labelFor(e), scale, e.logRange, e.linRange),
                    {responsive: true, displayModeBar: false});
   });
 }
@@ -447,51 +523,24 @@ function renderSampleStats(sample) {
   const box = document.getElementById('sample-stats');
   if (box) box.innerHTML = statsTableHTML(STATS[sample] || []);
 }
-// Collapse the "Coverage by sample" card into a <details> so run-level cards
-// lead and per-sample detail is opt-in and lazily rendered.
-function makeSampleSectionCollapsible() {
-  const card = Array.from(document.querySelectorAll('main .card')).find(function (c) {
-    const h = c.querySelector('h2');
-    return h && /Coverage by sample/i.test(h.textContent);
-  });
-  if (!card) return null;
-  const h2 = card.querySelector('h2');
-  if (!h2) return null;
-  const details = document.createElement('details');
-  details.className = 'sample-details';
-  const summary = document.createElement('summary');
-  const title = document.createElement('span');
-  title.className = 'sample-summary-title'; title.textContent = 'By sample';
-  const hint = document.createElement('span');
-  hint.className = 'sample-summary-hint'; hint.textContent = 'Coverage and depth for one sample';
-  summary.appendChild(title); summary.appendChild(hint);
-  details.appendChild(summary);
-  const body = document.createElement('div');
-  body.className = 'sample-details-body';
-  let node = h2.nextSibling;
-  while (node) { const next = node.nextSibling; body.appendChild(node); node = next; }
-  details.appendChild(body);
-  h2.remove();
-  card.appendChild(details);
-  return details;
-}
-function injectCoverageToggle() {
-  const sel = document.getElementById('sampleSelect');
-  if (!sel) return;
-  const toggle = scaleToggleEl('linear', function (s) {
-    covScale = s;
-    if (currentSample) showSample(currentSample);
-  });
-  toggle.style.margin = '0 0 14px 8px';
-  sel.insertAdjacentElement('afterend', toggle);
+// Append a Linear/Log10 scale toggle into a server-rendered controls row.
+function injectScaleToggle(controls, onChange) {
+  if (controls) controls.appendChild(scaleToggleEl('linear', onChange));
 }
 
 /* ---- "By segment" view: one segment, its coverage across every sample ----
-   For a segmented genome a Segment selector picks the segment; for an
-   unsegmented genome there is a single whole-genome "segment", so no selector —
-   it just stacks every sample's coverage. Only built when coverage exists. */
+   For a segmented genome a Segment selector (server-rendered) picks the segment;
+   for an unsegmented genome there is a single whole-genome "segment" with no
+   selector, so it stacks every sample's coverage. The <details> structure is
+   server-rendered (see the template); the JS below only wires behaviour. */
 var segCovScale = 'linear';
 var currentSegment = null;
+// Current segment choice: the selector's value on a segmented run, else '' (the
+// single whole-genome view).
+function currentSegmentChoice() {
+  const sel = document.getElementById('segmentSelect');
+  return sel ? sel.value : '';
+}
 function rowsForSegment(segment) {
   const rows = [];
   Object.keys(STATS).forEach(function (sample) {
@@ -504,7 +553,7 @@ function showSegment(segment) {
   const entries = [];
   Object.keys(COVERAGE).forEach(function (sample) {
     (COVERAGE[sample] || []).forEach(function (e) {
-      if ((e.label || '') === segment) entries.push({_sample: sample, x: e.x, y: e.y, logRange: e.logRange, label: e.label});
+      if ((e.label || '') === segment) entries.push({_sample: sample, x: e.x, y: e.y, logRange: e.logRange, linRange: e.linRange, label: e.label});
     });
   });
   plotCoverage('segment-coverage', entries, function (e) {
@@ -516,86 +565,36 @@ function showSegment(segment) {
   const box = document.getElementById('segment-stats');
   if (box) box.innerHTML = segment ? statsTableHTML(rowsForSegment(segment)) : '';
 }
-function buildSegmentSection() {
-  const samples = Object.keys(COVERAGE);
-  if (!samples.length) return;
-  const labels = (COVERAGE[samples[0]] || []).map(function (e) { return e.label; });
-  if (!labels.length) return;
-  const labeled = labels.filter(function (l) { return l && l.length; });
-  const isSegmented = labeled.length > 0;
-  const segList = isSegmented ? labeled : [''];
-  let segChoice = segList[0];
-
-  let sampleCard = document.querySelector('.sample-details');
-  sampleCard = sampleCard ? sampleCard.closest('.card') : null;
-  if (!sampleCard) return;
-
-  const card = document.createElement('div');
-  card.className = 'card';
-  const details = document.createElement('details');
-  details.className = 'sample-details';
-  const summary = document.createElement('summary');
-  const title = document.createElement('span'); title.className = 'sample-summary-title'; title.textContent = 'By segment';
-  const hint = document.createElement('span'); hint.className = 'sample-summary-hint';
-  hint.textContent = isSegmented ? 'Coverage and depth for one segment, across samples'
-                                 : 'Coverage and depth across all samples';
-  summary.appendChild(title); summary.appendChild(hint);
-  details.appendChild(summary);
-
-  const body = document.createElement('div'); body.className = 'sample-details-body';
-  const controls = document.createElement('div'); controls.className = 'chart-controls';
-  if (segList.length > 1) {
-    const lab = document.createElement('label'); lab.className = 'control'; lab.setAttribute('for', 'segmentSelect'); lab.textContent = 'Segment';
-    const sel = document.createElement('select'); sel.id = 'segmentSelect';
-    segList.forEach(function (sg) { const o = document.createElement('option'); o.value = sg; o.textContent = sg; sel.appendChild(o); });
-    sel.addEventListener('change', function () { segChoice = sel.value; showSegment(segChoice); });
-    controls.appendChild(lab); controls.appendChild(sel);
-  }
-  controls.appendChild(scaleToggleEl('linear', function (s) { segCovScale = s; showSegment(segChoice); }));
-  body.appendChild(controls);
-  const stats = document.createElement('div'); stats.id = 'segment-stats'; body.appendChild(stats);
-  const cov = document.createElement('div'); cov.id = 'segment-coverage'; cov.className = 'plot-holder'; body.appendChild(cov);
-  details.appendChild(body);
-  card.appendChild(details);
-  sampleCard.insertAdjacentElement('afterend', card);
-
-  let rendered = false;
-  details.addEventListener('toggle', function () {
-    if (details.open && !rendered) { rendered = true; showSegment(segChoice); }
-  });
-}
-
 /* ---- aggregated-coverage Linear/Log10 toggle (server-rendered linear first) ----
    Rebuilds every segment panel via Plotly.react on toggle (never a yaxis.type
-   relayout). The Log10 range is derived from the plotted data max. */
-function aggMax(gd) {
-  let mx = 0;
-  (gd._fullData || gd.data || []).forEach(function (t) {
-    const y = t.y; if (y && y.length) for (let i = 0; i < y.length; i++) { if (y[i] > mx) mx = y[i]; }
-  });
-  return mx;
-}
-function aggregatedLayout(scale, mx) {
-  const logRange = [0, Math.log10(Math.max(150, mx * 1.5))];
+   relayout). Both axis ranges come from Python (per-panel data attributes), the
+   same single source the per-sample charts use — no JS re-derivation. */
+function aggregatedLayout(scale, logRange, linMax) {
   const g = depthGuides();
+  const linRange = (linMax && linMax > 0) ? [0, linMax] : undefined;
   return {
     autosize: true, height: FIG_HEIGHT, margin: {l: 60, r: 30, t: 24, b: 60},
     paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
     xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
-    yaxis: scale === 'log' ? depthYAxis('log', logRange) : {title: {text: 'Depth'}, type: 'linear', range: [0, mx * 1.08], gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: depthYAxis(scale, logRange, linRange),
     hovermode: 'x unified', showlegend: false, shapes: g.shapes, annotations: g.annotations
   };
 }
 function enhanceAggregatedToggle() {
   if (!window.Plotly) return;
-  const card = Array.from(document.querySelectorAll('main .card')).find(function (c) {
-    const h = c.querySelector('h2');
-    return h && /^Aggregated coverage/i.test(h.textContent);
-  });
+  const card = document.getElementById('aggregated-card');
   if (!card) return;
+  const plots = Array.from(card.querySelectorAll('.js-plotly-plot'));
   const setScale = function (s) {
-    card.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
-      try { Plotly.react(gd, gd.data, aggregatedLayout(s, aggMax(gd) || 1), {responsive: true, displayModeBar: false}); } catch (e) {}
+    plots.forEach(function (gd) {
+      const panel = gd.closest('.agg-panel');
+      const logRange = panel ? panel.getAttribute('data-log-range').split(',').map(Number) : undefined;
+      const linMax = panel ? parseFloat(panel.getAttribute('data-lin-max')) : undefined;
+      // Rebuild via react (never a yaxis.type relayout). Pass gd.data through
+      // untouched — the y arrays may be Plotly typed-array specs, so we don't
+      // remap them; on the log axis Plotly drops the true zeros as gaps, giving
+      // the same honest-zero result as the per-sample charts' explicit nulls.
+      try { Plotly.react(gd, gd.data, aggregatedLayout(s, logRange, linMax), {responsive: true, displayModeBar: false}); } catch (e) {}
     });
   };
   const toggle = scaleToggleEl('linear', setScale);
@@ -605,9 +604,12 @@ function enhanceAggregatedToggle() {
 
 /* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
 var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
+// One fixed fractional digit + thousands grouping, matching Python's _fmt_depth
+// (f"{v:,.1f}") so the server-rendered and JS-swapped depth tiles agree.
+var GROUP_DEPTH = new Intl.NumberFormat('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1});
 function kfmtDepth(v) {
   if (v == null || !isFinite(v)) return '—';
-  return GROUP_KPI.format(Math.round(v * 10) / 10) + '×';
+  return GROUP_DEPTH.format(v) + '×';
 }
 function kfmtPct(v) {  // fraction -> percent, matching Python's _fmt_pct
   if (v == null || !isFinite(v)) return '—';
@@ -639,8 +641,12 @@ function initKpiControls() {
   };
   scope.querySelectorAll('button').forEach(function (b) {
     b.addEventListener('click', function () {
-      scope.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+      scope.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
       b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
       apply(b.getAttribute('data-scope'));
     });
   });
@@ -649,11 +655,26 @@ function initKpiControls() {
 
 /* ---- run-parameters slide-over drawer ---- */
 var _paramsPrevFocus = null;
+// Make the rest of the page non-interactive while the modal drawer is open, so
+// Tab/AT focus can't wander behind the overlay (aria-modal alone doesn't do this).
+function _setBackgroundInert(on) {
+  ['header', 'main'].forEach(function (sel) {
+    var el = document.querySelector(sel);
+    if (!el) return;
+    if (on) { el.setAttribute('inert', ''); el.setAttribute('aria-hidden', 'true'); }
+    else { el.removeAttribute('inert'); el.removeAttribute('aria-hidden'); }
+  });
+}
+function _drawerFocusables(d) {
+  return Array.from(d.querySelectorAll('a[href], button, select, textarea, input, [tabindex]:not([tabindex="-1"])'))
+    .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+}
 function openParams() {
   var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
   if (!d) return;
   _paramsPrevFocus = document.activeElement;
   o.hidden = false; d.hidden = false;
+  _setBackgroundInert(true);
   var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'true');
   var close = document.getElementById('params-close'); if (close) close.focus();
 }
@@ -661,37 +682,55 @@ function closeParams() {
   var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
   if (!d || d.hidden) return;
   d.hidden = true; o.hidden = true;
+  _setBackgroundInert(false);
   var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'false');
   if (_paramsPrevFocus && _paramsPrevFocus.focus) _paramsPrevFocus.focus();
 }
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') closeParams();
+  var d = document.getElementById('params-drawer');
+  var open = d && !d.hidden;
+  if (e.key === 'Escape') { closeParams(); return; }
+  // Focus trap: keep Tab cycling inside the open drawer.
+  if (open && e.key === 'Tab') {
+    var f = _drawerFocusables(d);
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
 });
 
 /* ---- init ---- */
-window.addEventListener('load', function () {
-  themeCharts();
-  initKpiControls();
-  enhanceSortHeaders();
-  enhanceAggregatedToggle();
-  // The eyebrow over the collapsible section now holds both a by-sample and a
-  // by-segment view, so it reads "Details".
-  document.querySelectorAll('.section-title').forEach(function (s) {
-    if (/per[-\s]?sample/i.test(s.textContent)) s.textContent = 'Details';
+// Wire a server-rendered <details> detail section: inject its scale toggle and
+// render its (heavy) plot lazily the first time the accordion is expanded.
+function wireDetailSection(detailsId, controlsOnChange, renderFirst) {
+  const details = document.getElementById(detailsId);
+  if (!details) return;
+  injectScaleToggle(details.querySelector('.chart-controls'), controlsOnChange);
+  let rendered = false;
+  details.addEventListener('toggle', function () {
+    if (details.open && !rendered) { rendered = true; renderFirst(); }
   });
-  const details = makeSampleSectionCollapsible();
-  injectCoverageToggle();
-  buildSegmentSection();
-  const first = document.getElementById('sampleSelect');
-  if (details) {
-    // Lazy: build the per-sample plot only when the section is first expanded.
-    let rendered = false;
-    details.addEventListener('toggle', function () {
-      if (details.open && !rendered && first && first.value) { rendered = true; showSample(first.value); }
-    });
-  } else if (first && first.value) {
-    showSample(first.value);
-  }
+}
+window.addEventListener('load', function () {
+  // Wire the detail accordions first so opening one always renders its first
+  // item inline, independent of the optional chart enhancements below (each of
+  // which is isolated so a single failure can't break the rest of the page).
+  const sampleSel = document.getElementById('sampleSelect');
+  wireDetailSection(
+    'by-sample-details',
+    function (s) { covScale = s; if (currentSample) showSample(currentSample); },
+    function () { if (sampleSel && sampleSel.value) showSample(sampleSel.value); }
+  );
+  wireDetailSection(
+    'by-segment-details',
+    function (s) { segCovScale = s; showSegment(currentSegmentChoice()); },
+    function () { showSegment(currentSegmentChoice()); }
+  );
+
+  [themeCharts, initKpiControls, enhanceSortHeaders, enhanceAggregatedToggle].forEach(function (fn) {
+    try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }
+  });
 });
 </script>
 </body>

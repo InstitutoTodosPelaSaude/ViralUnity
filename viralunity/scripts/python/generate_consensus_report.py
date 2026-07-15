@@ -64,8 +64,9 @@ FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 GRID_COLOR = "rgba(137,135,129,0.25)"  # semi-transparent gray: reads on light + dark
 
 # Pre-validated, colourblind-safe categorical palette (dataviz skill reference
-# instance: worst adjacent CVD dE 24.2 light / 10.3 dark). Fixed order, never
-# cycled; a run with >8 samples falls back to emphasis (single hue + hover).
+# instance: worst adjacent CVD dE ~27.6 light / ~13.6 dark; see
+# palette_validation_test.py). Fixed order, never cycled; a run with >8 samples
+# falls back to emphasis (single hue + hover).
 PALETTE_LIGHT = [
     "#2a78d6",
     "#1baf7a",
@@ -172,6 +173,15 @@ def build_report_metadata(config: Optional[dict], output_dir: str) -> Dict[str, 
             primer_scheme = str(scheme)
     if platform is None:
         platform = _ILLUMINA if os.path.isdir(os.path.join(output_dir, "qc")) else _NANOPORE
+        logger.warning(
+            "No library layout declared (no config passed); inferred platform=%s "
+            "from the %spresence of a qc/ directory. The mapping-rate denominator "
+            "is doubled only for paired-end (Illumina) runs, so a misidentified "
+            "platform scales every mapping rate by 2x. Pass --config-file to avoid "
+            "guessing.",
+            platform,
+            "" if platform == _ILLUMINA else "absence of a ",
+        )
     paired = platform == _ILLUMINA
     return {
         "platform": platform,
@@ -276,6 +286,17 @@ def dedupe_and_sum_reads(df: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # Display formatting
 # --------------------------------------------------------------------------- #
+def _json_for_script(obj) -> str:
+    """JSON safe to embed inside an HTML ``<script>`` element.
+
+    ``json.dumps`` does not escape ``<``/``>``/``&``, so a data value containing
+    ``</script>`` (e.g. a crafted sample id) would otherwise terminate the script
+    element during HTML parsing. Escaping them as ``\\uXXXX`` is valid JSON and
+    parses back to the original characters, but cannot break out of the element.
+    """
+    return json.dumps(obj).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
 def _fmt_pct(value) -> str:
     try:
         return f"{float(value) * 100:.1f}%"
@@ -349,7 +370,7 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
     columns = [c for c in df.columns if c not in PERCENTAGE_ABOVE_COLS]
     header_cells = "".join(
         f'<th data-col="{i}" role="button" tabindex="0" aria-sort="none" '
-        f'onclick="sortTable(this)">{COLUMN_LABELS.get(col, col)}'
+        f'onclick="sortTable(this)">{html.escape(str(COLUMN_LABELS.get(col, col)))}'
         f'<span class="sort-arrow"></span></th>'
         for i, col in enumerate(columns)
     )
@@ -372,7 +393,10 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
             elif col in INT_COLS:
                 display, sort_val = _fmt_int(raw), raw
             else:
-                display, sort_val = str(raw), raw
+                # Non-numeric, data-controlled columns (sample name, segment,
+                # reference id). Escape for both the cell text and the quoted
+                # data-sort attribute so a crafted id cannot inject markup.
+                display = sort_val = html.escape(str(raw))
             cells.append(f'<td data-sort="{sort_val}">{display}</td>')
         body_rows.append("<tr>" + "".join(cells) + "</tr>")
 
@@ -612,6 +636,13 @@ def build_kpi_summary(
     segments = _ordered_unique(df["segment"].tolist())
     # Canonical per-segment length = longest track seen for that segment.
     seg_len = {seg: max((lengths.get((s, seg), 0) for s in samples), default=0) for seg in segments}
+    if sum(seg_len.values()) == 0:
+        # No coverage tracks available for any segment (e.g. the CLI was pointed
+        # at an output dir whose per-segment coverage files were pruned) while the
+        # stats CSV still carries valid per-segment breadth/depth. Fall back to an
+        # equal-weight mean across segments so the whole-genome KPIs reflect the
+        # CSV rather than collapsing to 0%/0x.
+        seg_len = {seg: 1 for seg in segments}
     genome_len = sum(seg_len.values()) or 1
     hc = {
         (r["sample_name"], r["segment"]): float(r["horizontal_coverage"]) for _, r in df.iterrows()
@@ -710,8 +741,19 @@ def render_report(
             for s in samples
             if len(cache.get((s, segment), (np.array([]),))[0]) > 0
         }
+        # Compute the axis ranges once, here, and hand them to the client so the
+        # aggregated scale toggle consumes them as data instead of re-deriving the
+        # Log10 range in JS (kills the Python<->JS _log_depth_range duplication).
+        panel_max = max((float(np.max(d)) for _, d in series.values() if len(d)), default=100.0)
         fig_html = _fig_to_html(build_aggregated_coverage_line_plot(series))
-        aggregated_panels.append({"segment": segment or "", "html": fig_html})
+        aggregated_panels.append(
+            {
+                "segment": segment or "",
+                "html": fig_html,
+                "log_range": _log_depth_range(panel_max),
+                "lin_max": panel_max * 1.08,
+            }
+        )
 
     # Per-sample coverage data, embedded once as JSON for the lazy detail section.
     coverage_json: Dict[str, list] = {}
@@ -721,18 +763,25 @@ def render_report(
             pos, depth = cache.get((sample, segment), (np.array([]), np.array([])))
             if len(pos) == 0:
                 continue
-            # Compute the Log10 axis range once, here, and hand it to the client
-            # so the JS scale toggle consumes it as data instead of re-deriving it
-            # (kills the Python<->JS _log_depth_range duplication).
+            # Compute both axis ranges once, here, and hand them to the client so
+            # the JS scale toggle consumes them as data instead of re-deriving them
+            # (kills the Python<->JS _log_depth_range duplication and gives the
+            # linear axis an explicit data-fit range rather than autorange).
+            md = float(np.max(depth)) if len(depth) else 0.0
             entries.append(
                 {
                     "label": segment or "",
                     "x": [int(p) for p in pos],
                     "y": [float(d) for d in depth],
-                    "logRange": _log_depth_range(float(np.max(depth)) if len(depth) else 0.0),
+                    "logRange": _log_depth_range(md),
+                    "linRange": [0.0, md * 1.08 if md > 0 else 1.0],
                 }
             )
         coverage_json[sample] = entries
+
+    # The per-sample / per-segment detail accordions are only meaningful when at
+    # least one coverage track was found (a fully pruned dir has none).
+    has_coverage = any(entries for entries in coverage_json.values())
 
     stats_by_sample = _stats_rows_by_sample(df, segmented, paired)
 
@@ -745,16 +794,17 @@ def render_report(
         plotly_js=get_plotlyjs(),
         metadata=metadata,
         kpi_global=_kpi_display(kpi_summary["global"]),
-        kpi_json=json.dumps(kpi_summary),
+        kpi_json=_json_for_script(kpi_summary),
         config_panel_html=build_config_panel_html(config),
         segmented=segmented,
         samples=samples,
         segments=[s or "" for s in segments],
+        has_coverage=has_coverage,
         stats_table_html=stats_table_html,
         reads_fig_html=reads_fig_html,
         aggregated_panels=aggregated_panels,
-        coverage_json=json.dumps(coverage_json),
-        stats_by_sample=json.dumps(stats_by_sample),
+        coverage_json=_json_for_script(coverage_json),
+        stats_by_sample=_json_for_script(stats_by_sample),
         palette_light=PALETTE_LIGHT,
         palette_dark=PALETTE_DARK,
     )
@@ -787,7 +837,9 @@ def _stats_rows_by_sample(
             elif col in INT_COLS:
                 rendered[label] = _fmt_int(raw)
             else:
-                rendered[label] = str(raw)
+                # These values are injected client-side via innerHTML
+                # (statsTableHTML), so escape the data-controlled ones here.
+                rendered[label] = html.escape(str(raw))
         out.setdefault(row["sample_name"], []).append(rendered)
     return out
 
