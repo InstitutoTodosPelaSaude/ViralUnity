@@ -65,6 +65,51 @@ rule unify_assembly_statistics_reports:
         cat {input.reports} >> {output.unified_stats_summary}
         """
 
+def annotation_track_inputs():
+    """Staged annotation files to draw as report tracks (empty when none).
+
+    The primer BED is a single file even for segmented runs; gene annotation is
+    per-segment (a {segment: path} dict).
+    """
+    tracks = []
+    if str(config.get("scheme", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/primer_scheme.bed")
+    gene_annotation = config.get("gene_annotation", "NA")
+    if isinstance(gene_annotation, dict):
+        tracks += expand(
+            config['output'] + "annotation/{segment}.gene_annotation.gff3",
+            segment=gene_annotation.keys()
+        )
+    return tracks
+
+rule stage_primer_scheme:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["scheme"]
+    output:
+        config['output'] + "annotation/primer_scheme.bed"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
+rule stage_gene_annotation_segment:
+    conda:
+        "envs/utils.yaml"
+    input:
+        lambda wc: config["gene_annotation"][wc.segment]
+    output:
+        config['output'] + "annotation/{segment}.gene_annotation.gff3"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
 rule generate_html_report:
     conda:
         "envs/report.yaml"
@@ -74,7 +119,8 @@ rule generate_html_report:
             rules.calculate_coverage_basewise.output.table_cov,
             sample=config["samples"],
             segment=SEGMENTS.keys()
-        )
+        ),
+        annotation_tracks = annotation_track_inputs()
     output:
         report = config['output'] + "report.html"
     params:

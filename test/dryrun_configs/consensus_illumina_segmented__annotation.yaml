@@ -5,15 +5,18 @@ samples:
     - data/reads/SAMPLE1_R2.fastq.gz
 
 data: illumina
-output: test/dryrun_output/consensus_illumina_segmented/
+output: test/dryrun_output/consensus_illumina_segmented_annotation/
 threads: 4
 reference:
   S1: data/references/segment1.fasta
   S2: data/references/segment2.fasta
   S3: data/references/segment3.fasta
 
-scheme: NA
-gene_annotation: NA
+scheme: data/references/primers.bed
+gene_annotation:
+  S1: data/references/segment1.gff3
+  S2: data/references/segment2.gff3
+  S3: data/references/segment3.gff3
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .

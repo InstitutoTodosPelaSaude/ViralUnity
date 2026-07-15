@@ -8,11 +8,11 @@ samples:
     - data/reads/SAMPLE2_R2.fastq.gz
 
 data: illumina
-output: test/dryrun_output/consensus_illumina/
+output: test/dryrun_output/consensus_illumina_annotation/
 threads: 4
 reference: data/references/reference.fasta  # Path to single FASTA reference
-scheme: NA                                  # NA or path to primers.bed
-gene_annotation: NA
+scheme: data/references/primers.bed
+gene_annotation: data/references/gene_annotation.gff3
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .                             # Base path for internal scripts

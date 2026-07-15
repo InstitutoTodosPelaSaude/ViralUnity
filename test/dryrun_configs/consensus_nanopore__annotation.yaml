@@ -3,11 +3,11 @@ samples:
   SAMPLE_NP: data/reads/SAMPLE_NP.fastq.gz
 
 data: nanopore
-output: test/dryrun_output/consensus_nanopore/
+output: test/dryrun_output/consensus_nanopore_annotation/
 threads: 4
 reference: data/references/reference.fasta
-scheme: NA
-gene_annotation: NA
+scheme: data/references/primers.bed
+gene_annotation: data/references/gene_annotation.gff3
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .

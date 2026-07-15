@@ -53,12 +53,50 @@ rule unify_assembly_statistics_reports:
         cat {input.reports} >> {output.unified_stats_summary}
         """
 
+def annotation_track_inputs():
+    """Staged annotation files to draw as report tracks (empty when none)."""
+    tracks = []
+    if str(config.get("scheme", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/primer_scheme.bed")
+    if str(config.get("gene_annotation", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/gene_annotation.gff3")
+    return tracks
+
+rule stage_primer_scheme:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["scheme"]
+    output:
+        config['output'] + "annotation/primer_scheme.bed"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
+rule stage_gene_annotation:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["gene_annotation"]
+    output:
+        config['output'] + "annotation/gene_annotation.gff3"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
 rule generate_html_report:
     conda:
         "envs/report.yaml"
     input:
         stats_summary = rules.unify_assembly_statistics_reports.output.unified_stats_summary,
-        basewise = expand(rules.calculate_coverage_basewise.output.table_cov, sample=config["samples"])
+        basewise = expand(rules.calculate_coverage_basewise.output.table_cov, sample=config["samples"]),
+        annotation_tracks = annotation_track_inputs()
     output:
         report = config['output'] + "report.html"
     params:

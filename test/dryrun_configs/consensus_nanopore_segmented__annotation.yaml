@@ -3,14 +3,17 @@ samples:
   SAMPLE_NP_SEG: data/reads/SAMPLE_NP_SEG.fastq.gz
 
 data: nanopore
-output: test/dryrun_output/consensus_nanopore_segmented/
+output: test/dryrun_output/consensus_nanopore_segmented_annotation/
 threads: 4
 reference:
   SEG1: data/references/segment1.fasta
   SEG2: data/references/segment2.fasta
 
-scheme: NA
-gene_annotation: NA
+scheme: data/references/primers.bed
+gene_annotation:
+  S1: data/references/segment1.gff3
+  S2: data/references/segment2.gff3
+  S3: data/references/segment3.gff3
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .
