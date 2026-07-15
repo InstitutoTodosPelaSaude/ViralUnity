@@ -516,21 +516,87 @@ def _ordered_unique(values) -> List[str]:
     return out
 
 
-def _load_coverage_cache(
-    output_dir: str, df: pd.DataFrame, segmented: bool
-) -> Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]]:
-    """Load + downsample every (sample, segment) coverage track exactly once."""
+def _kpi_block(samples: List[str], breadth: Dict[str, float], depth: Dict[str, float]) -> dict:
+    """One KPI card set: sample count, #>=90%/>=70% breadth, median mean-depth."""
+    depths = [depth[s] for s in samples if s in depth]
+    return {
+        "samples": len(samples),
+        "ge90": sum(1 for s in samples if breadth.get(s, 0.0) >= 0.90),
+        "ge70": sum(1 for s in samples if breadth.get(s, 0.0) >= 0.70),
+        "median_depth": float(np.median(depths)) if depths else 0.0,
+    }
+
+
+def build_kpi_summary(
+    df: pd.DataFrame, lengths: Dict[Tuple[str, Optional[str]], int], segmented: bool
+) -> dict:
+    """Global (and, for segmented runs, per-segment) KPI figures for the top tiles.
+
+    Global counts samples whose horizontal coverage is >= 90% / >= 70% and the
+    median of per-sample mean depth. For segmented runs, a sample's breadth and
+    depth are **length-weighted across segments** (weight = each segment's
+    coverage-track length), so both read as whole-genome figures; a sample that
+    drops a segment is correctly penalised rather than having the segment ignored.
+
+    Returns ``{"global": {samples, ge90, ge70, median_depth}, "per_segment": {seg: {...}}}``.
+    """
+    samples = _ordered_unique(df["sample_name"].tolist())
+
+    if not segmented:
+        by = df.drop_duplicates("sample_name").set_index("sample_name")
+        breadth = {s: float(by.loc[s, "horizontal_coverage"]) for s in samples}
+        depth = {s: float(by.loc[s, "average_depth"]) for s in samples}
+        return {"global": _kpi_block(samples, breadth, depth), "per_segment": {}}
+
+    segments = _ordered_unique(df["segment"].tolist())
+    # Canonical per-segment length = longest track seen for that segment.
+    seg_len = {seg: max((lengths.get((s, seg), 0) for s in samples), default=0) for seg in segments}
+    genome_len = sum(seg_len.values()) or 1
+    hc = {
+        (r["sample_name"], r["segment"]): float(r["horizontal_coverage"]) for _, r in df.iterrows()
+    }
+    dp = {(r["sample_name"], r["segment"]): float(r["average_depth"]) for _, r in df.iterrows()}
+
+    g_breadth, g_depth = {}, {}
+    for s in samples:
+        g_breadth[s] = sum(hc.get((s, seg), 0.0) * seg_len[seg] for seg in segments) / genome_len
+        g_depth[s] = sum(dp.get((s, seg), 0.0) * seg_len[seg] for seg in segments) / genome_len
+
+    per_segment = {}
+    for seg in segments:
+        s_with = [s for s in samples if (s, seg) in hc]
+        per_segment[seg] = _kpi_block(
+            s_with,
+            {s: hc[(s, seg)] for s in s_with},
+            {s: dp[(s, seg)] for s in s_with},
+        )
+    return {"global": _kpi_block(samples, g_breadth, g_depth), "per_segment": per_segment}
+
+
+def _load_coverage_cache(output_dir: str, df: pd.DataFrame, segmented: bool) -> Tuple[
+    Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]],
+    Dict[Tuple[str, Optional[str]], int],
+]:
+    """Load + downsample every (sample, segment) coverage track exactly once.
+
+    Returns ``(cache, lengths)``: ``cache`` maps each key to the downsampled
+    ``(positions, depths)`` for plotting; ``lengths`` maps it to the true
+    pre-downsample track length (row count), used for length-weighting the
+    whole-genome KPI figures on segmented runs.
+    """
     cache: Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]] = {}
+    lengths: Dict[Tuple[str, Optional[str]], int] = {}
     for _, row in df.iterrows():
         sample = row["sample_name"]
         segment = row["segment"] if segmented else None
         table = load_basewise_table(resolve_basewise_path(output_dir, sample, segment))
+        lengths[(sample, segment)] = len(table)
         if table.empty:
             cache[(sample, segment)] = (np.array([]), np.array([]))
             continue
         pos, depth = downsample_min_pool(table["position"].to_numpy(), table["depth"].to_numpy())
         cache[(sample, segment)] = (pos, depth)
-    return cache
+    return cache, lengths
 
 
 def _fig_to_html(fig: go.Figure) -> str:
@@ -564,7 +630,8 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     samples = _ordered_unique(df["sample_name"].tolist())
     segments = _ordered_unique(df["segment"].tolist()) if segmented else [None]
 
-    cache = _load_coverage_cache(output_dir, df, segmented)
+    cache, coverage_lengths = _load_coverage_cache(output_dir, df, segmented)
+    kpi_summary = build_kpi_summary(df, coverage_lengths, segmented)
 
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired)
@@ -612,6 +679,8 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     return template.render(
         plotly_js=get_plotlyjs(),
         metadata=metadata,
+        kpi=kpi_summary,
+        kpi_json=json.dumps(kpi_summary),
         segmented=segmented,
         samples=samples,
         segments=[s or "" for s in segments],

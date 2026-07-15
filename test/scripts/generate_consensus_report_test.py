@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
     build_aggregated_coverage_line_plot,
+    build_kpi_summary,
     build_reads_histogram,
     build_report_metadata,
     build_stats_table_html,
@@ -164,6 +165,44 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn("Total reads", html)
         self.assertIn("Mean depth", html)
         self.assertIn("Genome coverage", html)
+
+
+class TestKpiSummary(unittest.TestCase):
+    def test_global_unsegmented_counts_and_median(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        kpi = build_kpi_summary(df, {}, segmented=False)
+        g = kpi["global"]
+        self.assertEqual(g["samples"], 2)
+        self.assertEqual(g["ge90"], 1)  # sample-A 0.996; sample-B 0.60 fails
+        self.assertEqual(g["ge70"], 1)  # sample-B 0.60 also fails 70%
+        self.assertAlmostEqual(g["median_depth"], (3245.2445239608064 + 45.5) / 2, places=2)
+        self.assertEqual(kpi["per_segment"], {})
+
+    def test_segmented_global_is_length_weighted(self):
+        df = pd.read_csv(io.StringIO(SEG_CSV))  # sample-A: S1 hc0.95/d100, S2 hc0.80/d50
+        lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
+        g = build_kpi_summary(df, lengths, segmented=True)["global"]
+        self.assertEqual(g["samples"], 1)
+        # weighted breadth = (0.95*3000 + 0.80*1000)/4000 = 0.9125 -> clears 90%
+        self.assertEqual(g["ge90"], 1)
+        self.assertEqual(g["ge70"], 1)
+        # weighted depth = (100*3000 + 50*1000)/4000 = 87.5
+        self.assertAlmostEqual(g["median_depth"], 87.5, places=3)
+
+    def test_segmented_weighting_actually_matters(self):
+        # equal weights give breadth 0.875 < 0.90, so the sample would NOT pass —
+        # confirms the length weighting is doing the work, not a coincidence.
+        df = pd.read_csv(io.StringIO(SEG_CSV))
+        equal = {("sample-A", "S1"): 1000, ("sample-A", "S2"): 1000}
+        self.assertEqual(build_kpi_summary(df, equal, segmented=True)["global"]["ge90"], 0)
+
+    def test_segmented_per_segment_blocks(self):
+        df = pd.read_csv(io.StringIO(SEG_CSV))
+        lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
+        ps = build_kpi_summary(df, lengths, segmented=True)["per_segment"]
+        self.assertEqual(set(ps), {"S1", "S2"})
+        self.assertEqual(ps["S1"], {"samples": 1, "ge90": 1, "ge70": 1, "median_depth": 100.0})
+        self.assertEqual(ps["S2"], {"samples": 1, "ge90": 0, "ge70": 1, "median_depth": 50.0})
 
 
 class TestReportMetadata(unittest.TestCase):
