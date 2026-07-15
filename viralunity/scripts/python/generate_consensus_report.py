@@ -630,18 +630,26 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
         cells = []
         for col in columns:
             raw = row[col]
+            # The numeric formatters fall back to str(value) on a non-numeric
+            # value, so a corrupt/crafted stats CSV could otherwise inject markup
+            # through a "numeric" column. Escape every emitted display value and
+            # data-sort/title attribute; for clean numbers this is a no-op.
             if col == "number_of_mapped_reads":
                 rate = _mapping_rate(raw, row.get("number_of_trim_paired_reads"), paired)
-                sort_val = rate if rate is not None else -1
-                tip = f'{_fmt_int(raw)} mapped reads / {"2× " if paired else ""}QC-passed reads'
-                cells.append(f'<td data-sort="{sort_val}" title="{tip}">{_fmt_rate(rate)}</td>')
+                sort_val = html.escape(str(rate if rate is not None else -1))
+                tip = html.escape(
+                    f'{_fmt_int(raw)} mapped reads / {"2× " if paired else ""}QC-passed reads'
+                )
+                cells.append(
+                    f'<td data-sort="{sort_val}" title="{tip}">{html.escape(_fmt_rate(rate))}</td>'
+                )
                 continue
             if col in PERCENTAGE_COLS:
-                display, sort_val = _fmt_pct(raw), raw
+                display, sort_val = html.escape(_fmt_pct(raw)), html.escape(str(raw))
             elif col == "average_depth":
-                display, sort_val = _fmt_depth(raw), raw
+                display, sort_val = html.escape(_fmt_depth(raw)), html.escape(str(raw))
             elif col in INT_COLS:
-                display, sort_val = _fmt_int(raw), raw
+                display, sort_val = html.escape(_fmt_int(raw)), html.escape(str(raw))
             else:
                 # Non-numeric, data-controlled columns (sample name, segment,
                 # reference id). Escape for both the cell text and the quoted

@@ -599,6 +599,28 @@ class TestHtmlEscaping(unittest.TestCase):
         # the attribute-breaking quote is neutralized too.
         self.assertNotIn('data-sort=""><img', html)
 
+    def test_stats_table_escapes_malicious_numeric_columns(self):
+        # A numeric column carrying non-numeric markup (a corrupt/crafted stats
+        # CSV) must not inject into the cell text or the data-sort attribute; the
+        # formatters fall back to str(value), so escaping happens at cell build.
+        payload = '"><img src=x onerror=alert(1)>'
+        df = _one_sample_df("s1")
+        df["number_of_reads"] = payload  # INT_COLS branch
+        df["average_depth"] = payload  # average_depth branch
+        html = build_stats_table_html(df, paired=False)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+        self.assertIn("&lt;img", html)
+        self.assertNotIn('data-sort=""><img', html)
+
+    def test_mapping_rate_tooltip_escapes_malicious_count(self):
+        # The mapped-reads tooltip is built from _fmt_int(raw); a malicious raw
+        # count must not break out of the title="" attribute.
+        df = _one_sample_df("s1")
+        df["number_of_mapped_reads"] = '"><img src=x onerror=alert(1)>'
+        html = build_stats_table_html(df, paired=True)
+        self.assertNotIn('title=""><img', html)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+
     def test_stats_rows_by_sample_escapes_cell_values(self):
         df = _one_sample_df("<b>x</b>")
         rows = _stats_rows_by_sample(df, segmented=False, paired=False)
