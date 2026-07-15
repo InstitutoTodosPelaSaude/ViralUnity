@@ -299,7 +299,9 @@ def parse_primer_bed(path: str, contig: str) -> List[dict]:
         ]
 
     # Assign each amplicon to a pool lane: distinct pool-column values in
-    # first-seen order, else amplicon-number parity (odd -> A, even -> B).
+    # first-seen order, else amplicon-number parity (odd -> A, even -> B). If an
+    # amplicon's LEFT/RIGHT primers disagree on pool (a malformed scheme), the
+    # first non-empty pool seen for that amplicon wins.
     pool_order: List[str] = []
     lanes: Dict[str, List[dict]] = {}
     for key, amp in amplicons.items():

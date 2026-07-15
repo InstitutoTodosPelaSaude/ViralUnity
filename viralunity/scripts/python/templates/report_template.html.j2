@@ -533,8 +533,11 @@ function annotationTraces(segLabel, opts) {
     const yIdx = n - 1 - i, feats = ln.features || [], c = trackColors(ln.kind);
     return {
       type: 'bar', orientation: 'h', yaxis: 'y2', xaxis: 'x',
-      base: feats.map(function (f) { return f.start; }),
-      x: feats.map(function (f) { return Math.max(f.end - f.start, 1); }),
+      // Features are 1-based inclusive [start, end]; draw the bar across the
+      // full span (base start-0.5, width end-start+1) so it covers both end
+      // bases rather than stopping a position short.
+      base: feats.map(function (f) { return f.start - 0.5; }),
+      x: feats.map(function (f) { return (f.end - f.start) + 1; }),
       y: feats.map(function () { return yIdx; }),
       width: 0.62,
       marker: {color: c.fill, line: {color: c.line, width: 1}},
