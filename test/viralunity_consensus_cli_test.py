@@ -84,6 +84,37 @@ class Test_ConsensusIlluminaCommand(unittest.TestCase):
             },
         )
 
+    def test_gene_annotation_threads_into_args(self):
+        """--gene-annotation lands in args as a plain path."""
+        with patch(
+            "viralunity.viralunity_consensus_cli.consensus_main", return_value=0
+        ) as mock_main:
+            result = self.runner.invoke(
+                consensus,
+                self._required + ["--gene-annotation", "genes.gff3"],
+                catch_exceptions=False,
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(mock_main.call_args[0][0]["gene_annotation"], "genes.gff3")
+
+    def test_segmented_gene_annotation_parses_to_dict(self):
+        """Repeated --segmented-gene-annotation SEGMENT=PATH parses to a dict."""
+        args = self._required + [
+            "--segmented-gene-annotation",
+            "S=/path/to/S.gff3",
+            "--segmented-gene-annotation",
+            "L=/path/to/L.gff3",
+        ]
+        with patch(
+            "viralunity.viralunity_consensus_cli.consensus_main", return_value=0
+        ) as mock_main:
+            result = self.runner.invoke(consensus, args, catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(
+            mock_main.call_args[0][0]["segmented_gene_annotation"],
+            {"S": "/path/to/S.gff3", "L": "/path/to/L.gff3"},
+        )
+
     def test_default_values_optional_args(self):
         """Check that all optional args have correct defaults for illumina."""
         with patch(
@@ -93,6 +124,8 @@ class Test_ConsensusIlluminaCommand(unittest.TestCase):
         self.assertEqual(result.exit_code, 0, result.output)
         args = mock_main.call_args[0][0]
         self.assertEqual(args["data_type"], "illumina")
+        self.assertIsNone(args["gene_annotation"])
+        self.assertIsNone(args["segmented_gene_annotation"])
         self.assertEqual(args["run_name"], "undefined")
         self.assertIsNone(args["adapters"])
         self.assertEqual(args["trim_head"], 0)

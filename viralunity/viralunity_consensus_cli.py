@@ -23,23 +23,24 @@ def _default_conda_prefix() -> str:
     )
 
 
-def _parse_segmented_reference(segmented_reference: Tuple[str, ...]) -> Optional[dict]:
+def _parse_segmented_mapping(entries: Tuple[str, ...], label: str = "reference") -> Optional[dict]:
     """Parse SEGMENT=PATH strings into a dictionary.
 
     Args:
-        segmented_reference: Tuple of strings in SEGMENT=PATH format
+        entries: Tuple of strings in SEGMENT=PATH format
+        label: Noun used in error messages (e.g. "reference", "gene annotation")
 
     Returns:
         Dictionary mapping segment names to paths, or None if empty
     """
-    if not segmented_reference:
+    if not entries:
         return None
 
     parsed = {}
-    for entry in segmented_reference:
+    for entry in entries:
         if "=" not in entry:
             raise click.BadParameter(
-                f"Invalid segmented reference format: '{entry}'. "
+                f"Invalid segmented {label} format: '{entry}'. "
                 "Expected SEGMENT=PATH (e.g. S=/path/to/S.fasta)"
             )
         name, path = entry.split("=", 1)
@@ -47,11 +48,21 @@ def _parse_segmented_reference(segmented_reference: Tuple[str, ...]) -> Optional
         path = path.strip()
         if not name or not path:
             raise click.BadParameter(
-                f"Invalid segmented reference format: '{entry}'. "
+                f"Invalid segmented {label} format: '{entry}'. "
                 "Both segment name and path are required."
             )
         parsed[name] = path
     return parsed
+
+
+def _parse_segmented_reference(segmented_reference: Tuple[str, ...]) -> Optional[dict]:
+    """Parse segmented reference SEGMENT=PATH strings into a dictionary."""
+    return _parse_segmented_mapping(segmented_reference, "reference")
+
+
+def _parse_segmented_gene_annotation(entries: Tuple[str, ...]) -> Optional[dict]:
+    """Parse segmented gene-annotation SEGMENT=PATH strings into a dictionary."""
+    return _parse_segmented_mapping(entries, "gene annotation")
 
 
 # Common options (applied to both illumina and nanopore subcommands)
@@ -89,6 +100,20 @@ _COMMON_OPTIONS = [
         "--primer-scheme",
         default=None,
         help="Path to primer scheme BED file (amplicon sequencing only).",
+    ),
+    click.option(
+        "--gene-annotation",
+        default=None,
+        help="Path to a gene-annotation GFF3 file, drawn as a track under the "
+        "coverage plots in the report. Optional; mutually exclusive with "
+        "--segmented-gene-annotation.",
+    ),
+    click.option(
+        "--segmented-gene-annotation",
+        multiple=True,
+        metavar="SEGMENT=PATH",
+        help="Gene annotation for segmented viruses: SEGMENT=PATH per segment "
+        "(e.g. S=/path/S.gff3). Optional; mutually exclusive with --gene-annotation.",
     ),
     click.option(
         "--minimum-coverage",
@@ -271,6 +296,8 @@ def consensus_illumina(
     reference: Optional[str],
     segmented_reference: Tuple[str, ...],
     primer_scheme: Optional[str],
+    gene_annotation: Optional[str],
+    segmented_gene_annotation: Tuple[str, ...],
     minimum_coverage: int,
     minimum_read_length: int,
     threads: int,
@@ -308,6 +335,8 @@ def consensus_illumina(
         reference=reference,
         segmented_reference=_parse_segmented_reference(segmented_reference),
         primer_scheme=primer_scheme,
+        gene_annotation=gene_annotation,
+        segmented_gene_annotation=_parse_segmented_gene_annotation(segmented_gene_annotation),
         minimum_coverage=minimum_coverage,
         minimum_read_length=minimum_read_length,
         threads=threads,
@@ -382,6 +411,8 @@ def consensus_nanopore(
     reference: Optional[str],
     segmented_reference: Tuple[str, ...],
     primer_scheme: Optional[str],
+    gene_annotation: Optional[str],
+    segmented_gene_annotation: Tuple[str, ...],
     minimum_coverage: int,
     minimum_read_length: int,
     threads: int,
@@ -415,6 +446,8 @@ def consensus_nanopore(
         reference=reference,
         segmented_reference=_parse_segmented_reference(segmented_reference),
         primer_scheme=primer_scheme,
+        gene_annotation=gene_annotation,
+        segmented_gene_annotation=_parse_segmented_gene_annotation(segmented_gene_annotation),
         minimum_coverage=minimum_coverage,
         minimum_read_length=minimum_read_length,
         threads=threads,
