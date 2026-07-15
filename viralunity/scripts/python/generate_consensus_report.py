@@ -134,6 +134,185 @@ def load_basewise_table(path: str) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- #
+# Annotation tracks (gene GFF3 + primer BED)
+# --------------------------------------------------------------------------- #
+# Feature-type and label precedence are reporting choices (documented in
+# REPORT.md); genes are drawn by default, falling back to CDS when a contig has
+# no gene features.
+GFF_FEATURE_TYPES = ("gene",)
+GFF_FALLBACK_FEATURE_TYPES = ("CDS",)
+GFF_LABEL_KEYS = ("Name", "gene", "gene_name", "locus_tag", "product", "ID")
+
+
+def _parse_gff_attributes(field: str) -> Dict[str, str]:
+    """Parse a GFF3 column-9 attribute string (``key=value;...``) into a dict."""
+    attrs: Dict[str, str] = {}
+    for part in field.strip().split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        key, _, value = part.partition("=")
+        attrs[key.strip()] = value.strip()
+    return attrs
+
+
+def _gff_rows_for_contig(path: str, contig: str, feature_types) -> List[dict]:
+    """Return raw feature dicts of the requested types on ``contig`` (1-based)."""
+    wanted = {t.lower() for t in feature_types}
+    features: List[dict] = []
+    with open(path) as fh:
+        for line in fh:
+            if not line.strip() or line.startswith("#"):
+                continue
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) < 9:
+                continue
+            if cols[0] != contig or cols[2].lower() not in wanted:
+                continue
+            try:
+                start, end = int(cols[3]), int(cols[4])
+            except ValueError:
+                continue
+            attrs = _parse_gff_attributes(cols[8])
+            name = next((attrs[k] for k in GFF_LABEL_KEYS if attrs.get(k)), cols[2])
+            strand = cols[6] if cols[6] in ("+", "-") else "."
+            features.append({"start": start, "end": end, "name": name, "strand": strand})
+    features.sort(key=lambda f: (f["start"], f["end"]))
+    return features
+
+
+def parse_gff3(
+    path: str,
+    contig: str,
+    feature_types=GFF_FEATURE_TYPES,
+    fallback_feature_types=GFF_FALLBACK_FEATURE_TYPES,
+) -> List[dict]:
+    """Parse gene features for ``contig`` from a GFF3 file.
+
+    Returns a list of ``{start, end, name, strand}`` with 1-based inclusive
+    coordinates (GFF3 is already 1-based), sorted by start. Features of
+    ``feature_types`` are used; if the contig has none, ``fallback_feature_types``
+    is tried. A missing file yields ``[]`` with a warning.
+    """
+    if not os.path.exists(path):
+        logger.warning("Gene annotation file not found, skipping: %s", path)
+        return []
+    features = _gff_rows_for_contig(path, contig, feature_types)
+    if not features and fallback_feature_types:
+        features = _gff_rows_for_contig(path, contig, fallback_feature_types)
+    return features
+
+
+# Pool lane labels; distinct pools (or amplicon parities) map to A, B, C, ...
+_POOL_LANE_LABELS = [f"Pool {chr(ord('A') + i)}" for i in range(12)]
+
+
+def _primer_side_and_amplicon(name: str):
+    """Split an ARTIC-style primer name into (amplicon_key, side).
+
+    ``scheme_7_LEFT`` / ``scheme_7_RIGHT_alt`` -> (``scheme_7``, ``LEFT``/``RIGHT``).
+    Returns ``(None, None)`` when no LEFT/RIGHT token is present.
+    """
+    upper = name.upper()
+    for side in ("LEFT", "RIGHT"):
+        token = "_" + side
+        idx = upper.find(token)
+        if idx != -1:
+            return name[:idx], side
+    return None, None
+
+
+def parse_primer_bed(path: str, contig: str) -> List[dict]:
+    """Parse a primer-scheme BED into ordered lanes for ``contig``.
+
+    Returns ``[{label, features:[{start, end, name}]}]``. ARTIC-style schemes
+    are paired LEFT/RIGHT into amplicon spans and split into pool lanes
+    (``Pool A``/``Pool B``/...), using the BED pool column when present, else
+    amplicon-number parity. If pairing fails (no LEFT/RIGHT tokens or an
+    unmatched primer), every primer is drawn individually in a single
+    ``Primers`` lane. BED coordinates (0-based half-open) become 1-based
+    inclusive. A missing file yields ``[]``.
+    """
+    if not os.path.exists(path):
+        logger.warning("Primer scheme file not found, skipping: %s", path)
+        return []
+
+    rows: List[dict] = []
+    with open(path) as fh:
+        for line in fh:
+            if not line.strip() or line.startswith(("#", "track", "browser")):
+                continue
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) < 4 or cols[0] != contig:
+                continue
+            try:
+                start, end = int(cols[1]), int(cols[2])
+            except ValueError:
+                continue
+            rows.append(
+                {
+                    "start": start + 1,  # BED 0-based -> 1-based inclusive
+                    "end": end,
+                    "name": cols[3],
+                    "pool": cols[4].strip() if len(cols) > 4 and cols[4].strip() else None,
+                }
+            )
+
+    if not rows:
+        return []
+
+    amplicons: Dict[str, dict] = {}
+    pairable = True
+    for row in rows:
+        key, side = _primer_side_and_amplicon(row["name"])
+        if key is None:
+            pairable = False
+            break
+        amp = amplicons.setdefault(
+            key, {"start": row["start"], "end": row["end"], "pool": row["pool"], "sides": set()}
+        )
+        amp["start"] = min(amp["start"], row["start"])
+        amp["end"] = max(amp["end"], row["end"])
+        amp["sides"].add(side)
+        if amp["pool"] is None:
+            amp["pool"] = row["pool"]
+
+    if not pairable or any({"LEFT", "RIGHT"} - amp["sides"] for amp in amplicons.values()):
+        # Fallback: one lane, each primer drawn individually.
+        return [
+            {
+                "label": "Primers",
+                "features": [
+                    {"start": r["start"], "end": r["end"], "name": r["name"]} for r in rows
+                ],
+            }
+        ]
+
+    # Assign each amplicon to a pool lane: distinct pool-column values in
+    # first-seen order, else amplicon-number parity (odd -> A, even -> B).
+    pool_order: List[str] = []
+    lanes: Dict[str, List[dict]] = {}
+    for key, amp in amplicons.items():
+        if amp["pool"] is not None:
+            pool_id = amp["pool"]
+        else:
+            match = "".join(ch for ch in key if ch.isdigit())
+            pool_id = "odd" if (match and int(match) % 2 == 1) else "even"
+        if pool_id not in pool_order:
+            pool_order.append(pool_id)
+        lanes.setdefault(pool_id, []).append(
+            {"start": amp["start"], "end": amp["end"], "name": key}
+        )
+
+    result = []
+    for i, pool_id in enumerate(pool_order):
+        label = _POOL_LANE_LABELS[i] if i < len(_POOL_LANE_LABELS) else f"Pool {i + 1}"
+        features = sorted(lanes[pool_id], key=lambda f: f["start"])
+        result.append({"label": label, "features": features})
+    return result
+
+
+# --------------------------------------------------------------------------- #
 # Run metadata
 # --------------------------------------------------------------------------- #
 # NOTE: this module runs inside Snakemake's ``--use-conda`` env (envs/report.yaml),

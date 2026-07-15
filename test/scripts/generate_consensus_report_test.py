@@ -33,6 +33,8 @@ from viralunity.scripts.python.generate_consensus_report import (
     downsample_min_pool,
     is_segmented,
     load_basewise_table,
+    parse_gff3,
+    parse_primer_bed,
     read_stats_summary,
     resolve_basewise_path,
 )
@@ -322,6 +324,129 @@ class TestLoadBasewiseTable(unittest.TestCase):
         # reference_id with pipes is kept opaque (not split).
         self.assertEqual(df.iloc[0]["reference_id"], "NC_007373.1|Influenza_A|H3N2|segment_1")
         self.assertEqual(int(df.iloc[1]["depth"]), 15)
+
+
+class TestParseGff3(unittest.TestCase):
+    def _write(self, text):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "genes.gff3")
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def test_missing_file_returns_empty_list(self):
+        self.assertEqual(parse_gff3("/no/such.gff3", "chrA"), [])
+
+    def test_extracts_genes_on_contig_with_1based_coords(self):
+        gff = self._write(
+            "##gff-version 3\n"
+            "chrA\tRefSeq\tgene\t266\t21555\t.\t+\t.\tID=gene-orf1;Name=ORF1ab\n"
+            "chrA\tRefSeq\tgene\t21563\t25384\t.\t+\t.\tID=gene-S;Name=S\n"
+        )
+        feats = parse_gff3(gff, "chrA")
+        self.assertEqual(len(feats), 2)
+        self.assertEqual(feats[0]["start"], 266)
+        self.assertEqual(feats[0]["end"], 21555)
+        self.assertEqual(feats[0]["name"], "ORF1ab")
+        self.assertEqual(feats[1]["name"], "S")
+
+    def test_excludes_features_on_other_contigs(self):
+        gff = self._write(
+            "chrA\tRefSeq\tgene\t1\t99\t.\t+\t.\tName=keep\n"
+            "chrB\tRefSeq\tgene\t1\t99\t.\t+\t.\tName=drop\n"
+        )
+        feats = parse_gff3(gff, "chrA")
+        self.assertEqual([f["name"] for f in feats], ["keep"])
+
+    def test_label_precedence_prefers_name_then_gene_then_id(self):
+        gff = self._write(
+            "chrA\tx\tgene\t1\t9\t.\t+\t.\tID=g1;gene=orf1;Name=ORF1ab\n"
+            "chrA\tx\tgene\t10\t19\t.\t+\t.\tID=g2;gene=Spike\n"
+            "chrA\tx\tgene\t20\t29\t.\t+\t.\tID=g3\n"
+        )
+        feats = parse_gff3(gff, "chrA")
+        self.assertEqual([f["name"] for f in feats], ["ORF1ab", "Spike", "g3"])
+
+    def test_falls_back_to_cds_when_no_gene_features(self):
+        gff = self._write(
+            "chrA\tx\tCDS\t5\t50\t.\t+\t0\tID=cds1;Name=nsp1\n"
+            "chrA\tx\tregion\t1\t100\t.\t+\t.\tID=r1;Name=whole\n"
+        )
+        feats = parse_gff3(gff, "chrA")
+        self.assertEqual([f["name"] for f in feats], ["nsp1"])
+
+
+class TestParsePrimerBed(unittest.TestCase):
+    def _write(self, text):
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "scheme.bed")
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def test_missing_file_returns_empty_list(self):
+        self.assertEqual(parse_primer_bed("/no/such.bed", "chrA"), [])
+
+    def test_artic_pairs_left_right_into_pool_lanes_1based(self):
+        bed = self._write(
+            "chrA\t30\t54\tscheme_1_LEFT\tpool1\t+\n"
+            "chrA\t385\t410\tscheme_1_RIGHT\tpool1\t-\n"
+            "chrA\t320\t344\tscheme_2_LEFT\tpool2\t+\n"
+            "chrA\t705\t730\tscheme_2_RIGHT\tpool2\t-\n"
+        )
+        lanes = parse_primer_bed(bed, "chrA")
+        self.assertEqual([ln["label"] for ln in lanes], ["Pool A", "Pool B"])
+        a = lanes[0]["features"]
+        self.assertEqual(len(a), 1)
+        # BED 0-based half-open [30,54) -> 1-based inclusive start 31; amplicon
+        # spans LEFT.start..RIGHT.end = 31..410.
+        self.assertEqual(a[0]["start"], 31)
+        self.assertEqual(a[0]["end"], 410)
+        self.assertEqual(lanes[1]["features"][0]["start"], 321)
+        self.assertEqual(lanes[1]["features"][0]["end"], 730)
+
+    def test_pool_by_amplicon_parity_when_no_pool_column(self):
+        bed = self._write(
+            "chrA\t0\t20\tscheme_1_LEFT\n"
+            "chrA\t100\t120\tscheme_1_RIGHT\n"
+            "chrA\t90\t110\tscheme_2_LEFT\n"
+            "chrA\t200\t220\tscheme_2_RIGHT\n"
+        )
+        lanes = parse_primer_bed(bed, "chrA")
+        self.assertEqual([ln["label"] for ln in lanes], ["Pool A", "Pool B"])
+        self.assertEqual(lanes[0]["features"][0]["name"], "scheme_1")
+        self.assertEqual(lanes[1]["features"][0]["name"], "scheme_2")
+
+    def test_falls_back_to_individual_primers_when_unpairable(self):
+        bed = self._write("chrA\t0\t20\tprimerX\n" "chrA\t50\t70\tprimerY\n")
+        lanes = parse_primer_bed(bed, "chrA")
+        self.assertEqual(len(lanes), 1)
+        self.assertEqual(lanes[0]["label"], "Primers")
+        self.assertEqual({f["name"] for f in lanes[0]["features"]}, {"primerX", "primerY"})
+        self.assertEqual(lanes[0]["features"][0]["start"], 1)
+
+    def test_excludes_other_contigs(self):
+        bed = self._write(
+            "chrA\t0\t20\ts_1_LEFT\n"
+            "chrA\t100\t120\ts_1_RIGHT\n"
+            "chrB\t0\t20\ts_1_LEFT\n"
+            "chrB\t100\t120\ts_1_RIGHT\n"
+        )
+        lanes = parse_primer_bed(bed, "chrA")
+        total = sum(len(ln["features"]) for ln in lanes)
+        self.assertEqual(total, 1)
+
+    def test_more_than_two_pools_yield_extra_lanes(self):
+        bed = self._write(
+            "chrA\t0\t20\ts_1_LEFT\tp1\n"
+            "chrA\t100\t120\ts_1_RIGHT\tp1\n"
+            "chrA\t90\t110\ts_2_LEFT\tp2\n"
+            "chrA\t200\t220\ts_2_RIGHT\tp2\n"
+            "chrA\t190\t210\ts_3_LEFT\tp3\n"
+            "chrA\t300\t320\ts_3_RIGHT\tp3\n"
+        )
+        lanes = parse_primer_bed(bed, "chrA")
+        self.assertEqual([ln["label"] for ln in lanes], ["Pool A", "Pool B", "Pool C"])
 
 
 class TestFigureBuilders(unittest.TestCase):
