@@ -174,7 +174,8 @@ class TestKpiSummary(unittest.TestCase):
         g = kpi["global"]
         self.assertEqual(g["samples"], 2)
         self.assertEqual(g["ge90"], 1)  # sample-A 0.996; sample-B 0.60 fails
-        self.assertEqual(g["ge70"], 1)  # sample-B 0.60 also fails 70%
+        # median horizontal coverage = median(0.9959…, 0.60)
+        self.assertAlmostEqual(g["median_coverage"], (0.9959535832525165 + 0.6) / 2, places=4)
         self.assertAlmostEqual(g["median_depth"], (3245.2445239608064 + 45.5) / 2, places=2)
         self.assertEqual(kpi["per_segment"], {})
 
@@ -185,7 +186,7 @@ class TestKpiSummary(unittest.TestCase):
         self.assertEqual(g["samples"], 1)
         # weighted breadth = (0.95*3000 + 0.80*1000)/4000 = 0.9125 -> clears 90%
         self.assertEqual(g["ge90"], 1)
-        self.assertEqual(g["ge70"], 1)
+        self.assertAlmostEqual(g["median_coverage"], 0.9125, places=4)
         # weighted depth = (100*3000 + 50*1000)/4000 = 87.5
         self.assertAlmostEqual(g["median_depth"], 87.5, places=3)
 
@@ -201,8 +202,12 @@ class TestKpiSummary(unittest.TestCase):
         lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
         ps = build_kpi_summary(df, lengths, segmented=True)["per_segment"]
         self.assertEqual(set(ps), {"S1", "S2"})
-        self.assertEqual(ps["S1"], {"samples": 1, "ge90": 1, "ge70": 1, "median_depth": 100.0})
-        self.assertEqual(ps["S2"], {"samples": 1, "ge90": 0, "ge70": 1, "median_depth": 50.0})
+        self.assertEqual(
+            ps["S1"], {"samples": 1, "ge90": 1, "median_coverage": 0.95, "median_depth": 100.0}
+        )
+        self.assertEqual(
+            ps["S2"], {"samples": 1, "ge90": 0, "median_coverage": 0.80, "median_depth": 50.0}
+        )
 
 
 class TestReportMetadata(unittest.TestCase):

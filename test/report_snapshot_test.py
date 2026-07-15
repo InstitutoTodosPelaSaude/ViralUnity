@@ -69,7 +69,7 @@ class TestReportSnapshot(unittest.TestCase):
         # KPI summary tiles lead the report (server-rendered, four of them).
         self.assertIn('id="kpi-grid"', html)
         self.assertIn("Samples analyzed", html)
-        for key in ("samples", "ge90", "ge70", "median_depth"):
+        for key in ("samples", "ge90", "median_coverage", "median_depth"):
             self.assertIn(f'data-kpi="{key}"', html)
         # these fixtures all ship a config, so the run-parameters drawer is present.
         self.assertIn('id="params-btn"', html)

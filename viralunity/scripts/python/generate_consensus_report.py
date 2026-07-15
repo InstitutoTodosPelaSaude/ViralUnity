@@ -566,12 +566,13 @@ def _ordered_unique(values) -> List[str]:
 
 
 def _kpi_block(samples: List[str], breadth: Dict[str, float], depth: Dict[str, float]) -> dict:
-    """One KPI card set: sample count, #>=90%/>=70% breadth, median mean-depth."""
+    """One KPI card set: sample count, #>=90% breadth, median breadth, median depth."""
     depths = [depth[s] for s in samples if s in depth]
+    breadths = [breadth[s] for s in samples if s in breadth]
     return {
         "samples": len(samples),
         "ge90": sum(1 for s in samples if breadth.get(s, 0.0) >= 0.90),
-        "ge70": sum(1 for s in samples if breadth.get(s, 0.0) >= 0.70),
+        "median_coverage": float(np.median(breadths)) if breadths else 0.0,
         "median_depth": float(np.median(depths)) if depths else 0.0,
     }
 
@@ -581,7 +582,7 @@ def _kpi_display(block: dict) -> dict:
     return {
         "samples": f"{block['samples']:,}",
         "ge90": f"{block['ge90']:,}",
-        "ge70": f"{block['ge70']:,}",
+        "median_coverage": _fmt_pct(block["median_coverage"]),
         "median_depth": _fmt_depth(block["median_depth"]) + "×",  # × suffix
     }
 
@@ -591,8 +592,9 @@ def build_kpi_summary(
 ) -> dict:
     """Global (and, for segmented runs, per-segment) KPI figures for the top tiles.
 
-    Global counts samples whose horizontal coverage is >= 90% / >= 70% and the
-    median of per-sample mean depth. For segmented runs, a sample's breadth and
+    Reports the sample count, the number of samples whose horizontal coverage is
+    >= 90%, the median horizontal coverage, and the median per-sample mean depth.
+    For segmented runs, a sample's breadth and
     depth are **length-weighted across segments** (weight = each segment's
     coverage-track length), so both read as whole-genome figures; a sample that
     drops a segment is correctly penalised rather than having the segment ignored.
