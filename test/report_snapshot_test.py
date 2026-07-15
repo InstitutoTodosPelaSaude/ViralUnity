@@ -30,8 +30,9 @@ FIXTURE_ROOT = os.path.join(os.path.dirname(__file__), "fixtures", "report")
 def _render(fixture):
     d = os.path.join(FIXTURE_ROOT, fixture)
     cfg = os.path.join(d, "config.yml")
-    metadata = build_report_metadata(load_run_config(cfg) if os.path.isfile(cfg) else None, d)
-    return render_report(d, metadata)
+    config = load_run_config(cfg) if os.path.isfile(cfg) else None
+    metadata = build_report_metadata(config, d)
+    return render_report(d, metadata, config)
 
 
 def _coverage_json(html):
@@ -65,6 +66,14 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn(">Mapped %<", html)
         # depth is linear by default: the old baked "(log)" axis title is gone.
         self.assertNotIn("Depth (log)", html)
+        # KPI summary tiles lead the report (server-rendered, four of them).
+        self.assertIn('id="kpi-grid"', html)
+        self.assertIn("Samples analyzed", html)
+        for key in ("samples", "ge90", "ge70", "median_depth"):
+            self.assertIn(f'data-kpi="{key}"', html)
+        # these fixtures all ship a config, so the run-parameters drawer is present.
+        self.assertIn('id="params-btn"', html)
+        self.assertIn('id="params-drawer"', html)
 
     def test_illumina_paired_snapshot(self):
         html = _render("unsegmented")
@@ -97,6 +106,17 @@ class TestReportSnapshot(unittest.TestCase):
         self._assert_common_invariants(html)
         # a segment selector is offered for the by-segment view.
         self.assertIn("segmentSelect", html)
+        # segmented runs get the Global | Per-segment KPI switch.
+        self.assertIn('id="kpi-scope"', html)
+        self.assertIn("Per segment", html)
+        # the parameters drawer shows the config verbatim, incl. a Resources group.
+        self.assertIn("minimum_depth", html)
+        self.assertIn(">42<", html)  # the fixture's distinctive minimum_depth value
+        self.assertIn(">Resources</h3>", html)
+
+    def test_unsegmented_has_no_per_segment_kpi_switch(self):
+        # a single-genome run has nothing to split by, so no Global/Per-segment toggle.
+        self.assertNotIn('id="kpi-scope"', _render("unsegmented"))
 
     def test_writes_single_self_contained_file(self):
         with tempfile.TemporaryDirectory() as d:

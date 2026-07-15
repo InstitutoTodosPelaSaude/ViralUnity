@@ -1,0 +1,17 @@
+# parameters
+samples:
+  sample-A:
+    - reads/sample-A_R1.fastq.gz
+    - reads/sample-A_R2.fastq.gz
+data: illumina
+output: out/
+scheme: NA
+minimum_depth: 42
+reference:
+  S1: refs/influenza_A_segment_1.fasta
+  S2: refs/influenza_A_segment_2.fasta
+minimum_length: 50
+
+# resources
+perform_qc_cpus: 3
+map_reads_ram: 4
