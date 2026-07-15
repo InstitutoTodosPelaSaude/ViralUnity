@@ -527,6 +527,16 @@ def _kpi_block(samples: List[str], breadth: Dict[str, float], depth: Dict[str, f
     }
 
 
+def _kpi_display(block: dict) -> dict:
+    """Formatted strings for one KPI block (server-rendered tile fallback)."""
+    return {
+        "samples": f"{block['samples']:,}",
+        "ge90": f"{block['ge90']:,}",
+        "ge70": f"{block['ge70']:,}",
+        "median_depth": _fmt_depth(block["median_depth"]) + "×",  # × suffix
+    }
+
+
 def build_kpi_summary(
     df: pd.DataFrame, lengths: Dict[Tuple[str, Optional[str]], int], segmented: bool
 ) -> dict:
@@ -679,7 +689,7 @@ def render_report(output_dir: str, metadata: Optional[dict] = None) -> str:
     return template.render(
         plotly_js=get_plotlyjs(),
         metadata=metadata,
-        kpi=kpi_summary,
+        kpi_global=_kpi_display(kpi_summary["global"]),
         kpi_json=json.dumps(kpi_summary),
         segmented=segmented,
         samples=samples,

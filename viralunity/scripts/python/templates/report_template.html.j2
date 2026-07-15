@@ -107,6 +107,14 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 .sample-summary-hint { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
 .sample-details-body { margin-top: 18px; }
 @media (prefers-reduced-motion: reduce) { .sample-details > summary::before { transition: none; } }
+/* KPI summary tiles (big BI-style numbers). Values wear text tokens, not a
+   series colour; proportional figures (not tabular) so a big number isn't loose. */
+.kpi-controls { margin: 4px 0 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.kpi-tile { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+.kpi-value { font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text-primary); font-variant-numeric: proportional-nums; }
+.kpi-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 6px; }
+.kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
 </style>
 </head>
 <body data-palette="{{ palette_light|join(',') }}">
@@ -115,6 +123,26 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">Dark mode</button>
 </header>
 <main>
+
+  <p class="section-title">Summary</p>
+  {% if segmented %}
+  <div class="chart-controls kpi-controls">
+    <div class="scale-toggle" role="group" aria-label="KPI scope" id="kpi-scope">
+      <button type="button" class="active" data-scope="global">Global</button>
+      <button type="button" data-scope="segment">Per segment</button>
+    </div>
+    <label class="control" for="kpiSegmentSelect" id="kpiSegmentLabel" style="display:none">Segment</label>
+    <select id="kpiSegmentSelect" style="display:none">
+      {% for s in segments %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-tile"><div class="kpi-value" data-kpi="samples">{{ kpi_global.samples }}</div><div class="kpi-label">Samples analyzed</div></div>
+    <div class="kpi-tile"><div class="kpi-value" data-kpi="ge90">{{ kpi_global.ge90 }}</div><div class="kpi-label">&ge;90% coverage</div><div class="kpi-sub" data-kpi="ge90_sub">of {{ kpi_global.samples }} samples</div></div>
+    <div class="kpi-tile"><div class="kpi-value" data-kpi="ge70">{{ kpi_global.ge70 }}</div><div class="kpi-label">&ge;70% coverage</div><div class="kpi-sub" data-kpi="ge70_sub">of {{ kpi_global.samples }} samples</div></div>
+    <div class="kpi-tile"><div class="kpi-value" data-kpi="median_depth">{{ kpi_global.median_depth }}</div><div class="kpi-label">Median mean depth</div></div>
+  </div>
 
   <p class="section-title">Overview</p>
 
@@ -175,9 +203,11 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 
 <script id="coverageData" type="application/json">{{ coverage_json|safe }}</script>
 <script id="statsData" type="application/json">{{ stats_by_sample|safe }}</script>
+<script id="kpiData" type="application/json">{{ kpi_json|safe }}</script>
 <script>
 const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
 const STATS = JSON.parse(document.getElementById('statsData').textContent);
+const KPI = JSON.parse(document.getElementById('kpiData').textContent);
 const FIG_WIDTH = 900, FIG_HEIGHT = 420;
 
 /* ---- theme ---- */
@@ -518,9 +548,51 @@ function enhanceAggregatedToggle() {
   (card.querySelector('select') || card.querySelector('h2')).insertAdjacentElement('afterend', toggle);
 }
 
+/* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
+var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
+function kfmtDepth(v) {
+  if (v == null || !isFinite(v)) return '—';
+  return GROUP_KPI.format(Math.round(v * 10) / 10) + '×';
+}
+function renderKpi(block) {
+  var g = document.getElementById('kpi-grid');
+  if (!g || !block) return;
+  var set = function (key, text) {
+    var el = g.querySelector('[data-kpi="' + key + '"]');
+    if (el) el.textContent = text;
+  };
+  set('samples', GROUP_KPI.format(block.samples));
+  set('ge90', GROUP_KPI.format(block.ge90));
+  set('ge70', GROUP_KPI.format(block.ge70));
+  set('median_depth', kfmtDepth(block.median_depth));
+  set('ge90_sub', 'of ' + GROUP_KPI.format(block.samples) + ' samples');
+  set('ge70_sub', 'of ' + GROUP_KPI.format(block.samples) + ' samples');
+}
+function initKpiControls() {
+  var scope = document.getElementById('kpi-scope');
+  if (!scope) return;                       // unsegmented: global tiles only
+  var sel = document.getElementById('kpiSegmentSelect');
+  var lab = document.getElementById('kpiSegmentLabel');
+  var apply = function (mode) {
+    var perSeg = mode === 'segment';
+    sel.style.display = perSeg ? '' : 'none';
+    lab.style.display = perSeg ? '' : 'none';
+    renderKpi(perSeg ? (KPI.per_segment[sel.value] || KPI.global) : KPI.global);
+  };
+  scope.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      scope.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      apply(b.getAttribute('data-scope'));
+    });
+  });
+  sel.addEventListener('change', function () { renderKpi(KPI.per_segment[sel.value] || KPI.global); });
+}
+
 /* ---- init ---- */
 window.addEventListener('load', function () {
   themeCharts();
+  initKpiControls();
   enhanceSortHeaders();
   enhanceAggregatedToggle();
   // The eyebrow over the collapsible section now holds both a by-sample and a
