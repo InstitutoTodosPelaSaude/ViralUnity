@@ -376,6 +376,7 @@ class Test_GenerateConfigFile(unittest.TestCase):
             "reference": "reference.fasta",
             "segmented_reference": None,
             "primer_scheme": "scheme",
+            "gene_annotation": "genes.gff3",
             "minimum_coverage": 5,
             "adapters": "adapters.fasta",
             "minimum_read_length": 50,
@@ -411,6 +412,7 @@ class Test_GenerateConfigFile(unittest.TestCase):
         self.assertEqual(config_dict["data"], "illumina")
         self.assertEqual(config_dict["reference"], "reference.fasta")
         self.assertEqual(config_dict["scheme"], "scheme")
+        self.assertEqual(config_dict["gene_annotation"], "genes.gff3")
         self.assertEqual(config_dict["minimum_depth"], 5)
         self.assertEqual(config_dict["threads"], 1)
         self.assertTrue(
@@ -472,6 +474,7 @@ class Test_GenerateConfigFile(unittest.TestCase):
         self.assertEqual(config_dict["data"], "nanopore")
         self.assertEqual(config_dict["reference"], "reference.fasta")
         self.assertEqual(config_dict["scheme"], "scheme")
+        self.assertEqual(config_dict["gene_annotation"], "genes.gff3")
         self.assertEqual(config_dict["minimum_depth"], 5)
         self.assertEqual(config_dict["threads"], 1)
         self.assertTrue(

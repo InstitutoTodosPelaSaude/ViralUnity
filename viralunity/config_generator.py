@@ -175,6 +175,7 @@ class ConfigGenerator:
         reference: Union[str, Dict[str, str]],
         primer_scheme: str,
         minimum_coverage: int,
+        gene_annotation: Union[str, Dict[str, str]] = "NA",
         minimap2_consensus_align_flags: str = "-a --sam-hit-only --secondary=no --score-N=0",
     ) -> None:
         """Add consensus-specific settings to configuration.
@@ -184,6 +185,9 @@ class ConfigGenerator:
             segment names to paths for segmented viruses
             primer_scheme: Path to primer scheme file or "NA"
             minimum_coverage: Minimum coverage for consensus
+            gene_annotation: Path to a gene-annotation GFF3 (str), a dict
+                mapping segment names to GFF3 paths for segmented viruses,
+                or "NA" when no annotation was provided.
             minimap2_consensus_align_flags: Flags passed to minimap2 when
                 re-aligning the per-sample consensus FASTA back to the
                 reference for the final multiple-sequence alignment. The
@@ -192,6 +196,7 @@ class ConfigGenerator:
         P = self.SECTION_PARAMETERS
         self._set(ConfigKeys.REFERENCE, reference, P)
         self._set(ConfigKeys.SCHEME, primer_scheme, P)
+        self._set(ConfigKeys.GENE_ANNOTATION, gene_annotation, P)
         self._set(ConfigKeys.MINIMUM_DEPTH, minimum_coverage, P)
         self._set(
             ConfigKeys.MINIMAP2_CONSENSUS_ALIGN_FLAGS,

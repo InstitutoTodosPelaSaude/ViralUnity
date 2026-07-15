@@ -101,6 +101,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
     generator.add_consensus_settings(
         reference=args["reference"],
         primer_scheme=args.get("primer_scheme", "NA"),
+        gene_annotation=args.get("gene_annotation", "NA"),
         minimum_coverage=args.get("minimum_coverage", 20),
         minimap2_consensus_align_flags=args.get(
             "minimap2_consensus_align_flags",
