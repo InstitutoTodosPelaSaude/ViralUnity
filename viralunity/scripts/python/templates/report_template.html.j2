@@ -98,8 +98,12 @@ table.stats-table.stats-static th:hover { color: var(--text-secondary); }
 .scale-toggle button.active { background: var(--accent); color: #fff; }
 .scale-toggle button:hover:not(.active) { background: var(--hover); }
 .scale-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 6px; }
+.chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-bottom: 10px; }
 .chart-controls .scale-toggle { margin: 0; }
+/* Separate the Genes/Primers track toggles from the scale toggle so the two
+   groups read as distinct controls (also covers the aggregated card, where they
+   are adjacent inline-flex siblings rather than flex-gap children). */
+.track-toggles { margin-left: 18px; }
 table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* Progressive disclosure: per-sample / per-segment detail behind a collapsed accordion. */
 .sample-details > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -198,7 +202,6 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   {% if metadata %}
   <p class="run-meta">
     {{ metadata.platform|capitalize }} &middot; {{ metadata.library_layout }}-end
-    {%- if metadata.primer_scheme %} &middot; primers: {{ metadata.primer_scheme }}{% endif %}
     {%- if not metadata.qc_performed %} &middot; no read-QC step (Nanopore){% endif %}
   </p>
   {% endif %}
@@ -498,7 +501,11 @@ function depthForScale(y, scale) {
    ride through the Plotly.react scale-toggle rebuild untouched and are
    independent of the depth axis type (the Linear/Log10 toggle only rebuilds
    y). The same helper feeds the aggregated, by-sample and by-segment views. */
-var TRACK_LANE_PX = 26, TRACK_GAP_PX = 16, DEPTH_PX = FIG_HEIGHT;
+// TRACK_GAP_PX is generous on purpose: the depth plot's x-axis ("Genome
+// position" title + tick labels) is drawn in this band between the depth plot
+// and the track lanes, so it must clear both. TRACK_LANE_PX gives each lane room
+// to breathe (and gene labels room to sit inside their bars).
+var TRACK_LANE_PX = 34, TRACK_GAP_PX = 66, DEPTH_PX = FIG_HEIGHT;
 function _hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
   if (h.length !== 6) return hex;
