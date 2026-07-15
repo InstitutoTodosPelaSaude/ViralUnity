@@ -26,6 +26,14 @@ Adds an interactive, self-contained HTML report for consensus runs.
   with Plotly, inlined once so the file has no external dependencies.
 - Run-parameters slide-over drawer showing the full run config, HTML-escaped and
   behind a focus-trapped modal.
+- Optional annotation tracks beneath every coverage plot: a **gene track** from a
+  new `--gene-annotation FILE` / `--segmented-gene-annotation SEGMENT=PATH` GFF3
+  input, and a **primer-scheme track** (amplicons paired into pool rows) from the
+  existing `--primer-scheme` BED. Both are drawn as rectangles aligned to the
+  genome x-axis on the aggregated, by-sample and by-segment views, with Genes /
+  Primers on-off toggles. The files are staged into `<output>/annotation/` so the
+  report and `viralunity report` keep working after the run. Absent when no
+  annotation is provided.
 - `viralunity report --input <consensus-output-dir> [--output report.html]`: a
   standalone subcommand to (re)generate the report from an existing output
   directory without rerunning the pipeline.

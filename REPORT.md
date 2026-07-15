@@ -57,6 +57,20 @@ Run-level cards (assembly stats, sequencing throughput, aggregated coverage) lea
 and per-segment detail live in collapsed, lazily rendered `<details>` accordions ("By sample",
 "By segment") so a many-sample plate stays fast to open.
 
+## Annotation tracks (genes + primers)
+Optional gene (GFF3) and primer-scheme (BED) tracks are drawn as rectangles on a second y-axis
+beneath the depth line, sharing the genome x-axis, on all three coverage views. They are Plotly
+traces (not layout shapes) so they survive the Linear/Log10 rebuild and stay fixed while the depth
+axis toggles. The files are staged into `<output>/annotation/` by the workflow (column 1 is
+sanitized on Nanopore to match the sanitized coverage contig names), and the report matches features
+to each segment's contig by exact name. Genes / Primers chips toggle each track; both default on and
+appear only when that data is present. Track hues are low-chroma, sourced from Python, and kept
+distinct from the depth-series blue (validated in `palette_validation_test.py`).
+
+Two reporting choices are baked into the GFF3 parser (`parse_gff3`) and open to revision:
+- **Feature type:** `gene` features are drawn, falling back to `CDS` on a contig with no genes.
+- **Label:** the first present of `Name → gene → gene_name → locus_tag → product → ID`.
+
 ## Tests
 - `test/scripts/generate_consensus_report_test.py` — pure helpers (metadata, formatting,
   mapping rate, figure builders).
