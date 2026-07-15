@@ -1,0 +1,3 @@
+sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,average_depth,percentage_above_10x,percentage_above_100x,percentage_above_1000x,horizontal_coverage
+sample-A,10000,9500,9000,512.4,0.99,0.95,0.40,0.995
+sample-B,2000,1800,1200,45.7,0.80,0.30,0.00,0.70

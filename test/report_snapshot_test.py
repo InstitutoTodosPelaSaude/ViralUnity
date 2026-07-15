@@ -139,6 +139,33 @@ class TestReportSnapshot(unittest.TestCase):
         # a single-genome run has nothing to split by, so no Global/Per-segment toggle.
         self.assertNotIn('id="kpi-scope"', _render("unsegmented"))
 
+    def _annotation_json(self, html):
+        m = re.search(r'id="annotationData"[^>]*>(.*?)</script>', html, re.S)
+        self.assertIsNotNone(m, "annotationData block missing")
+        return json.loads(m.group(1))
+
+    def test_annotation_tracks_present_when_staged(self):
+        html = _render("annotated")
+        ann = self._annotation_json(html)
+        self.assertTrue(ann, "expected a non-empty annotation model")
+        labels = [ln["label"] for seg in ann.values() for ln in seg["lanes"]]
+        kinds = [ln["kind"] for seg in ann.values() for ln in seg["lanes"]]
+        self.assertIn("Genes", labels)
+        self.assertTrue(any(lbl.startswith("Pool") for lbl in labels))
+        self.assertIn("gene", kinds)
+        self.assertIn("primer", kinds)
+        # the client draws the tracks on a second y-axis via a shared helper.
+        app = _app_js(html)
+        self.assertIn("annotationTraces", app)
+        self.assertIn("yaxis2", app)
+
+    def test_no_annotation_fixtures_have_empty_annotation_block(self):
+        # Regression fence: runs without staged annotation embed an empty model,
+        # draw no tracks, and stay byte-compatible with the pre-feature report.
+        for fixture in ("unsegmented", "nanopore", "segmented"):
+            html = _render(fixture)
+            self.assertEqual(self._annotation_json(html), {}, fixture)
+
     def test_writes_single_self_contained_file(self):
         with tempfile.TemporaryDirectory() as d:
             dest = os.path.join(d, "report.html")

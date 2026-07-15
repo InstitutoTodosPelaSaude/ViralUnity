@@ -1,0 +1,7 @@
+samples:
+  sample-A:
+    - a_R1.fastq.gz
+    - a_R2.fastq.gz
+data: illumina
+output: out/
+scheme: schemes/sarscov2.primers.bed

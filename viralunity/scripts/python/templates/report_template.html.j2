@@ -295,10 +295,13 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 <script id="coverageData" type="application/json">{{ coverage_json|safe }}</script>
 <script id="statsData" type="application/json">{{ stats_by_sample|safe }}</script>
 <script id="kpiData" type="application/json">{{ kpi_json|safe }}</script>
+<script id="annotationData" type="application/json">{{ annotation_json|safe }}</script>
 <script>
 const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
 const STATS = JSON.parse(document.getElementById('statsData').textContent);
 const KPI = JSON.parse(document.getElementById('kpiData').textContent);
+// Per-segment annotation tracks (gene + primer lanes); {} when none were staged.
+const ANNOT = JSON.parse(document.getElementById('annotationData').textContent);
 const FIG_WIDTH = 900, FIG_HEIGHT = 420;
 
 /* ---- theme ---- */
@@ -478,6 +481,74 @@ function depthForScale(y, scale) {
   return scale === 'log' ? y.map(function (v) { return v > 0 ? v : null; }) : y;
 }
 
+/* ---- annotation tracks (genes + primer amplicons) ----
+   Drawn as horizontal-bar traces on a second y-axis (y2) beneath the depth
+   line, aligned to the same genome x-axis. Traces (not layout shapes) so they
+   ride through the Plotly.react scale-toggle rebuild untouched and are
+   independent of the depth axis type (the Linear/Log10 toggle only rebuilds
+   y). The same helper feeds the aggregated, by-sample and by-segment views. */
+var TRACK_LANE_PX = 26, TRACK_GAP_PX = 16, DEPTH_PX = FIG_HEIGHT;
+function trackColors(kind) {
+  // Theme-aware fills are wired in recolorCharts; these initial values read on
+  // both surfaces and stay clear of the depth-series hue.
+  const dark = isDark();
+  if (kind === 'gene') {
+    return dark ? {fill: 'rgba(160,164,173,0.30)', line: '#a3a7b0'}
+                : {fill: 'rgba(90,94,104,0.22)', line: '#6b7280'};
+  }
+  return dark ? {fill: 'rgba(120,170,235,0.34)', line: '#7db0e6'}
+              : {fill: 'rgba(42,120,214,0.26)', line: '#2a78d6'};
+}
+// Build the y2 bar traces for one segment's lanes. Genes lane(s) sit on top,
+// primer pool lanes below. opts.showGenes / opts.showPrimers (default true)
+// filter lanes for the on/off toggles. Returns {traces, nLanes, ticktext}.
+function annotationTraces(segLabel, opts) {
+  opts = opts || {};
+  const model = ANNOT[segLabel || ''];
+  if (!model || !model.lanes) return {traces: [], nLanes: 0, ticktext: []};
+  const showGenes = opts.showGenes !== false, showPrimers = opts.showPrimers !== false;
+  const lanes = model.lanes.filter(function (ln) {
+    return ln.kind === 'gene' ? showGenes : showPrimers;
+  });
+  const n = lanes.length;
+  if (!n) return {traces: [], nLanes: 0, ticktext: []};
+  const ticktext = [];
+  for (let y = 0; y < n; y++) ticktext[y] = lanes[n - 1 - y].label;  // lane 0 = top row
+  const traces = lanes.map(function (ln, i) {
+    const yIdx = n - 1 - i, feats = ln.features || [], c = trackColors(ln.kind);
+    return {
+      type: 'bar', orientation: 'h', yaxis: 'y2', xaxis: 'x',
+      base: feats.map(function (f) { return f.start; }),
+      x: feats.map(function (f) { return Math.max(f.end - f.start, 1); }),
+      y: feats.map(function () { return yIdx; }),
+      width: 0.62,
+      marker: {color: c.fill, line: {color: c.line, width: 1}},
+      text: ln.kind === 'gene' ? feats.map(function (f) { return f.name; }) : [],
+      textposition: 'inside', insidetextanchor: 'middle', cliponaxis: false,
+      hovertext: feats.map(function (f) { return f.name + ' (' + f.start + '–' + f.end + ')'; }),
+      hoverinfo: 'text', showlegend: false, name: ln.label,
+      _track: true
+    };
+  });
+  return {traces: traces, nLanes: n, ticktext: ticktext};
+}
+// Add the track y-axis (y2) to a depth-chart layout in place, shrinking the
+// depth axis domain and growing the figure height so the depth plot keeps its
+// size. No-op when there are no lanes.
+function withTrackAxes(layout, tm) {
+  if (!tm.nLanes) return layout;
+  const trackPx = tm.nLanes * TRACK_LANE_PX, total = DEPTH_PX + TRACK_GAP_PX + trackPx;
+  layout.height = total;
+  layout.yaxis = Object.assign(layout.yaxis || {}, {domain: [(trackPx + TRACK_GAP_PX) / total, 1]});
+  layout.yaxis2 = {
+    domain: [0, trackPx / total], range: [-0.5, tm.nLanes - 0.5],
+    fixedrange: true, zeroline: false, showgrid: false, tickmode: 'array',
+    tickvals: tm.ticktext.map(function (_v, i) { return i; }),
+    ticktext: tm.ticktext, tickfont: {size: 11}
+  };
+  return layout;
+}
+
 /* ---- shared stats-table renderer (values are pre-formatted server-side) ---- */
 function statsTableHTML(rows) {
   if (!rows.length) return '';
@@ -496,7 +567,7 @@ function statsTableHTML(rows) {
 /* ---- "By sample" view: one sample, its coverage across segments ---- */
 var covScale = 'linear';
 var currentSample = null;
-function plotCoverage(holderId, entries, labelFor, scale) {
+function plotCoverage(holderId, entries, labelFor, scale, trackOpts) {
   const holder = document.getElementById(holderId);
   if (!holder) return;
   holder.innerHTML = '';
@@ -507,7 +578,9 @@ function plotCoverage(holderId, entries, labelFor, scale) {
     const lineColor = seriesPalette()[0] || '#2a78d6';
     const trace = {x: e.x, y: depthForScale(e.y, scale), mode: 'lines',
                    line: {width: 2, color: lineColor}, name: labelFor(e), connectgaps: false};
-    Plotly.newPlot(div, [trace], coverageLayout(labelFor(e), scale, e.logRange, e.linRange),
+    const tm = annotationTraces(e.label || '', trackOpts);
+    const layout = withTrackAxes(coverageLayout(labelFor(e), scale, e.logRange, e.linRange), tm);
+    Plotly.newPlot(div, [trace].concat(tm.traces), layout,
                    {responsive: true, displayModeBar: false});
   });
 }
@@ -585,22 +658,35 @@ function enhanceAggregatedToggle() {
   const card = document.getElementById('aggregated-card');
   if (!card) return;
   const plots = Array.from(card.querySelectorAll('.js-plotly-plot'));
+  // Capture each panel's server-rendered depth traces once, so the track traces
+  // can be appended fresh on every rebuild without accumulating duplicates.
+  plots.forEach(function (gd) { if (!gd._depthData) gd._depthData = (gd.data || []).slice(); });
   const setScale = function (s) {
     plots.forEach(function (gd) {
       const panel = gd.closest('.agg-panel');
       const logRange = panel ? panel.getAttribute('data-log-range').split(',').map(Number) : undefined;
       const linMax = panel ? parseFloat(panel.getAttribute('data-lin-max')) : undefined;
-      // Rebuild via react (never a yaxis.type relayout). Pass gd.data through
-      // untouched — the y arrays may be Plotly typed-array specs, so we don't
-      // remap them; on the log axis Plotly drops the true zeros as gaps, giving
-      // the same honest-zero result as the per-sample charts' explicit nulls.
-      try { Plotly.react(gd, gd.data, aggregatedLayout(s, logRange, linMax), {responsive: true, displayModeBar: false}); } catch (e) {}
+      const seg = panel ? panel.getAttribute('data-key') : '';
+      const tm = annotationTraces(seg, aggTrackOpts());
+      const layout = withTrackAxes(aggregatedLayout(s, logRange, linMax), tm);
+      // Rebuild via react (never a yaxis.type relayout). The depth traces pass
+      // through untouched — the y arrays may be Plotly typed-array specs, so we
+      // don't remap them; on the log axis Plotly drops the true zeros as gaps,
+      // matching the per-sample charts' explicit nulls. Track traces (y2) are
+      // appended fresh from the captured depth data.
+      try { Plotly.react(gd, gd._depthData.concat(tm.traces), layout, {responsive: true, displayModeBar: false}); } catch (e) {}
     });
   };
+  enhanceAggregatedToggle._setScale = setScale;
   const toggle = scaleToggleEl('linear', setScale);
   // Place the toggle after the segment selector when present, else after the heading.
   (card.querySelector('select') || card.querySelector('h2')).insertAdjacentElement('afterend', toggle);
+  // Draw the annotation tracks on load (the server render is depth-only). Skip
+  // entirely when no annotation was staged, so a plain run is unchanged.
+  if (Object.keys(ANNOT).length) setScale('linear');
 }
+// Track visibility for the aggregated view (both on until the toggles wire in).
+function aggTrackOpts() { return {showGenes: true, showPrimers: true}; }
 
 /* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
 var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
