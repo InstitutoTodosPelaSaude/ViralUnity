@@ -505,7 +505,7 @@ function depthForScale(y, scale) {
 // position" title + tick labels) is drawn in this band between the depth plot
 // and the track lanes, so it must clear both. TRACK_LANE_PX gives each lane room
 // to breathe (and gene labels room to sit inside their bars).
-var TRACK_LANE_PX = 34, TRACK_GAP_PX = 66, DEPTH_PX = FIG_HEIGHT;
+var TRACK_LANE_PX = 46, TRACK_GAP_PX = 104, DEPTH_PX = FIG_HEIGHT;
 function _hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
   if (h.length !== 6) return hex;
@@ -538,6 +538,9 @@ function annotationTraces(segLabel, opts) {
   for (let y = 0; y < n; y++) ticktext[y] = lanes[n - 1 - y].label;  // lane 0 = top row
   const traces = lanes.map(function (ln, i) {
     const yIdx = n - 1 - i, feats = ln.features || [], c = trackColors(ln.kind);
+    // Genes carry an inside label so need some height; primer bars are pure
+    // position markers (height is not meaningful), so draw them thinner.
+    const barWidth = ln.kind === 'gene' ? 0.58 : 0.30;
     return {
       type: 'bar', orientation: 'h', yaxis: 'y2', xaxis: 'x',
       // Features are 1-based inclusive [start, end]; draw the bar across the
@@ -546,7 +549,7 @@ function annotationTraces(segLabel, opts) {
       base: feats.map(function (f) { return f.start - 0.5; }),
       x: feats.map(function (f) { return (f.end - f.start) + 1; }),
       y: feats.map(function () { return yIdx; }),
-      width: 0.62,
+      width: barWidth,
       marker: {color: c.fill, line: {color: c.line, width: 1}},
       text: ln.kind === 'gene' ? feats.map(function (f) { return f.name; }) : [],
       textposition: 'inside', insidetextanchor: 'middle', cliponaxis: false,
