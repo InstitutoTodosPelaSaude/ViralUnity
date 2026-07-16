@@ -42,6 +42,7 @@ from viralunity.scripts.python.generate_consensus_report import (
     resolve_basewise_path,
     ReportParams,
     report_params_from_config,
+    throughput_series,
 )
 
 _MODULE = "viralunity.scripts.python.generate_consensus_report"
@@ -631,20 +632,40 @@ class TestFigureBuilders(unittest.TestCase):
         self.assertIsInstance(fig, go.Figure)
         self.assertGreaterEqual(len(fig.data), 1)
 
-    def test_throughput_has_distinct_hues_and_mapped_percent_panel(self):
+    def test_throughput_is_horizontal_three_series_stack(self):
         df = dedupe_and_sum_reads(pd.read_csv(io.StringIO(UNSEG_CSV)))
         fig = build_reads_histogram(df, paired=True)
         by_name = {t.name: t for t in fig.data}
-        self.assertEqual(set(by_name), {"Total reads", "QC-passed reads", "Mapped %"})
-        # three distinct hues, none dimmed by opacity.
-        colors = {t.marker.color for t in fig.data}
-        self.assertEqual(len(colors), 3)
+        self.assertEqual(set(by_name), {"Mapped reads", "QC-passed, unmapped", "Removed by QC"})
+        # horizontal, stacked, three distinct hues at full opacity.
         for t in fig.data:
+            self.assertEqual(t.orientation, "h")
             self.assertIn(t.opacity, (None, 1.0))
-        # lower panel is the mapping rate on a fixed 0-100 axis.
-        mapped = by_name["Mapped %"]
-        self.assertAlmostEqual(mapped.y[0], 643219 / (2 * 330568) * 100, places=1)
-        self.assertEqual(tuple(fig.layout.yaxis2.range), (0, 100))
+        self.assertEqual(fig.layout.barmode, "stack")
+        self.assertEqual(len({t.marker.color for t in fig.data}), 3)
+
+    def test_throughput_series_reconcile_units(self):
+        # Illumina (paired): total/QC doubled, mapped individual. For sample-A
+        # total=2*348018, qc=2*330568, mapped=643219.
+        df = dedupe_and_sum_reads(pd.read_csv(io.StringIO(UNSEG_CSV)))
+        s = throughput_series(df, paired=True).set_index("sample_name").loc["sample-A"]
+        self.assertEqual(s["_total"], 2 * 348018)
+        self.assertEqual(s["_mapped"], 643219)
+        self.assertEqual(s["_qc_unmapped"], 2 * 330568 - 643219)
+        self.assertEqual(s["_removed"], 2 * 348018 - 2 * 330568)
+        # the three series sum back to the (doubled) total.
+        self.assertAlmostEqual(s["_mapped"] + s["_qc_unmapped"] + s["_removed"], s["_total"])
+
+    def test_throughput_nanopore_no_doubling_and_zero_removed(self):
+        # single-end: total == QC-passed, so Removed by QC is 0 everywhere.
+        seg = "sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,"
+        seg += "average_depth,percentage_above_10x,percentage_above_100x,percentage_above_1000x,"
+        seg += "horizontal_coverage\nsample-N,1000,1000,600,50.0,0.9,0.8,0.5,0.95\n"
+        df = dedupe_and_sum_reads(pd.read_csv(io.StringIO(seg)))
+        s = throughput_series(df, paired=False).set_index("sample_name").loc["sample-N"]
+        self.assertEqual(s["_total"], 1000)
+        self.assertEqual(s["_removed"], 0)
+        self.assertEqual(s["_qc_unmapped"], 400)
 
     def test_aggregated_over_8_samples_falls_back_to_emphasis(self):
         # >8 series exceeds the CVD-safe categorical ceiling, so identity is no

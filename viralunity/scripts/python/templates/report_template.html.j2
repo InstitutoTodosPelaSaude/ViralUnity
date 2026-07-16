@@ -333,6 +333,12 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 
   <div class="card" id="throughput-card">
     <h2>Sequencing throughput</h2>
+    <div class="chart-controls">
+      <div class="scale-toggle" role="group" aria-label="Throughput scale" id="throughput-scale">
+        <button type="button" class="active" data-mode="absolute" aria-pressed="true">Absolute</button>
+        <button type="button" data-mode="percent" aria-pressed="false">Percent</button>
+      </div>
+    </div>
     {{ reads_fig_html|safe }}
   </div>
 
@@ -478,10 +484,12 @@ function recolorCharts() {
     if (n === 0 || n > 8) return;
     try { Plotly.restyle(gd, {'line.color': pal.slice(0, n)}); } catch (e) {}
   });
-  // Sequencing throughput: three categorical bar series (total / QC / mapped).
+  // Sequencing throughput: mapped (accent) + QC-passed-unmapped (green) recolour
+  // by theme; "Removed by QC" stays the theme-neutral muted grey (index 2).
   const tc = document.getElementById('throughput-card');
   if (tc) tc.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
-    try { Plotly.restyle(gd, {'marker.color': [pal[0], pal[1], pal[2]]}); } catch (e) {}
+    try { Plotly.restyle(gd, {'marker.color': [pal[0]]}, [0]); } catch (e) {}
+    try { Plotly.restyle(gd, {'marker.color': [pal[1]]}, [1]); } catch (e) {}
   });
   // Annotation-track bars carry their kind on the trace; recolour each to the
   // theme's track hue (trackColors reads the theme). Targeted by index so the
@@ -1023,6 +1031,40 @@ function buildTrackToggles(state, rerender) {
   return wrap;
 }
 
+/* ---- sequencing-throughput Absolute | Percent toggle ----
+   Percent normalises each sample's stacked bar to 100% (fair QC-loss comparison
+   across very different depths). Toggled via a cheap layout `barnorm` relayout —
+   the freeze-prone slow path is `yaxis.type` on the ~2000-point coverage lines,
+   not `barnorm` on a handful of bars, so a relayout is safe here. */
+function enhanceThroughputToggle() {
+  var card = document.getElementById('throughput-card');
+  var group = document.getElementById('throughput-scale');
+  if (!card || !group || !window.Plotly) return;
+  var gd = card.querySelector('.js-plotly-plot');
+  if (!gd) return;
+  var apply = function (mode) {
+    var percent = mode === 'percent';
+    try {
+      Plotly.relayout(gd, {
+        barnorm: percent ? 'percent' : '',
+        'xaxis.title.text': percent ? '% of reads' : 'Reads',
+        'xaxis.ticksuffix': percent ? '%' : '',
+      });
+    } catch (e) { /* not yet drawn */ }
+  };
+  group.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      group.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
+      apply(b.getAttribute('data-mode'));
+    });
+  });
+}
+
 /* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
 var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
 // One fixed fractional digit + thousands grouping, matching Python's _fmt_depth
@@ -1165,7 +1207,7 @@ window.addEventListener('load', function () {
   if (segChips && segControls) segControls.appendChild(segChips);
 
   [themeCharts, initKpiControls, enhanceSortHeaders, initStatsControls,
-   enhanceAggregatedToggle].forEach(function (fn) {
+   enhanceThroughputToggle, enhanceAggregatedToggle].forEach(function (fn) {
     try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }
   });
 });

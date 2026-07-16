@@ -88,6 +88,10 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn('id="statsRowCount"', html)
         self.assertIn("cov-dot", html)
         self.assertIn("cov-bar", html)
+        # throughput is the 3-series stacked bar with an Absolute/Percent toggle.
+        self.assertIn('id="throughput-scale"', html)
+        self.assertIn("Removed by QC", html)
+        self.assertIn("QC-passed, unmapped", html)
 
     def test_illumina_paired_snapshot(self):
         html = _render("unsegmented")

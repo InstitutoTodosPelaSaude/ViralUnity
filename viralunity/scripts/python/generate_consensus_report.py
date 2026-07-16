@@ -28,7 +28,6 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from plotly.offline import get_plotlyjs
-from plotly.subplots import make_subplots
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -993,72 +992,94 @@ def _add_depth_guides(fig: go.Figure) -> None:
     )
 
 
-def build_reads_histogram(df: pd.DataFrame, paired: bool = True) -> go.Figure:
-    """Sequencing throughput per sample, as two stacked panels sharing the x-axis.
+def throughput_series(df: pd.DataFrame, paired: bool) -> pd.DataFrame:
+    """Decompose per-sample reads into the 3 stacked throughput series (spec §4).
 
-    Top panel: total vs QC-passed reads. These are a subset relationship
-    (QC-passed <= total), so they are overlaid — the QC-passed bar sits in front
-    of the total bar and the blue remainder above it is the reads dropped in QC.
-    Bottom panel: the **mapping rate** (``mapped / QC-passed``, denominator
-    doubled when paired) on a fixed 0-100 axis, so the chart tells the same story
-    as the table's Mapped % column instead of an absolute count on a second scale.
+    Reconciled to individual-read units: on paired-end (Illumina) runs the total
+    and QC-passed counts are read *pairs*, so both are doubled; mapped reads are
+    already counted individually (and pre-summed across segments by
+    :func:`dedupe_and_sum_reads`). Nanopore is single-end — no doubling, and
+    ``removed`` is 0 because there is no QC step (total == QC-passed).
 
-    The three series get distinct hues (blue / green / orange) at full opacity
-    with a legend, so identity survives colour-blindness and screenshots.
+    Returns the input frame with ``_total``/``_mapped``/``_qc_unmapped``/
+    ``_removed`` columns, sorted by total reads ascending.
     """
-    samples = df["sample_name"].tolist()
-    mapped_pct = [
-        _mapping_rate(m, q, paired)
-        for m, q in zip(df["number_of_mapped_reads"], df["number_of_trim_paired_reads"])
-    ]
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.22,
-        subplot_titles=("Total and QC-passed reads", "Mapped %"),
-    )
+    factor = 2 if paired else 1
+    total = pd.to_numeric(df["number_of_reads"], errors="coerce").fillna(0.0) * factor
+    qc = pd.to_numeric(df["number_of_trim_paired_reads"], errors="coerce").fillna(0.0) * factor
+    mapped = pd.to_numeric(df["number_of_mapped_reads"], errors="coerce").fillna(0.0).clip(lower=0)
+    # mapped is a subset of QC-passed, which is a subset of total; clamp the
+    # deltas so rounding/quirks never draw a negative segment.
+    qc_unmapped = (qc - mapped).clip(lower=0)
+    removed = (total - qc).clip(lower=0)
+    out = df.assign(_total=total, _mapped=mapped, _qc_unmapped=qc_unmapped, _removed=removed)
+    return out.sort_values("_total", ascending=True, kind="stable")
+
+
+def build_reads_histogram(
+    df: pd.DataFrame, paired: bool = True, segmented: bool = False
+) -> go.Figure:
+    """Sequencing throughput per sample as horizontal 3-series stacked bars (spec §4).
+
+    One row per sample (``df`` is the :func:`dedupe_and_sum_reads` output), plot
+    height growing with sample count so 96 samples scroll instead of crushing into
+    hairlines. The three stacked series — **Mapped reads** (accent), **QC-passed,
+    unmapped** (green), **Removed by QC** (neutral grey) — sum to the sample's
+    total reads (unit-reconciled; see :func:`throughput_series`). Bars sort by
+    total reads ascending. The Absolute ⇄ Percent toggle (client-side ``barnorm``)
+    normalises each sample to 100% for a fair QC-loss comparison across depths.
+    """
+    work = throughput_series(df, paired)
+    samples = work["sample_name"].tolist()
+    n = len(samples)
+    height = max(200, 46 + n * (18 if segmented else 14))
+    fig = go.Figure()
     fig.add_bar(
-        x=samples,
-        y=df["number_of_reads"],
-        name="Total reads",
+        y=samples,
+        x=work["_mapped"],
+        name="Mapped reads",
+        orientation="h",
         marker_color=PALETTE_LIGHT[0],
-        row=1,
-        col=1,
+        hovertemplate="%{y}<br>Mapped: %{x:,.0f}<extra></extra>",
     )
     fig.add_bar(
-        x=samples,
-        y=df["number_of_trim_paired_reads"],
-        name="QC-passed reads",
+        y=samples,
+        x=work["_qc_unmapped"],
+        name="QC-passed, unmapped",
+        orientation="h",
         marker_color=PALETTE_LIGHT[1],
-        row=1,
-        col=1,
+        hovertemplate="%{y}<br>QC-passed, unmapped: %{x:,.0f}<extra></extra>",
     )
     fig.add_bar(
-        x=samples,
-        y=mapped_pct,
-        name="Mapped %",
-        marker_color=PALETTE_LIGHT[2],
-        hovertemplate="%{x}<br>%{y:.2f}% mapped<extra></extra>",
-        row=2,
-        col=1,
+        y=samples,
+        x=work["_removed"],
+        name="Removed by QC",
+        orientation="h",
+        marker_color=EMPHASIS_MUTED,
+        hovertemplate="%{y}<br>Removed by QC: %{x:,.0f}<extra></extra>",
     )
     fig.update_layout(
         autosize=True,
-        height=560,
-        margin=dict(l=60, r=30, t=60, b=60),
+        height=height,
+        barmode="stack",
+        bargap=0.25,
+        margin=dict(l=60, r=30, t=54, b=44),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family=FONT_FAMILY, size=13, color="#52514e"),
-        colorway=PALETTE_LIGHT,
-        barmode="overlay",
-        legend=dict(orientation="h", yanchor="bottom", y=1.06, xanchor="left", x=0),
+        # Fixed-width legend entries spaced out so the three labels don't crowd.
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0, traceorder="normal"
+        ),
+        xaxis=dict(title_text="Reads", gridcolor=GRID_COLOR, zeroline=False, rangemode="tozero"),
+        yaxis=dict(
+            type="category",
+            gridcolor="rgba(0,0,0,0)",
+            zeroline=False,
+            automargin=True,
+            title_text="",
+        ),
     )
-    fig.update_xaxes(gridcolor=GRID_COLOR, zeroline=False)
-    fig.update_yaxes(gridcolor=GRID_COLOR, zeroline=False, rangemode="tozero")
-    fig.update_yaxes(title_text="Reads", row=1, col=1)
-    fig.update_yaxes(title_text="Mapped %", range=[0, 100], row=2, col=1)
-    fig.update_xaxes(title_text="Sample", row=2, col=1)
     return fig
 
 
@@ -1311,7 +1332,9 @@ def render_report(
 
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired, params)
-    reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df), paired))
+    reads_fig_html = _fig_to_html(
+        build_reads_histogram(dedupe_and_sum_reads(df), paired, segmented)
+    )
 
     # Aggregated coverage: one panel per segment (segments have different lengths).
     aggregated_panels = []
