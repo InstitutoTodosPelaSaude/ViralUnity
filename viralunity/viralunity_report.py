@@ -18,6 +18,7 @@ import click
 from viralunity.scripts.python.generate_consensus_report import (
     build_report_metadata,
     load_run_config,
+    report_params_from_config,
     write_report,
 )
 
@@ -45,7 +46,44 @@ logger = logging.getLogger(__name__)
     "library-layout, and primer-scheme metadata. Inferred from the output "
     "directory when omitted.",
 )
-def report(input_dir, output_path, config_file):
+@click.option(
+    "--pass-threshold",
+    "pass_threshold",
+    type=float,
+    default=None,
+    help="Coverage fraction for the green/pass tier (default 0.90); drives the "
+    "'>=90% coverage' KPI and the status dots/bars.",
+)
+@click.option(
+    "--warn-threshold",
+    "warn_threshold",
+    type=float,
+    default=None,
+    help="Coverage fraction for the amber/warn tier (default 0.70); drives the "
+    "'Below 70%' KPI and the 'low coverage only' filter.",
+)
+@click.option(
+    "--chart-color",
+    "chart_color",
+    default=None,
+    help="Accent hex colour for the heatmap scale, by-sample line, and mapped-reads bar.",
+)
+@click.option(
+    "--colorbar-thickness",
+    "colorbar_thickness",
+    type=int,
+    default=None,
+    help="Heatmap colour-bar thickness in px (default 14).",
+)
+def report(
+    input_dir,
+    output_path,
+    config_file,
+    pass_threshold,
+    warn_threshold,
+    chart_color,
+    colorbar_thickness,
+):
     """Generate an interactive HTML report from a consensus output directory."""
     if not os.path.isdir(input_dir):
         raise click.ClickException(f"Input directory not found: {input_dir}")
@@ -55,7 +93,14 @@ def report(input_dir, output_path, config_file):
     try:
         config = load_run_config(config_file)
         metadata = build_report_metadata(config, input_dir)
-        write_report(input_dir, dest, metadata, config)
+        params = report_params_from_config(
+            config,
+            pass_threshold=pass_threshold,
+            warn_threshold=warn_threshold,
+            chart_color=chart_color,
+            colorbar_thickness=colorbar_thickness,
+        )
+        write_report(input_dir, dest, metadata, config, params)
         logger.info(f"Consensus report generated: {dest}")
     except Exception as e:
         raise click.ClickException(str(e))

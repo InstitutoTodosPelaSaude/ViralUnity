@@ -40,6 +40,8 @@ from viralunity.scripts.python.generate_consensus_report import (
     read_stats_summary,
     resolve_annotation_path,
     resolve_basewise_path,
+    ReportParams,
+    report_params_from_config,
 )
 
 _MODULE = "viralunity.scripts.python.generate_consensus_report"
@@ -585,6 +587,50 @@ def _one_sample_df(name):
             }
         ]
     )
+
+
+class TestReportParams(unittest.TestCase):
+    def test_defaults(self):
+        p = ReportParams()
+        self.assertEqual(p.pass_threshold, 0.90)
+        self.assertEqual(p.warn_threshold, 0.70)
+        self.assertEqual(p.chart_color, "#2a78d6")
+        self.assertEqual(p.colorbar_thickness, 14)
+
+    def test_pct_labels_are_derived(self):
+        p = ReportParams(pass_threshold=0.85, warn_threshold=0.5)
+        self.assertEqual(p.pass_pct_label, "85%")
+        self.assertEqual(p.warn_pct_label, "50%")
+
+    def test_tier_boundaries(self):
+        p = ReportParams(pass_threshold=0.90, warn_threshold=0.70)
+        self.assertEqual(p.tier(0.90), "pass")  # inclusive lower bound
+        self.assertEqual(p.tier(0.95), "pass")
+        self.assertEqual(p.tier(0.70), "warn")  # inclusive lower bound
+        self.assertEqual(p.tier(0.89), "warn")
+        self.assertEqual(p.tier(0.69), "fail")
+        self.assertEqual(p.tier("not-a-number"), "fail")
+
+    def test_client_dict_has_labels_and_hues(self):
+        d = ReportParams().as_client_dict()
+        self.assertEqual(d["passPctLabel"], "90%")
+        self.assertEqual(d["warnPctLabel"], "70%")
+        self.assertIn("fail", d["tierColors"])
+
+    def test_from_config_precedence(self):
+        # explicit override beats config beats default; None overrides ignored.
+        p = report_params_from_config(
+            {"report_pass_threshold": 0.8, "report_chart_color": "#123456"},
+            warn_threshold=0.5,
+            pass_threshold=None,
+        )
+        self.assertEqual(p.pass_threshold, 0.8)  # from config (override was None)
+        self.assertEqual(p.warn_threshold, 0.5)  # from override
+        self.assertEqual(p.chart_color, "#123456")  # from config
+        self.assertEqual(p.colorbar_thickness, 14)  # default
+
+    def test_from_config_empty(self):
+        self.assertEqual(report_params_from_config(None), ReportParams())
 
 
 class TestHtmlEscaping(unittest.TestCase):

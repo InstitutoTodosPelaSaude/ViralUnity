@@ -300,12 +300,16 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 <script id="statsData" type="application/json">{{ stats_by_sample|safe }}</script>
 <script id="kpiData" type="application/json">{{ kpi_json|safe }}</script>
 <script id="annotationData" type="application/json">{{ annotation_json|safe }}</script>
+<script id="paramsData" type="application/json">{{ params_json|safe }}</script>
 <script>
 const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
 const STATS = JSON.parse(document.getElementById('statsData').textContent);
 const KPI = JSON.parse(document.getElementById('kpiData').textContent);
 // Per-segment annotation tracks (gene + primer lanes); {} when none were staged.
 const ANNOT = JSON.parse(document.getElementById('annotationData').textContent);
+// Tweakable report params (thresholds/colours); the single client source for
+// threshold-derived labels and the accent/status hues (spec §9).
+const PARAMS = JSON.parse(document.getElementById('paramsData').textContent);
 const FIG_WIDTH = 900, FIG_HEIGHT = 420;
 
 /* ---- theme ---- */

@@ -19,6 +19,7 @@ import json
 import logging
 import math
 import os
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -103,6 +104,76 @@ TRACK_PRIMER_COLOR_DARK = "#8bb4a2"
 
 FIG_WIDTH = 900
 FIG_HEIGHT = 420
+
+
+# --------------------------------------------------------------------------- #
+# Report parameters (thresholds + colours) — the tweakables in the spec's §9
+# --------------------------------------------------------------------------- #
+DEFAULT_PASS_THRESHOLD = 0.90
+DEFAULT_WARN_THRESHOLD = 0.70
+DEFAULT_CHART_COLOR = "#2a78d6"
+DEFAULT_COLORBAR_THICKNESS = 14
+
+# Coverage status tiers. Always paired with a dot/label/bar (never colour alone),
+# and held constant across light/dark themes (the accent + status hues do not
+# flip; only the surrounding surfaces do).
+STATUS_PASS_COLOR = "#1b9e5a"
+STATUS_WARN_COLOR = "#e0a100"
+STATUS_FAIL_COLOR = "#e34948"
+TIER_COLORS = {"pass": STATUS_PASS_COLOR, "warn": STATUS_WARN_COLOR, "fail": STATUS_FAIL_COLOR}
+
+
+@dataclass(frozen=True)
+class ReportParams:
+    """Tweakable report-generation parameters (thresholds + chart colours).
+
+    ``pass_threshold`` / ``warn_threshold`` are coverage fractions in ``[0, 1]``.
+    Every threshold-derived label the report shows (KPI tiles, the "low coverage
+    only" filter, status legends) is computed from these, so the literal numbers
+    90/70 never appear hardcoded in user-facing text (spec §9).
+    """
+
+    pass_threshold: float = DEFAULT_PASS_THRESHOLD
+    warn_threshold: float = DEFAULT_WARN_THRESHOLD
+    chart_color: str = DEFAULT_CHART_COLOR
+    colorbar_thickness: int = DEFAULT_COLORBAR_THICKNESS
+
+    def tier(self, coverage: float) -> str:
+        """Status tier for a horizontal-coverage fraction: ``pass``/``warn``/``fail``."""
+        try:
+            cov = float(coverage)
+        except (TypeError, ValueError):
+            return "fail"
+        if cov >= self.pass_threshold:
+            return "pass"
+        if cov >= self.warn_threshold:
+            return "warn"
+        return "fail"
+
+    def tier_color(self, coverage: float) -> str:
+        return TIER_COLORS[self.tier(coverage)]
+
+    @property
+    def pass_pct_label(self) -> str:
+        """e.g. ``"90%"`` — the pass threshold as a compact percent string."""
+        return f"{self.pass_threshold * 100:g}%"
+
+    @property
+    def warn_pct_label(self) -> str:
+        """e.g. ``"70%"`` — the warn threshold as a compact percent string."""
+        return f"{self.warn_threshold * 100:g}%"
+
+    def as_client_dict(self) -> dict:
+        """Params the client JS needs (thresholds + colours + status hues)."""
+        return {
+            "passThreshold": self.pass_threshold,
+            "warnThreshold": self.warn_threshold,
+            "passPctLabel": self.pass_pct_label,
+            "warnPctLabel": self.warn_pct_label,
+            "chartColor": self.chart_color,
+            "colorbarThickness": self.colorbar_thickness,
+            "tierColors": TIER_COLORS,
+        }
 
 
 # --------------------------------------------------------------------------- #
@@ -969,17 +1040,23 @@ def _fig_to_html(fig: go.Figure) -> str:
 
 
 def render_report(
-    output_dir: str, metadata: Optional[dict] = None, config: Optional[dict] = None
+    output_dir: str,
+    metadata: Optional[dict] = None,
+    config: Optional[dict] = None,
+    params: Optional[ReportParams] = None,
 ) -> str:
     """Build the full self-contained HTML report string for a consensus run.
 
     ``metadata`` is the run-metadata dict from :func:`build_report_metadata`; when
     omitted it is inferred from the output dir (the CLI-on-an-old-dir path).
     ``config`` is the full run config YAML (as a dict); when given it powers the
-    run-parameters panel, otherwise the panel is omitted.
+    run-parameters panel, otherwise the panel is omitted. ``params`` carries the
+    tweakable thresholds/colours (defaults preserve historical behaviour).
     """
     if metadata is None:
         metadata = build_report_metadata(config, output_dir)
+    if params is None:
+        params = ReportParams()
     # On Illumina (paired-end), total/QC-passed counts are read pairs while mapped
     # reads are counted individually; the mapping-rate denominator is doubled to
     # reconcile the units. Driven by the declared library layout, never by ratios.
@@ -1075,6 +1152,8 @@ def render_report(
         palette_dark=PALETTE_DARK,
         track_genes=f"{TRACK_GENE_COLOR},{TRACK_GENE_COLOR_DARK}",
         track_primers=f"{TRACK_PRIMER_COLOR},{TRACK_PRIMER_COLOR_DARK}",
+        params=params,
+        params_json=_json_for_script(params.as_client_dict()),
     )
 
 
@@ -1113,10 +1192,14 @@ def _stats_rows_by_sample(
 
 
 def write_report(
-    output_dir: str, dest: str, metadata: Optional[dict] = None, config: Optional[dict] = None
+    output_dir: str,
+    dest: str,
+    metadata: Optional[dict] = None,
+    config: Optional[dict] = None,
+    params: Optional[ReportParams] = None,
 ) -> None:
     """Render the report and write it to ``dest`` (the shared entry point)."""
-    html_str = render_report(output_dir, metadata, config)
+    html_str = render_report(output_dir, metadata, config, params)
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
     with open(dest, "w") as fh:
         fh.write(html_str)
@@ -1126,6 +1209,28 @@ def write_report(
 # --------------------------------------------------------------------------- #
 # Entry points
 # --------------------------------------------------------------------------- #
+def report_params_from_config(config: Optional[dict], **overrides) -> ReportParams:
+    """Build :class:`ReportParams` from optional config keys + explicit overrides.
+
+    The pipeline config may carry ``report_pass_threshold`` /
+    ``report_warn_threshold`` / ``report_chart_color`` /
+    ``report_colorbar_thickness`` (all optional); explicit ``overrides`` (from CLI
+    flags) win over config, which wins over the dataclass defaults. ``None``
+    overrides are ignored so an unset CLI flag falls through to config/default.
+    """
+    config = config or {}
+    fields = {
+        "pass_threshold": config.get("report_pass_threshold"),
+        "warn_threshold": config.get("report_warn_threshold"),
+        "chart_color": config.get("report_chart_color"),
+        "colorbar_thickness": config.get("report_colorbar_thickness"),
+    }
+    for key, value in overrides.items():
+        if value is not None:
+            fields[key] = value
+    return ReportParams(**{k: v for k, v in fields.items() if v is not None})
+
+
 def run_cli():
     ap = argparse.ArgumentParser(
         description="Generate an interactive HTML report for a consensus output directory."
@@ -1145,11 +1250,47 @@ def run_cli():
         "platform/library-layout/primer-scheme metadata. Inferred from the "
         "output dir when omitted.",
     )
+    ap.add_argument(
+        "--pass-threshold",
+        dest="pass_threshold",
+        type=float,
+        default=None,
+        help="Coverage fraction for the green/pass tier (default 0.90). Drives the "
+        "'>=90%% coverage' KPI and the status dots/bars.",
+    )
+    ap.add_argument(
+        "--warn-threshold",
+        dest="warn_threshold",
+        type=float,
+        default=None,
+        help="Coverage fraction for the amber/warn tier (default 0.70). Drives the "
+        "'Below 70%%' KPI and the 'low coverage only' table filter.",
+    )
+    ap.add_argument(
+        "--chart-color",
+        dest="chart_color",
+        default=None,
+        help="Accent hex colour for the heatmap scale, by-sample line, and mapped-reads bar.",
+    )
+    ap.add_argument(
+        "--colorbar-thickness",
+        dest="colorbar_thickness",
+        type=int,
+        default=None,
+        help="Heatmap colour-bar thickness in px (default 14).",
+    )
     args = ap.parse_args()
     dest = args.output_path or os.path.join(args.input_dir, "report.html")
     config = load_run_config(args.config_file)
     metadata = build_report_metadata(config, args.input_dir)
-    write_report(args.input_dir, dest, metadata, config)
+    params = report_params_from_config(
+        config,
+        pass_threshold=args.pass_threshold,
+        warn_threshold=args.warn_threshold,
+        chart_color=args.chart_color,
+        colorbar_thickness=args.colorbar_thickness,
+    )
+    write_report(args.input_dir, dest, metadata, config, params)
 
 
 def load_run_config(config_file: Optional[str]) -> Optional[dict]:
@@ -1172,7 +1313,8 @@ def run_snakemake():
     dest = str(snakemake.output[0])  # noqa: F821
     config = dict(snakemake.config)  # noqa: F821
     metadata = build_report_metadata(config, output_dir)
-    write_report(output_dir, dest, metadata, config)
+    params = report_params_from_config(config)
+    write_report(output_dir, dest, metadata, config, params)
 
 
 if __name__ == "__main__":
