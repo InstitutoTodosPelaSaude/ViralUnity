@@ -71,10 +71,25 @@ Every component must stay legible from 1 to ~96 samples (≈96×8 segmented rows
   (concatenated)" view + per-segment selector). Rendered client-side from embedded JSON.
 
 ## Thresholds are configurable, labels are derived
-`pass`/`warn` coverage thresholds (defaults 0.90/0.70), the accent `chartColor`, and the
+`pass`/`warn` coverage thresholds (defaults 0.90/0.70), the accent `chartColor` (the coverage-heatmap colour scale), and the
 `colorbarThickness` are report-generation parameters (`ReportParams`, exposed as `viralunity
 report` flags / config keys). Never hardcode 90/70 in user-facing text — derive it from the params
 (Python `ReportParams.pass_pct_label`, JS `PARAMS`).
+
+## Reporting-method choices (documented for PI review)
+These are display/aggregation decisions the report makes; they change no computed pipeline
+output, but are recorded here for the PI to confirm (cf. the scientific-changes-sign-off
+convention):
+- **Mapping rate is unit-reconciled** by doubling the QC-passed denominator on paired-end runs
+  (see above); the whole-sample rate is `Σ segment mapped ÷ 2× QC-passed`.
+- **Summary aggregations differ by tile on purpose**: the "Median coverage" KPI is the median
+  across samples of horizontal coverage; the "Mean depth" KPI is the mean across samples of each
+  sample's (whole-genome, length-weighted) mean depth.
+- **Segmented whole-genome figures are length-weighted** across segments (KPIs + worst-first
+  ordering + heatmap); the stats-table roll-up shows mean coverage / median depth across a
+  sample's segments.
+- **A missing gene GFF3 is fetched from NCBI** by reference accession (opt-out with
+  `--no-fetch-annotation`); the fetch is best-effort and cached, never blocking.
 
 ## Annotation tracks (genes + primers)
 Optional gene (GFF3) and primer-scheme (BED) tracks are drawn as rectangles on a second y-axis

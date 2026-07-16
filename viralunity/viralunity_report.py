@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
     "--chart-color",
     "chart_color",
     default=None,
-    help="Accent hex colour for the heatmap scale, by-sample line, and mapped-reads bar.",
+    help="Accent #RRGGBB hex colour for the coverage-heatmap colour scale.",
 )
 @click.option(
     "--colorbar-thickness",

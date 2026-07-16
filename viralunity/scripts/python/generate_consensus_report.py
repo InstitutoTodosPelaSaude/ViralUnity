@@ -1768,6 +1768,10 @@ def report_params_from_config(config: Optional[dict], **overrides) -> ReportPara
 
 
 def run_cli():
+    # This argparse surface intentionally mirrors the ``viralunity report`` click
+    # command (viralunity/viralunity_report.py). It exists because this module must
+    # run standalone under the minimal ``report.yaml`` conda env (no click / no
+    # viralunity package). Keep the two option sets in sync when adding a flag.
     ap = argparse.ArgumentParser(
         description="Generate an interactive HTML report for a consensus output directory."
     )
@@ -1806,7 +1810,7 @@ def run_cli():
         "--chart-color",
         dest="chart_color",
         default=None,
-        help="Accent hex colour for the heatmap scale, by-sample line, and mapped-reads bar.",
+        help="Accent #RRGGBB hex colour for the coverage-heatmap colour scale.",
     )
     ap.add_argument(
         "--colorbar-thickness",
