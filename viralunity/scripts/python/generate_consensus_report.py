@@ -1043,7 +1043,7 @@ def _segmented_stats_table_html(df: pd.DataFrame, paired: bool, params: ReportPa
             f'<tr class="seg-summary" data-role="summary" data-sid="{sid}" '
             f'data-sample="{s_esc}" data-segment="" data-coverage="{r["mean_cov"]:.6f}" '
             f'tabindex="0" role="button" aria-expanded="false">'
-            f'<td class="col-freeze cell-sample">'
+            f'<td class="col-freeze cell-sample" data-sort="{s_esc}">'
             f'<span class="seg-caret" aria-hidden="true"></span>'
             f'<span class="cov-dot cov-dot-{tier}" aria-hidden="true"></span>{s_esc}'
             f'<span class="seg-tag">{r["n_seg"]} segments</span></td>'
@@ -1076,7 +1076,7 @@ def _segmented_stats_table_html(df: pd.DataFrame, paired: bool, params: ReportPa
             body_rows.append(
                 f'<tr class="seg-subrow row-hidden" data-role="subrow" data-parent="{sid}" '
                 f'data-sample="{s_esc}" data-segment="{seg}" data-coverage="{seg_cov:.6f}">'
-                f'<td class="col-freeze cell-sample cell-subrow">'
+                f'<td class="col-freeze cell-sample cell-subrow" data-sort="{seg}">'
                 f'<span class="cov-dot cov-dot-{seg_tier}" aria-hidden="true"></span>{seg}</td>'
                 f'<td class="num cell-muted">—</td>'
                 f'<td class="num cell-muted">—</td>'
@@ -1162,10 +1162,12 @@ def build_stats_table_html(
         for i, col in enumerate(columns):
             raw = row[col]
             if col == "sample_name":
-                # Status dot + name, frozen as the first column.
+                # Status dot + name, frozen as the first column. data-sort carries
+                # the name so clicking the Sample header sorts alphabetically.
+                name = html.escape(str(raw))
                 cells.append(
-                    f'<td class="col-freeze cell-sample"><span class="cov-dot cov-dot-{tier}" '
-                    f'aria-hidden="true"></span>{html.escape(str(raw))}</td>'
+                    f'<td class="col-freeze cell-sample" data-sort="{name}">'
+                    f'<span class="cov-dot cov-dot-{tier}" aria-hidden="true"></span>{name}</td>'
                 )
                 continue
             if col == "number_of_mapped_reads":

@@ -194,6 +194,27 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn("data-track-genes", html)
         self.assertIn("data-track-primers", html)
 
+    def test_review_fix_js_guards(self):
+        # JS-source guards for the review/PI fixes (no browser in CI). If any of
+        # these markers disappears, the corresponding regression is likely back.
+        app = _app_js(_render("segmented"))
+        # roll-up sort stays hierarchy-aware (subrows re-attached to their parent)
+        # and the regroup-on-return-to-All repair exists.
+        self.assertIn("_regroupRollup", app)
+        self.assertIn("data-parent", app)
+        # heatmap "All segments" labels sit below the grid, not clipped on top.
+        self.assertIn("side: 'bottom'", app)
+        self.assertIn("automargin", app)
+        # heatmap colour bar is px-capped (doesn't grow with sample count).
+        self.assertIn("HEATMAP_CB_MAX_PX", app)
+        # by-sample plot is rebuilt on theme change (not blanket line.color restyle
+        # that would collapse the concatenated multi-segment colours).
+        self.assertIn("renderBySample", app)
+        # sample list is a roving-tabindex listbox with arrow-key navigation.
+        self.assertIn("ArrowDown", app)
+        # Plotly plots are purged before the holder is cleared (no listener leak).
+        self.assertIn("Plotly.purge", app)
+
     def test_no_annotation_fixtures_have_empty_annotation_block(self):
         # Regression fence: runs without staged annotation embed an empty model,
         # draw no tracks, and stay byte-compatible with the pre-feature report.
