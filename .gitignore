@@ -99,3 +99,9 @@ report-ux-improvements/reference-reports/
 consensus_html_visualization.md
 # Documentation builds
 docs/_build/
+
+# Local report review artifacts, design-spec inputs, and pasted screenshots
+# (kept on disk for reference; never part of the package / a PR).
+my_test_reports/
+consensus_reports_refactor_material/
+/image*.png
