@@ -19,8 +19,11 @@ import json
 import logging
 import math
 import os
+import re
+import urllib.request
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
@@ -237,6 +240,31 @@ GFF_FALLBACK_FEATURE_TYPES = ("CDS",)
 GFF_LABEL_KEYS = ("Name", "gene", "gene_name", "locus_tag", "product", "ID")
 
 
+def _sanitize_contig(s: str) -> str:
+    """Mirror the nanopore workflow's contig sanitisation (``/\\|,~`` + space -> ``_``)."""
+    return re.sub(r"[/\\|,~ ]", "_", s)
+
+
+def _accession(s: str) -> str:
+    """First whitespace/pipe-delimited token of a contig id (``NC_007373.1|...`` -> ``NC_007373.1``)."""
+    return re.split(r"[\s|]", s.strip())[0] if s else s
+
+
+def _contig_matches(feature_contig: str, coverage_contig: str) -> bool:
+    """Whether a BED/GFF3 seqid refers to the coverage contig.
+
+    Tolerant of the nanopore header sanitisation and of accession-only vs
+    full-description headers, so an annotation file authored against the raw
+    reference still matches a sanitised or pipe-delimited coverage contig.
+    """
+    if feature_contig == coverage_contig:
+        return True
+    if _sanitize_contig(feature_contig) == coverage_contig:
+        return True
+    acc = _accession(feature_contig)
+    return bool(acc) and acc == _accession(coverage_contig)
+
+
 def _parse_gff_attributes(field: str) -> Dict[str, str]:
     """Parse a GFF3 column-9 attribute string (``key=value;...``) into a dict."""
     attrs: Dict[str, str] = {}
@@ -260,7 +288,7 @@ def _gff_rows_for_contig(path: str, contig: str, feature_types) -> List[dict]:
             cols = line.rstrip("\n").split("\t")
             if len(cols) < 9:
                 continue
-            if cols[0] != contig or cols[2].lower() not in wanted:
+            if not _contig_matches(cols[0], contig) or cols[2].lower() not in wanted:
                 continue
             try:
                 start, end = int(cols[3]), int(cols[4])
@@ -336,7 +364,7 @@ def parse_primer_bed(path: str, contig: str) -> List[dict]:
             if not line.strip() or line.startswith(("#", "track", "browser")):
                 continue
             cols = line.rstrip("\n").split("\t")
-            if len(cols) < 4 or cols[0] != contig:
+            if len(cols) < 4 or not _contig_matches(cols[0], contig):
                 continue
             try:
                 start, end = int(cols[1]), int(cols[2])
@@ -407,6 +435,150 @@ def parse_primer_bed(path: str, contig: str) -> List[dict]:
     return result
 
 
+# --------------------------------------------------------------------------- #
+# Annotation from the run config + an NCBI fallback for a missing gene GFF3
+# --------------------------------------------------------------------------- #
+_EFETCH_FT = (
+    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+    "?db=nuccore&id={acc}&rettype=ft&retmode=text"
+)
+
+
+def _config_scheme_path(config: Optional[dict]) -> Optional[str]:
+    """Primer-scheme BED path from the run config (``scheme``), or None/"NA"."""
+    if not config:
+        return None
+    v = config.get("scheme")
+    return str(v) if v and str(v).strip().upper() != "NA" else None
+
+
+def _config_gene_path(config: Optional[dict], segment: Optional[str]) -> Optional[str]:
+    """Gene-annotation GFF3 path from the config (``gene_annotation``).
+
+    Accepts a plain path (unsegmented) or a ``{segment: path}`` dict (segmented,
+    mirroring ``--segmented-gene-annotation``). Returns None when absent or "NA".
+    """
+    if not config:
+        return None
+    v = config.get("gene_annotation")
+    if not v:
+        return None
+    if isinstance(v, dict):
+        p = v.get(segment)
+        return str(p) if p and str(p).strip().upper() != "NA" else None
+    s = str(v).strip()
+    return s if s and s.upper() != "NA" else None
+
+
+def _parse_ncbi_feature_table(text: str, feature_types) -> List[dict]:
+    """Parse an NCBI ``rettype=ft`` feature table into gene-like features.
+
+    Returns ``{start, end, name, strand}`` (1-based inclusive, span across all
+    intervals of a multi-exon feature), keeping features of ``feature_types``.
+    The label prefers the ``gene`` qualifier, then ``locus_tag``, then ``product``.
+    """
+    wanted = {t.lower() for t in feature_types}
+
+    def _is_coord(s: str) -> bool:
+        try:
+            int(s.lstrip("<>"))
+            return True
+        except ValueError:
+            return False
+
+    feats: List[dict] = []
+    cur: Optional[dict] = None
+    for line in text.splitlines():
+        if not line or line.startswith(">Feature"):
+            continue
+        cols = line.split("\t")
+        if (
+            len(cols) >= 3
+            and cols[0]
+            and cols[1]
+            and cols[2]
+            and _is_coord(cols[0])
+            and _is_coord(cols[1])
+        ):
+            a, b = int(cols[0].lstrip("<>")), int(cols[1].lstrip("<>"))
+            cur = {
+                "type": cols[2].strip().lower(),
+                "lo": min(a, b),
+                "hi": max(a, b),
+                "strand": "+" if a <= b else "-",
+                "q": {},
+            }
+            feats.append(cur)
+        elif (
+            cur
+            and len(cols) >= 2
+            and cols[0]
+            and cols[1]
+            and _is_coord(cols[0])
+            and _is_coord(cols[1])
+            and (len(cols) < 3 or not cols[2])
+        ):
+            a, b = int(cols[0].lstrip("<>")), int(cols[1].lstrip("<>"))
+            cur["lo"], cur["hi"] = min(cur["lo"], a, b), max(cur["hi"], a, b)
+        elif cur and len(cols) >= 5 and cols[0] == "":
+            key, val = cols[3].strip().lower(), cols[4].strip()
+            if key and val and key not in cur["q"]:
+                cur["q"][key] = val
+
+    out = []
+    for f in feats:
+        if f["type"] not in wanted:
+            continue
+        name = f["q"].get("gene") or f["q"].get("locus_tag") or f["q"].get("product") or f["type"]
+        out.append({"start": f["lo"], "end": f["hi"], "name": name, "strand": f["strand"]})
+    out.sort(key=lambda x: (x["start"], x["end"]))
+    return out
+
+
+def fetch_ncbi_gene_features(accession: str, timeout: int = 20) -> List[dict]:
+    """Fetch gene features for a nuccore accession from NCBI (efetch feature table).
+
+    Network- and parse-failures degrade to ``[]`` with a warning — the report is
+    never blocked by an unreachable NCBI or an unannotated accession. Genes are
+    preferred; a record with no gene features falls back to CDS.
+    """
+    if not accession:
+        return []
+    url = _EFETCH_FT.format(acc=quote(accession))
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 (https, fixed host)
+            text = resp.read().decode("utf-8", "replace")
+    except Exception as exc:  # network / HTTP / decode
+        logger.warning("NCBI annotation fetch failed for %s: %s", accession, exc)
+        return []
+    genes = _parse_ncbi_feature_table(text, GFF_FEATURE_TYPES)
+    if not genes:
+        genes = _parse_ncbi_feature_table(text, GFF_FALLBACK_FEATURE_TYPES)
+    if not genes:
+        logger.warning("NCBI returned no gene/CDS features for %s", accession)
+    return genes
+
+
+def _write_gff3_cache(path: str, contig: str, features: List[dict]) -> None:
+    """Cache fetched gene features as a GFF3 next to the run (best-effort).
+
+    Persisting under ``<output>/annotation/`` means a re-render (or the automatic
+    report) reuses the fetch instead of hitting NCBI again. A read-only output
+    dir just skips the cache.
+    """
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as fh:
+            fh.write("##gff-version 3\n")
+            for f in features:
+                fh.write(
+                    f"{contig}\tNCBI\tgene\t{f['start']}\t{f['end']}\t.\t"
+                    f"{f.get('strand', '.')}\t.\tName={f['name']}\n"
+                )
+    except OSError as exc:
+        logger.warning("Could not cache fetched annotation to %s: %s", path, exc)
+
+
 def resolve_annotation_path(output_dir: str, kind: str, segment: Optional[str] = None) -> str:
     """Reconstruct the staged annotation path for a track ``kind``.
 
@@ -422,23 +594,70 @@ def resolve_annotation_path(output_dir: str, kind: str, segment: Optional[str] =
     return os.path.join(base, "gene_annotation.gff3")
 
 
+def _resolve_gene_features(
+    output_dir: str,
+    segment: Optional[str],
+    contig: str,
+    config: Optional[dict],
+    fetch_missing: bool,
+) -> List[dict]:
+    """Gene features for a segment, in source-preference order.
+
+    1. the staged ``<output>/annotation/[<seg>.]gene_annotation.gff3`` (pipeline);
+    2. the config's ``gene_annotation`` path (a run whose annotation was never
+       staged — e.g. re-reporting an older output dir);
+    3. an NCBI fetch by the contig's accession (only when ``fetch_missing``),
+       cached back to the staged path so later renders skip the network.
+    """
+    staged = resolve_annotation_path(output_dir, "gene", segment)
+    if os.path.exists(staged):
+        feats = parse_gff3(staged, contig)
+        if feats:
+            return feats
+    cfg_path = _config_gene_path(config, segment)
+    if cfg_path and os.path.exists(cfg_path):
+        feats = parse_gff3(cfg_path, contig)
+        if feats:
+            return feats
+    if fetch_missing:
+        feats = fetch_ncbi_gene_features(_accession(contig))
+        if feats:
+            _write_gff3_cache(staged, contig, feats)
+            return feats
+    return []
+
+
+def _resolve_primer_path(output_dir: str, config: Optional[dict]) -> Optional[str]:
+    """Primer BED path: the staged copy, else the config ``scheme`` path."""
+    staged = resolve_annotation_path(output_dir, "primer")
+    if os.path.exists(staged):
+        return staged
+    cfg_path = _config_scheme_path(config)
+    if cfg_path and os.path.exists(cfg_path):
+        return cfg_path
+    return None
+
+
 def build_annotation_model(
     output_dir: str,
     segments: List[Optional[str]],
     contig_by_segment: Dict[Optional[str], str],
+    config: Optional[dict] = None,
+    fetch_missing: bool = False,
 ) -> dict:
-    """Assemble the per-segment annotation-track model from staged files.
+    """Assemble the per-segment annotation-track model.
 
-    For each segment with a known coverage contig, read the staged gene GFF3 and
-    primer BED (if present on disk) and build ordered lanes matched to that
-    contig. Returns ``{"by_segment": {seg_label: {"lanes": [...]}},
-    "has_genes": bool, "has_primers": bool}``. Segments with no drawable feature
-    are omitted; presence is decided by staged-file existence (no file -> no
-    track), so a run without annotation yields empty lanes and false flags.
+    For each segment with a known coverage contig, resolve gene features (staged
+    GFF3 → config ``gene_annotation`` → optional NCBI fetch) and a primer BED
+    (staged → config ``scheme``), and build ordered lanes matched to the contig.
+    Returns ``{"by_segment": {seg_label: {"lanes": [...]}}, "has_genes": bool,
+    "has_primers": bool}``. Segments with no drawable feature are omitted, so a
+    run with no annotation anywhere yields empty lanes and false flags.
     """
     by_segment: Dict[str, dict] = {}
     has_genes = False
     has_primers = False
+    primer_path = _resolve_primer_path(output_dir, config)
 
     for segment in segments:
         contig = contig_by_segment.get(segment)
@@ -446,15 +665,12 @@ def build_annotation_model(
             continue
         lanes: List[dict] = []
 
-        gene_path = resolve_annotation_path(output_dir, "gene", segment)
-        if os.path.exists(gene_path):
-            gene_features = parse_gff3(gene_path, contig)
-            if gene_features:
-                lanes.append({"kind": "gene", "label": "Genes", "features": gene_features})
-                has_genes = True
+        gene_features = _resolve_gene_features(output_dir, segment, contig, config, fetch_missing)
+        if gene_features:
+            lanes.append({"kind": "gene", "label": "Genes", "features": gene_features})
+            has_genes = True
 
-        primer_path = resolve_annotation_path(output_dir, "primer")
-        if os.path.exists(primer_path):
+        if primer_path:
             for lane in parse_primer_bed(primer_path, contig):
                 if lane["features"]:
                     lanes.append({"kind": "primer", **lane})
@@ -1338,14 +1554,17 @@ def render_report(
     metadata: Optional[dict] = None,
     config: Optional[dict] = None,
     params: Optional[ReportParams] = None,
+    fetch_annotation: bool = False,
 ) -> str:
     """Build the full self-contained HTML report string for a consensus run.
 
     ``metadata`` is the run-metadata dict from :func:`build_report_metadata`; when
     omitted it is inferred from the output dir (the CLI-on-an-old-dir path).
     ``config`` is the full run config YAML (as a dict); when given it powers the
-    run-parameters panel, otherwise the panel is omitted. ``params`` carries the
-    tweakable thresholds/colours (defaults preserve historical behaviour).
+    run-parameters panel and supplies annotation source paths, otherwise both are
+    omitted. ``params`` carries the tweakable thresholds/colours (defaults
+    preserve historical behaviour). ``fetch_annotation`` allows an NCBI lookup for
+    a missing gene GFF3 (off in the workflow, on for ``viralunity report``).
     """
     if metadata is None:
         metadata = build_report_metadata(config, output_dir)
@@ -1364,7 +1583,9 @@ def render_report(
     cache, coverage_lengths, contig_by_segment = _load_coverage_cache(output_dir, df, segmented)
     kpi_summary = build_kpi_summary(df, coverage_lengths, segmented, params)
     kpi_samples_sub = _kpi_samples_subtitle(segments, segmented, metadata)
-    annotation_model = build_annotation_model(output_dir, segments, contig_by_segment)
+    annotation_model = build_annotation_model(
+        output_dir, segments, contig_by_segment, config, fetch_annotation
+    )
 
     # Worst-coverage-first sample order, shared by the heatmap y-axis and the
     # by-sample list so both surface problem samples first.
@@ -1453,9 +1674,10 @@ def write_report(
     metadata: Optional[dict] = None,
     config: Optional[dict] = None,
     params: Optional[ReportParams] = None,
+    fetch_annotation: bool = False,
 ) -> None:
     """Render the report and write it to ``dest`` (the shared entry point)."""
-    html_str = render_report(output_dir, metadata, config, params)
+    html_str = render_report(output_dir, metadata, config, params, fetch_annotation)
     os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
     with open(dest, "w") as fh:
         fh.write(html_str)
@@ -1535,6 +1757,15 @@ def run_cli():
         default=None,
         help="Heatmap colour-bar thickness in px (default 14).",
     )
+    ap.add_argument(
+        "--fetch-annotation",
+        dest="fetch_annotation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="When a run has no gene annotation staged or in its config, fetch it "
+        "from NCBI by the reference accession (default on). --no-fetch-annotation "
+        "keeps the report fully offline.",
+    )
     args = ap.parse_args()
     dest = args.output_path or os.path.join(args.input_dir, "report.html")
     config = load_run_config(args.config_file)
@@ -1546,7 +1777,7 @@ def run_cli():
         chart_color=args.chart_color,
         colorbar_thickness=args.colorbar_thickness,
     )
-    write_report(args.input_dir, dest, metadata, config, params)
+    write_report(args.input_dir, dest, metadata, config, params, args.fetch_annotation)
 
 
 def load_run_config(config_file: Optional[str]) -> Optional[dict]:

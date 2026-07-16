@@ -15,6 +15,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -22,8 +23,12 @@ import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
     ReportParams,
+    _config_gene_path,
+    _config_scheme_path,
+    _contig_matches,
     _json_for_script,
     _load_coverage_cache,
+    _parse_ncbi_feature_table,
     build_annotation_model,
     build_heatmap_model,
     build_kpi_summary,
@@ -641,6 +646,79 @@ class TestBuildAnnotationModel(unittest.TestCase):
         model = build_annotation_model(d, [None], {None: "chrOTHER"})
         self.assertFalse(model["has_genes"])
         self.assertFalse(model["has_primers"])
+
+
+class TestAnnotationSourcing(unittest.TestCase):
+    def test_contig_matches_exact_accession_and_sanitized(self):
+        self.assertTrue(_contig_matches("MN908947.3", "MN908947.3"))  # exact
+        # accession prefix vs a pipe-delimited coverage contig (influenza-style)
+        self.assertTrue(_contig_matches("NC_007373.1", "NC_007373.1|Influenza_A|H3N2|segment_1"))
+        self.assertTrue(_contig_matches("NC_007373.1|Influenza_A", "NC_007373.1|Influenza_A|x"))
+        # a raw pipe header vs the nanopore-sanitised coverage contig
+        self.assertTrue(_contig_matches("seq|a", "seq_a"))
+        self.assertFalse(_contig_matches("KP164568.1", "MN908947.3"))
+
+    def test_config_path_helpers(self):
+        self.assertIsNone(_config_scheme_path({"scheme": "NA"}))
+        self.assertIsNone(_config_scheme_path(None))
+        self.assertEqual(_config_scheme_path({"scheme": "/x/p.bed"}), "/x/p.bed")
+        self.assertIsNone(_config_gene_path({"gene_annotation": "NA"}, None))
+        self.assertEqual(_config_gene_path({"gene_annotation": "/x/g.gff3"}, None), "/x/g.gff3")
+        # segmented dict form
+        cfg = {"gene_annotation": {"HA": "/x/ha.gff3", "NA": "NA"}}
+        self.assertEqual(_config_gene_path(cfg, "HA"), "/x/ha.gff3")
+        self.assertIsNone(_config_gene_path(cfg, "NA"))
+
+    def test_parse_ncbi_feature_table(self):
+        ft = (
+            ">Feature gb|MN908947.3|\n"
+            "1\t265\t5'UTR\n"
+            "266\t500\tgene\n\t\t\tgene\torf1ab\n"
+            "266\t500\tCDS\n\t\t\tproduct\tpp1ab\n"
+            "800\t600\tgene\n\t\t\tgene\tS\n"  # complement (start>end) -> minus strand
+        )
+        genes = _parse_ncbi_feature_table(ft, ("gene",))
+        self.assertEqual(len(genes), 2)
+        self.assertEqual(genes[0], {"start": 266, "end": 500, "name": "orf1ab", "strand": "+"})
+        s = genes[1]
+        self.assertEqual((s["start"], s["end"], s["name"], s["strand"]), (600, 800, "S", "-"))
+        # no gene features -> CDS fallback finds the CDS.
+        self.assertTrue(_parse_ncbi_feature_table(ft, ("CDS",)))
+
+    def test_build_model_falls_back_to_config_paths(self):
+        # An output dir with coverage but NO staged annotation/ ; the config points
+        # at a primer BED and a gene GFF3 elsewhere on disk.
+        with tempfile.TemporaryDirectory() as d:
+            bed = os.path.join(d, "scheme.bed")
+            gff = os.path.join(d, "genes.gff3")
+            with open(bed, "w") as fh:
+                fh.write("chrTEST\t0\t20\ts_1_LEFT\tp1\nchrTEST\t80\t100\ts_1_RIGHT\tp1\n")
+            with open(gff, "w") as fh:
+                fh.write("chrTEST\tx\tgene\t1\t100\t.\t+\t.\tName=G1\n")
+            config = {"scheme": bed, "gene_annotation": gff}
+            model = build_annotation_model(d, [None], {None: "chrTEST"}, config=config)
+        self.assertTrue(model["has_genes"])
+        self.assertTrue(model["has_primers"])
+
+    def test_build_model_ncbi_fetch_when_missing(self):
+        # No staged/config annotation; fetch_missing pulls genes from NCBI (mocked)
+        # and caches them as a GFF3 under the output dir.
+        with tempfile.TemporaryDirectory() as d:
+            fake = [{"start": 10, "end": 90, "name": "ORF1", "strand": "+"}]
+            with mock.patch(f"{_MODULE}.fetch_ncbi_gene_features", return_value=fake) as m:
+                model = build_annotation_model(
+                    d, [None], {None: "MN908947.3|desc"}, config={}, fetch_missing=True
+                )
+            m.assert_called_once_with("MN908947.3")  # accession extracted from the contig
+            self.assertTrue(model["has_genes"])
+            # the fetch is cached to the staged path for offline re-renders.
+            self.assertTrue(os.path.exists(os.path.join(d, "annotation", "gene_annotation.gff3")))
+
+    def test_build_model_no_fetch_by_default(self):
+        with tempfile.TemporaryDirectory() as d:
+            with mock.patch(f"{_MODULE}.fetch_ncbi_gene_features") as m:
+                build_annotation_model(d, [None], {None: "MN908947.3"}, config={})
+            m.assert_not_called()
 
 
 class TestFigureBuilders(unittest.TestCase):

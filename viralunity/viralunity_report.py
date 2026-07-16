@@ -75,6 +75,14 @@ logger = logging.getLogger(__name__)
     default=None,
     help="Heatmap colour-bar thickness in px (default 14).",
 )
+@click.option(
+    "--fetch-annotation/--no-fetch-annotation",
+    "fetch_annotation",
+    default=True,
+    help="When a run has no gene annotation staged or in its config, fetch it from "
+    "NCBI by the reference accession (default on); --no-fetch-annotation keeps the "
+    "report fully offline.",
+)
 def report(
     input_dir,
     output_path,
@@ -83,6 +91,7 @@ def report(
     warn_threshold,
     chart_color,
     colorbar_thickness,
+    fetch_annotation,
 ):
     """Generate an interactive HTML report from a consensus output directory."""
     if not os.path.isdir(input_dir):
@@ -100,7 +109,7 @@ def report(
             chart_color=chart_color,
             colorbar_thickness=colorbar_thickness,
         )
-        write_report(input_dir, dest, metadata, config, params)
+        write_report(input_dir, dest, metadata, config, params, fetch_annotation)
         logger.info(f"Consensus report generated: {dest}")
     except Exception as e:
         raise click.ClickException(str(e))
