@@ -503,22 +503,49 @@ function recolorCharts() {
   });
 }
 
-/* ---- client-side table sort ---- */
+/* ---- client-side table sort ----
+   On the segmented roll-up "All" view the rows are a two-level tree (summary rows
+   + their per-segment subrows), so a flat sort would scatter subrows away from
+   their parent. There we sort the SUMMARY rows by the column and re-attach each
+   summary's subrows (sorted within the group) right after it. In the flat views
+   (unsegmented, or a single-segment chip) a plain flat sort is correct. */
 function sortTable(th) {
   const table = th.closest('table');
   const idx = parseInt(th.getAttribute('data-col'), 10);
   const asc = th.getAttribute('data-asc') !== 'true';
-  const rows = Array.from(table.tBodies[0].rows);
-  rows.sort(function (a, b) {
-    const av = a.cells[idx].getAttribute('data-sort');
-    const bv = b.cells[idx].getAttribute('data-sort');
+  const tbody = table.tBodies[0];
+  const cmp = function (a, b) {
+    const ac = a.cells[idx], bc = b.cells[idx];
+    const av = ac ? ac.getAttribute('data-sort') : null;
+    const bv = bc ? bc.getAttribute('data-sort') : null;
     const an = parseFloat(av), bn = parseFloat(bv);
-    let cmp;
-    if (!isNaN(an) && !isNaN(bn)) cmp = an - bn;
-    else cmp = String(av).localeCompare(String(bv));
-    return asc ? cmp : -cmp;
-  });
-  rows.forEach(function (r) { table.tBodies[0].appendChild(r); });
+    let c;
+    if (!isNaN(an) && !isNaN(bn)) c = an - bn;
+    else c = String(av).localeCompare(String(bv));
+    return asc ? c : -c;
+  };
+  const rows = Array.from(tbody.rows);
+  const allSummary = rows.filter(function (r) { return r.getAttribute('data-role') === 'summary'; });
+  var grouped = allSummary.length > 0 &&
+    (typeof statsSegMode === 'undefined' || statsSegMode === '');
+  if (grouped) {
+    var subs = {};
+    rows.filter(function (r) { return r.getAttribute('data-role') === 'subrow'; })
+      .forEach(function (r) {
+        var p = r.getAttribute('data-parent');
+        (subs[p] = subs[p] || []).push(r);
+      });
+    allSummary.sort(cmp);
+    allSummary.forEach(function (s) {
+      tbody.appendChild(s);
+      var kids = subs[s.getAttribute('data-sid')] || [];
+      kids.sort(cmp);
+      kids.forEach(function (k) { tbody.appendChild(k); });
+    });
+  } else {
+    rows.sort(cmp);
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  }
   table.querySelectorAll('th').forEach(function (h) {
     h.setAttribute('data-asc', 'false');
     if (h.hasAttribute('aria-sort')) h.setAttribute('aria-sort', 'none');
@@ -527,6 +554,8 @@ function sortTable(th) {
   th.setAttribute('data-asc', asc ? 'true' : 'false');
   if (th.hasAttribute('aria-sort')) th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
   const arrow = th.querySelector('.sort-arrow'); if (arrow) arrow.textContent = asc ? '▲' : '▼';
+  // Re-assert visibility (collapsed subrows, active filters) after reordering.
+  if (typeof applyStatsView === 'function') { try { applyStatsView(); } catch (e) {} }
 }
 
 /* ---- sortable-header keyboard access (attrs are emitted server-side) ---- */
@@ -1019,9 +1048,12 @@ function buildHeatmap() {
       hovertemplate: '%{y} · %{x}<br>%{z:.1f}% coverage<extra></extra>'
     }];
     layout = {
-      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 40},
+      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 56},
       paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
-      xaxis: {type: 'category', side: 'top', gridcolor: 'rgba(0,0,0,0)', zeroline: false},
+      // Segment labels sit BELOW the grid (side:'top' clipped them against the
+      // card's top edge); automargin keeps them fully in view.
+      xaxis: {type: 'category', side: 'bottom', gridcolor: 'rgba(0,0,0,0)', zeroline: false,
+              automargin: true},
       yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
     };
   } else {
