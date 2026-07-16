@@ -185,10 +185,13 @@ table.stats-table tbody tr:hover { background: var(--hover); }
 .scale-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-bottom: 10px; }
 .chart-controls .scale-toggle { margin: 0; }
-/* Separate the Genes/Primers track toggles from the scale toggle so the two
-   groups read as distinct controls (also covers the aggregated card, where they
-   are adjacent inline-flex siblings rather than flex-gap children). */
-.track-toggles { margin-left: 18px; }
+/* Annotation / Primers are independent on-off toggles (different concepts), so
+   they render as separate pill buttons, not one segmented control. */
+.track-toggles { display: inline-flex; gap: 8px; margin-left: 18px; vertical-align: middle; }
+.track-chip { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.track-chip:hover { background: var(--hover); }
+.track-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.track-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* KPI summary tiles (big BI-style numbers). Values wear text tokens, not a
    series colour; proportional figures (not tabular) so a big number isn't loose. */
@@ -496,7 +499,7 @@ function recolorCharts() {
   // depth line and sample series in the same figure are untouched.
   document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
     (gd.data || []).forEach(function (tr, i) {
-      if (!tr._track) return;
+      if (!tr._track || tr._trackKind === 'gene-label') return;  // label text has no marker
       const c = trackColors(tr._trackKind);
       try { Plotly.restyle(gd, {'marker.color': c.fill, 'marker.line.color': c.line}, [i]); } catch (e) {}
     });
@@ -778,11 +781,15 @@ function depthForScale(y, scale) {
    ride through the Plotly.react scale-toggle rebuild untouched and are
    independent of the depth axis type (the Linear/Log10 toggle only rebuilds
    y). The same helper feeds the aggregated, by-sample and by-segment views. */
-// TRACK_GAP_PX is generous on purpose: the depth plot's x-axis ("Genome
-// position" title + tick labels) is drawn in this band between the depth plot
-// and the track lanes, so it must clear both. TRACK_LANE_PX gives each lane room
-// to breathe (and gene labels room to sit inside their bars).
-var TRACK_LANE_PX = 46, TRACK_GAP_PX = 104, DEPTH_PX = FIG_HEIGHT;
+// The annotation band lives below the depth/heatmap plot. TRACK_GAP_PX clears the
+// depth plot's own x-axis. The band is laid out in PIXELS (constant regardless of
+// sample count): a thin Annotation lane with its feature names ABOVE the bars,
+// then a larger gap, then the primer POOL lanes drawn thin and clustered tightly
+// (the pools are one concept). y2 is measured in px so lane heights carry no data
+// meaning and the geometry stays fixed.
+var TRACK_GAP_PX = 104, DEPTH_PX = FIG_HEIGHT;
+var GENE_LABEL_PX = 16, GENE_LANE_PX = 12, GENE_GAP_PX = 6;
+var GENE_TO_PRIMER_PX = 16, PRIMER_LANE_PX = 6, PRIMER_GAP_PX = 4, BAND_BOTTOM_PX = 18;
 function _hexToRgba(hex, alpha) {
   const h = (hex || '').replace('#', '');
   if (h.length !== 6) return hex;
@@ -798,58 +805,91 @@ function trackColors(kind) {
   const line = (isDark() ? pair[1] : pair[0]) || '#5b6b7f';
   return {fill: _hexToRgba(line, isDark() ? 0.34 : 0.24), line: line};
 }
-// Build the y2 bar traces for one segment's lanes. Genes lane(s) sit on top,
-// primer pool lanes below. opts.showGenes / opts.showPrimers (default true)
-// filter lanes for the on/off toggles. Returns {traces, nLanes, ticktext}.
+// Build the y2 traces for one segment's annotation lanes plus the layout metadata
+// both the coverage plot and the heatmap need to place the band. opts.showGenes /
+// opts.showPrimers gate the two kinds independently. y2 units are pixels in
+// [0, trackPx]; returns {traces, trackPx, tickvals, ticktext, hasLanes}.
 function annotationTraces(segLabel, opts) {
   opts = opts || {};
   const model = ANNOT[segLabel || ''];
-  if (!model || !model.lanes) return {traces: [], nLanes: 0, ticktext: []};
+  if (!model || !model.lanes) return {traces: [], trackPx: 0, tickvals: [], ticktext: [], hasLanes: false};
   const showGenes = opts.showGenes !== false, showPrimers = opts.showPrimers !== false;
-  const lanes = model.lanes.filter(function (ln) {
-    return ln.kind === 'gene' ? showGenes : showPrimers;
-  });
-  const n = lanes.length;
-  if (!n) return {traces: [], nLanes: 0, ticktext: []};
-  const ticktext = [];
-  for (let y = 0; y < n; y++) ticktext[y] = lanes[n - 1 - y].label;  // lane 0 = top row
-  const traces = lanes.map(function (ln, i) {
-    const yIdx = n - 1 - i, feats = ln.features || [], c = trackColors(ln.kind);
-    // Genes carry an inside label so need some height; primer bars are pure
-    // position markers (height is not meaningful), so draw them thinner.
-    const barWidth = ln.kind === 'gene' ? 0.58 : 0.30;
-    return {
+  const geneLanes = model.lanes.filter(function (ln) { return ln.kind === 'gene' && showGenes; });
+  const primerLanes = model.lanes.filter(function (ln) { return ln.kind === 'primer' && showPrimers; });
+  const ng = geneLanes.length, np = primerLanes.length;
+  if (!ng && !np) return {traces: [], trackPx: 0, tickvals: [], ticktext: [], hasLanes: false};
+
+  // Total band height (px), top -> bottom: [gene labels][gene lanes][gap]
+  // [primer lanes][bottom pad].
+  var trackPx = BAND_BOTTOM_PX;
+  if (ng) trackPx += GENE_LABEL_PX + ng * GENE_LANE_PX + (ng - 1) * GENE_GAP_PX;
+  if (np) trackPx += np * PRIMER_LANE_PX + (np - 1) * PRIMER_GAP_PX;
+  if (ng && np) trackPx += GENE_TO_PRIMER_PX;
+
+  var cursor = trackPx, traces = [], tickvals = [], ticktext = [];
+  var addBars = function (ln, center, laneH) {
+    var feats = ln.features || [], c = trackColors(ln.kind);
+    traces.push({
       type: 'bar', orientation: 'h', yaxis: 'y2', xaxis: 'x',
-      // Features are 1-based inclusive [start, end]; draw the bar across the
-      // full span (base start-0.5, width end-start+1) so it covers both end
-      // bases rather than stopping a position short.
+      // Features are 1-based inclusive [start, end]; the bar spans the full
+      // inclusive width (base start-0.5, width end-start+1).
       base: feats.map(function (f) { return f.start - 0.5; }),
       x: feats.map(function (f) { return (f.end - f.start) + 1; }),
-      y: feats.map(function () { return yIdx; }),
-      width: barWidth,
+      y: feats.map(function () { return center; }),
+      width: laneH,
       marker: {color: c.fill, line: {color: c.line, width: 1}},
-      text: ln.kind === 'gene' ? feats.map(function (f) { return f.name; }) : [],
-      textposition: 'inside', insidetextanchor: 'middle', cliponaxis: false,
       hovertext: feats.map(function (f) { return f.name + ' (' + f.start + '–' + f.end + ')'; }),
       hoverinfo: 'text', showlegend: false, name: ln.label,
       _track: true, _trackKind: ln.kind
-    };
+    });
+  };
+  if (ng) cursor -= GENE_LABEL_PX;                    // reserve the label strip on top
+  geneLanes.forEach(function (ln, i) {
+    var center = cursor - GENE_LANE_PX / 2;
+    addBars(ln, center, GENE_LANE_PX);
+    // Gene names sit ABOVE their bars (centered), so a short bar's label no
+    // longer spills off to the right into the next feature.
+    var feats = ln.features || [];
+    traces.push({
+      type: 'scatter', mode: 'text', yaxis: 'y2', xaxis: 'x',
+      x: feats.map(function (f) { return (f.start + f.end) / 2; }),
+      y: feats.map(function () { return center + GENE_LANE_PX / 2 + GENE_LABEL_PX * 0.5; }),
+      text: feats.map(function (f) { return f.name; }),
+      textposition: 'middle center', textfont: {size: 10},
+      hoverinfo: 'skip', showlegend: false, cliponaxis: false, _track: true, _trackKind: 'gene-label'
+    });
+    tickvals.push(center); ticktext.push(ln.label);
+    cursor -= GENE_LANE_PX; if (i < ng - 1) cursor -= GENE_GAP_PX;
   });
-  return {traces: traces, nLanes: n, ticktext: ticktext};
+  if (ng && np) cursor -= GENE_TO_PRIMER_PX;
+  var primerCenters = [];
+  primerLanes.forEach(function (ln, i) {
+    var center = cursor - PRIMER_LANE_PX / 2;
+    primerCenters.push(center);
+    addBars(ln, center, PRIMER_LANE_PX);
+    cursor -= PRIMER_LANE_PX; if (i < np - 1) cursor -= PRIMER_GAP_PX;
+  });
+  // One "Primers" tick centred on the (tightly clustered) pool block — the pools
+  // are the same concept, distinguished by row position, not by separate labels.
+  if (np) {
+    tickvals.push((primerCenters[0] + primerCenters[np - 1]) / 2);
+    ticktext.push('Primers');
+  }
+  return {traces: traces, trackPx: trackPx, tickvals: tickvals, ticktext: ticktext, hasLanes: true};
 }
-// Add the track y-axis (y2) to a depth-chart layout in place, shrinking the
-// depth axis domain and growing the figure height so the depth plot keeps its
-// size. No-op when there are no lanes.
-function withTrackAxes(layout, tm) {
-  if (!tm.nLanes) return layout;
-  const trackPx = tm.nLanes * TRACK_LANE_PX, total = DEPTH_PX + TRACK_GAP_PX + trackPx;
+// Add the track y-axis (y2) to a depth/heatmap layout in place, shrinking the main
+// axis domain and growing the figure so the plot keeps ``basePx`` of height. y2 is
+// in pixels [0, trackPx]. No-op when there are no lanes.
+function withTrackAxes(layout, tm, basePx) {
+  if (!tm.hasLanes) return layout;
+  var base = basePx || DEPTH_PX;
+  var total = base + TRACK_GAP_PX + tm.trackPx;
   layout.height = total;
-  layout.yaxis = Object.assign(layout.yaxis || {}, {domain: [(trackPx + TRACK_GAP_PX) / total, 1]});
+  layout.yaxis = Object.assign(layout.yaxis || {}, {domain: [(tm.trackPx + TRACK_GAP_PX) / total, 1]});
   layout.yaxis2 = {
-    domain: [0, trackPx / total], range: [-0.5, tm.nLanes - 0.5],
+    domain: [0, tm.trackPx / total], range: [0, tm.trackPx],
     fixedrange: true, zeroline: false, showgrid: false, tickmode: 'array',
-    tickvals: tm.ticktext.map(function (_v, i) { return i; }),
-    ticktext: tm.ticktext, tickfont: {size: 11}
+    tickvals: tm.tickvals, ticktext: tm.ticktext, tickfont: {size: 11}
   };
   return layout;
 }
@@ -968,7 +1008,7 @@ function trackToggleEl(label, initialOn, onChange) {
   var b = document.createElement('button');
   b.type = 'button';
   b.textContent = label;
-  b.className = initialOn ? 'active' : '';
+  b.className = initialOn ? 'track-chip active' : 'track-chip';
   b.setAttribute('aria-pressed', initialOn ? 'true' : 'false');
   b.addEventListener('click', function () {
     var on = b.getAttribute('aria-pressed') !== 'true';
@@ -978,17 +1018,18 @@ function trackToggleEl(label, initialOn, onChange) {
   });
   return b;
 }
-// Build the present chips as a .scale-toggle group (or null if no track kind
-// exists). `state` is mutated on toggle; `rerender` redraws the view.
+// Build the present chips as INDEPENDENT toggle buttons (Annotation and Primers
+// are different things, so they are not a single segmented control). `state` is
+// mutated on toggle; `rerender` redraws the view. Null when no track kind exists.
 function buildTrackToggles(state, rerender) {
   var kinds = annotKinds();
   if (!kinds.genes && !kinds.primers) return null;
   var wrap = document.createElement('div');
-  wrap.className = 'scale-toggle track-toggles';
+  wrap.className = 'track-toggles';
   wrap.setAttribute('role', 'group');
   wrap.setAttribute('aria-label', 'Annotation tracks');
   if (kinds.genes) {
-    wrap.appendChild(trackToggleEl('Genes', state.showGenes !== false, function (on) {
+    wrap.appendChild(trackToggleEl('Annotation', state.showGenes !== false, function (on) {
       state.showGenes = on; rerender();
     }));
   }
@@ -1006,7 +1047,7 @@ function buildTrackToggles(state, rerender) {
    colour scale is themed (dark zero-end in dark mode) and keyed on chartColor.
    Height is computed in px and set on BOTH the container and the Plotly layout so
    a redraw never leaves a stale oversized SVG overflowing the card (§11.1). */
-var HM_ROW_PX = 20, HM_BASE_PX = 96;
+var HM_ROW_PX = 20, HM_BASE_PX = 96, HEATMAP_CB_MAX_PX = 260;
 var heatmapScale = 'log';        // depth scale in position mode (log default)
 var heatmapSeg = null;           // segmented: '__all__' or a segment; else ''
 var heatmapTracks = {showGenes: true, showPrimers: true};
@@ -1078,24 +1119,22 @@ function buildHeatmap() {
       xaxis: {title: {text: 'Genome position'}, gridcolor: grid, zeroline: false},
       yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
     };
-    // Annotation band beneath the heatmap (shares the genome x-axis). Reuses the
-    // same y2 lane traces as the by-sample plot; the colour bar is shortened to
-    // span only the heatmap band, not the track lanes (§11.3).
+    // Annotation band beneath the heatmap (shares the genome x-axis), same y2
+    // lane traces as the by-sample plot.
     var tm = annotationTraces(segKey || '', heatmapTracks);
-    if (tm.nLanes) {
-      var trackPx = tm.nLanes * TRACK_LANE_PX, gap = TRACK_GAP_PX, total = heatPx + gap + trackPx;
-      layout.height = total;
-      layout.yaxis.domain = [(trackPx + gap) / total, 1];
-      layout.yaxis2 = {
-        domain: [0, trackPx / total], range: [-0.5, tm.nLanes - 0.5], fixedrange: true,
-        zeroline: false, showgrid: false, tickmode: 'array',
-        tickvals: tm.ticktext.map(function (_v, i) { return i; }),
-        ticktext: tm.ticktext, tickfont: {size: 11}
-      };
-      cb.len = 1 - (trackPx + gap) / total;
-      traces = traces.concat(tm.traces);
-    }
+    withTrackAxes(layout, tm, heatPx);
+    traces = traces.concat(tm.traces);
   }
+  // Cap the colour bar's height in px so it stays a sensible size at any sample
+  // count (it otherwise grew with the plot and dwarfed a large run). Anchored to
+  // the top of the heatmap band so it never overlaps the annotation lanes.
+  var _dom = layout.yaxis.domain || [0, 1];
+  var _bandFrac = _dom[1] - _dom[0];
+  var _cb = traces[0].colorbar;
+  _cb.lenmode = 'fraction';
+  _cb.len = Math.min(_bandFrac, HEATMAP_CB_MAX_PX / layout.height);
+  _cb.y = _dom[1];
+  _cb.yanchor = 'top';
   holder.style.height = layout.height + 'px';
   try { Plotly.react(holder, traces, layout, {responsive: true, displayModeBar: false}); } catch (e) {}
   var scaleGrp = document.getElementById('heatmapScale');

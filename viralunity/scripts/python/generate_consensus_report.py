@@ -667,7 +667,7 @@ def build_annotation_model(
 
         gene_features = _resolve_gene_features(output_dir, segment, contig, config, fetch_missing)
         if gene_features:
-            lanes.append({"kind": "gene", "label": "Genes", "features": gene_features})
+            lanes.append({"kind": "gene", "label": "Annotation", "features": gene_features})
             has_genes = True
 
         if primer_path:

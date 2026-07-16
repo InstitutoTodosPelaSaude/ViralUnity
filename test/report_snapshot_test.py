@@ -179,7 +179,7 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertTrue(ann, "expected a non-empty annotation model")
         labels = [ln["label"] for seg in ann.values() for ln in seg["lanes"]]
         kinds = [ln["kind"] for seg in ann.values() for ln in seg["lanes"]]
-        self.assertIn("Genes", labels)
+        self.assertIn("Annotation", labels)  # gene lane renamed from "Genes"
         self.assertTrue(any(lbl.startswith("Pool") for lbl in labels))
         self.assertIn("gene", kinds)
         self.assertIn("primer", kinds)
