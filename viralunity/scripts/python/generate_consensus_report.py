@@ -271,9 +271,8 @@ def load_basewise_table(path: str) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # Annotation tracks (gene GFF3 + primer BED)
 # --------------------------------------------------------------------------- #
-# Feature-type and label precedence are reporting choices (documented in
-# REPORT.md); genes are drawn by default, falling back to CDS when a contig has
-# no gene features.
+# Feature-type and label precedence are reporting choices: genes are drawn by
+# default, falling back to CDS when a contig has no gene features.
 GFF_FEATURE_TYPES = ("gene",)
 GFF_FALLBACK_FEATURE_TYPES = ("CDS",)
 GFF_LABEL_KEYS = ("Name", "gene", "gene_name", "locus_tag", "product", "ID")
