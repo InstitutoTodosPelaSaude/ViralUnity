@@ -58,8 +58,9 @@ class _ReportCase:
 
     def test_has_prerendered_plotly_figures(self):
         html = self._render()
-        # reads histogram + >=1 aggregated panel are pre-rendered.
-        self.assertGreaterEqual(html.count("Plotly.newPlot"), 2)
+        # the throughput chart is server-rendered; the by-sample/heatmap views are
+        # drawn client-side (their Plotly.newPlot/react calls live in the JS).
+        self.assertGreaterEqual(html.count("Plotly.newPlot"), 1)
 
     def test_charts_are_responsive_not_fixed_width(self):
         html = self._render()
@@ -81,11 +82,14 @@ class TestSegmentedReport(_ReportCase, unittest.TestCase):
     fixture_dir = os.path.join(FIXTURE_ROOT, "segmented")
     expected_samples = ("sample-A",)
 
-    def test_segment_panels_present(self):
+    def test_segment_selectors_present(self):
         html = self._render()
-        # one aggregated panel per segment, toggled by the segment <select>.
-        self.assertIn('data-key="S1"', html)
-        self.assertIn('data-key="S2"', html)
+        # the heatmap and the stats table both offer per-segment focus chips.
+        self.assertIn('id="heatmapSegChips"', html)
+        self.assertIn('data-seg="S1"', html)
+        self.assertIn('data-seg="S2"', html)
+        # the coverage heatmap model carries both the grid and per-segment data.
+        self.assertIn('"grid"', html)
 
 
 if __name__ == "__main__":

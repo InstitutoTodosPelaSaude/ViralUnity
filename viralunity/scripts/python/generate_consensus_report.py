@@ -936,31 +936,6 @@ def build_stats_table_html(
 # --------------------------------------------------------------------------- #
 # Figure builders
 # --------------------------------------------------------------------------- #
-def _base_layout(**kwargs) -> dict:
-    # Transparent surfaces + muted grid so the chart blends into the card in
-    # both light and dark; the page's theme toggle relayouts font/grid colour.
-    # ``autosize`` (no fixed pixel width) lets the chart reflow to the card so
-    # narrow viewports don't scroll sideways; CSS caps the width.
-    layout = dict(
-        autosize=True,
-        height=FIG_HEIGHT,
-        margin=dict(l=60, r=30, t=50, b=60),
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(
-            family='system-ui, -apple-system, "Segoe UI", sans-serif',
-            size=13,
-            color="#52514e",
-        ),
-        colorway=PALETTE_LIGHT,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-        xaxis=dict(gridcolor="rgba(137,135,129,0.25)", zeroline=False),
-        yaxis=dict(gridcolor="rgba(137,135,129,0.25)", zeroline=False),
-    )
-    layout.update(kwargs)
-    return layout
-
-
 def _log_depth_range(max_value: float) -> list:
     """Log10 axis range for a depth chart, generalizable across run scales.
 
@@ -970,26 +945,6 @@ def _log_depth_range(max_value: float) -> list:
     """
     top = max(150.0, float(max_value) * 1.5)
     return [0.0, math.log10(top)]
-
-
-def _add_depth_guides(fig: go.Figure) -> None:
-    """20x / 100x horizontal guide lines with literal '20x'/'100x' annotations."""
-    fig.add_hline(
-        y=20,
-        line_width=1,
-        line_dash="dot",
-        line_color=EMPHASIS_MUTED,
-        annotation_text="20x",
-        annotation_position="right",
-    )
-    fig.add_hline(
-        y=100,
-        line_width=1,
-        line_dash="dot",
-        line_color=EMPHASIS_MUTED,
-        annotation_text="100x",
-        annotation_position="right",
-    )
 
 
 def throughput_series(df: pd.DataFrame, paired: bool) -> pd.DataFrame:
@@ -1083,46 +1038,120 @@ def build_reads_histogram(
     return fig
 
 
-def build_aggregated_coverage_line_plot(
-    per_sample_series: Dict[str, Tuple[np.ndarray, np.ndarray]],
-) -> go.Figure:
-    """Aggregated coverage: x = genome position, one line per sample.
+# --------------------------------------------------------------------------- #
+# Coverage heatmap (spec §5) — the centrepiece that replaces N overlaid lines
+# --------------------------------------------------------------------------- #
+HEATMAP_BINS = 150
 
-    No embedded plot title: the card heading and the segment selector already
-    name the view, so a repeated title only wastes vertical space (the top margin
-    is tightened to match).
 
-    Rendered **linear by default** with the y-range fit to the data
-    (``[0, max x 1.08]``) and **raw depth** — zeros sit honestly on the baseline,
-    never clamped to 1 to satisfy a log axis. A client-side Log10 toggle (added in
-    the template, rebuilt via ``Plotly.react`` rather than an axis-type
-    ``relayout``) handles the wide-dynamic-range case.
+def _bin_depths(positions, depths, genome_len: int, n_bins: int = HEATMAP_BINS) -> List:
+    """Mean depth per genome bin (spec §5A), aligned to a fixed ``[1, genome_len]``.
 
-    <= 8 samples get the fixed categorical palette; more than 8 fall back to a
-    single recessive hue (emphasis + hover) so identity is never colour-alone
-    past the CVD-safe ceiling (the stats table carries per-sample identity).
+    Bins with no sampled position become ``None`` (rendered as a gap, honest about
+    missing data). Fed the already-downsampled cache arrays, so the means inherit
+    the min-pool bias that keeps dropouts visible — the right emphasis for a
+    dropout-at-a-glance overview.
     """
-    emphasis = len(per_sample_series) > MAX_CATEGORICAL
-    max_depth = max(
-        (float(np.max(d)) for _, d in per_sample_series.values() if len(d)), default=100.0
-    )
-    fig = go.Figure()
-    for sample, (positions, depths) in per_sample_series.items():
-        kwargs = dict(mode="lines", name=sample, line=dict(width=2))
-        if emphasis:
-            kwargs["line"]["color"] = EMPHASIS_MUTED
-            kwargs["opacity"] = 0.6
-        fig.add_scatter(x=positions, y=depths, **kwargs)
-    fig.update_layout(
-        _base_layout(
-            showlegend=not emphasis, hovermode="x unified", margin=dict(l=60, r=30, t=24, b=60)
-        ),
-        yaxis_range=[0.0, max_depth * 1.08],
-        yaxis_title="Depth",
-        xaxis_title="Genome position",
-    )
-    _add_depth_guides(fig)
-    return fig
+    if genome_len <= 0 or len(positions) == 0:
+        return [None] * n_bins
+    positions = np.asarray(positions)
+    depths = np.asarray(depths, dtype=float)
+    edges = np.linspace(1, genome_len + 1, n_bins + 1)
+    idx = np.clip(np.digitize(positions, edges) - 1, 0, n_bins - 1)
+    sums = np.zeros(n_bins)
+    counts = np.zeros(n_bins)
+    np.add.at(sums, idx, depths)
+    np.add.at(counts, idx, 1)
+    return [float(sums[i] / counts[i]) if counts[i] > 0 else None for i in range(n_bins)]
+
+
+def _bin_centers(genome_len: int, n_bins: int = HEATMAP_BINS) -> List[float]:
+    edges = np.linspace(1, genome_len + 1, n_bins + 1)
+    return [float((edges[i] + edges[i + 1]) / 2) for i in range(n_bins)]
+
+
+def _log10_or_none(v) -> Optional[float]:
+    """log10 of a depth for the log heatmap; ``None`` for 0/None (honest gap)."""
+    if v is None or v <= 0:
+        return None
+    return float(math.log10(v))
+
+
+def sample_overall_coverage(
+    df: pd.DataFrame, segmented: bool, lengths: Dict[Tuple[str, Optional[str]], int]
+) -> Dict[str, float]:
+    """Per-sample whole-genome horizontal coverage (for worst-first ordering).
+
+    Unsegmented: the row's ``horizontal_coverage``. Segmented: length-weighted
+    across segments (same weighting as the KPI tiles), so the ordering matches the
+    headline figures. Falls back to an equal-weight mean when no track lengths are
+    available (a pruned output dir).
+    """
+    samples = _ordered_unique(df["sample_name"].tolist())
+    if not segmented:
+        by = df.drop_duplicates("sample_name").set_index("sample_name")
+        return {s: float(by.loc[s, "horizontal_coverage"]) for s in samples}
+    segments = _ordered_unique(df["segment"].tolist())
+    seg_len = {seg: max((lengths.get((s, seg), 0) for s in samples), default=0) for seg in segments}
+    if sum(seg_len.values()) == 0:
+        seg_len = {seg: 1 for seg in segments}
+    genome = sum(seg_len.values()) or 1
+    hc = {
+        (r["sample_name"], r["segment"]): float(r["horizontal_coverage"]) for _, r in df.iterrows()
+    }
+    return {
+        s: sum(hc.get((s, seg), 0.0) * seg_len[seg] for seg in segments) / genome for s in samples
+    }
+
+
+def worst_first_order(overall: Dict[str, float], samples: List[str]) -> List[str]:
+    """Sample order, worst overall coverage first (stable on ties)."""
+    return sorted(samples, key=lambda s: (overall.get(s, 0.0), samples.index(s)))
+
+
+def build_heatmap_model(
+    df: pd.DataFrame,
+    cache: Dict[Tuple[str, Optional[str]], Tuple[np.ndarray, np.ndarray]],
+    lengths: Dict[Tuple[str, Optional[str]], int],
+    segmented: bool,
+    order: List[str],
+) -> dict:
+    """Assemble the coverage-heatmap model (spec §5), embedded as JSON for the client.
+
+    ``position`` holds one binned depth grid per segment key (``""`` unsegmented):
+    ``x`` bin centres, ``zNatural`` and ``zLog`` matrices (samples × bins, rows in
+    ``order``). ``grid`` (segmented only) is the per-segment horizontal-coverage %
+    matrix (samples × segments) for the "All segments" mode. The client renders
+    natural/log depth (mode A) or the coverage grid (mode B) from these arrays —
+    plain lists, so they dodge Plotly's typed-array serialisation.
+    """
+    segments = _ordered_unique(df["segment"].tolist()) if segmented else [None]
+
+    position: Dict[str, dict] = {}
+    for seg in segments:
+        genome_len = max((lengths.get((s, seg), 0) for s in order), default=0)
+        x = _bin_centers(genome_len) if genome_len > 0 else []
+        z_nat, z_log = [], []
+        for s in order:
+            pos, depth = cache.get((s, seg), (np.array([]), np.array([])))
+            binned = _bin_depths(pos, depth, genome_len)
+            z_nat.append(binned)
+            z_log.append([_log10_or_none(v) for v in binned])
+        position[seg or ""] = {"x": x, "zNatural": z_nat, "zLog": z_log, "genomeLen": genome_len}
+
+    grid = None
+    if segmented:
+        seg_labels = [s for s in segments]
+        hc = {
+            (r["sample_name"], r["segment"]): float(r["horizontal_coverage"])
+            for _, r in df.iterrows()
+        }
+        z = [[hc.get((s, seg), None) for seg in seg_labels] for s in order]
+        # Coverage as a percentage (0-100) so the fixed colour scale reads in %.
+        z = [[(v * 100.0 if v is not None else None) for v in row] for row in z]
+        grid = {"segments": [s or "" for s in seg_labels], "z": z}
+
+    return {"segmented": segmented, "samples": order, "position": position, "grid": grid}
 
 
 # --------------------------------------------------------------------------- #
@@ -1330,33 +1359,17 @@ def render_report(
     kpi_samples_sub = _kpi_samples_subtitle(segments, segmented, metadata)
     annotation_model = build_annotation_model(output_dir, segments, contig_by_segment)
 
+    # Worst-coverage-first sample order, shared by the heatmap y-axis and the
+    # by-sample list so both surface problem samples first.
+    overall_coverage = sample_overall_coverage(df, segmented, coverage_lengths)
+    order = worst_first_order(overall_coverage, samples)
+
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired, params)
     reads_fig_html = _fig_to_html(
         build_reads_histogram(dedupe_and_sum_reads(df), paired, segmented)
     )
-
-    # Aggregated coverage: one panel per segment (segments have different lengths).
-    aggregated_panels = []
-    for segment in segments:
-        series = {
-            s: cache[(s, segment)]
-            for s in samples
-            if len(cache.get((s, segment), (np.array([]),))[0]) > 0
-        }
-        # Compute the axis ranges once, here, and hand them to the client so the
-        # aggregated scale toggle consumes them as data instead of re-deriving the
-        # Log10 range in JS (kills the Python<->JS _log_depth_range duplication).
-        panel_max = max((float(np.max(d)) for _, d in series.values() if len(d)), default=100.0)
-        fig_html = _fig_to_html(build_aggregated_coverage_line_plot(series))
-        aggregated_panels.append(
-            {
-                "segment": segment or "",
-                "html": fig_html,
-                "log_range": _log_depth_range(panel_max),
-                "lin_max": panel_max * 1.08,
-            }
-        )
+    heatmap_model = build_heatmap_model(df, cache, coverage_lengths, segmented, order)
 
     # Per-sample coverage data, embedded once as JSON for the lazy detail section.
     coverage_json: Dict[str, list] = {}
@@ -1406,7 +1419,9 @@ def render_report(
         has_coverage=has_coverage,
         stats_table_html=stats_table_html,
         reads_fig_html=reads_fig_html,
-        aggregated_panels=aggregated_panels,
+        heatmap_json=_json_for_script(heatmap_model),
+        overall_coverage_json=_json_for_script(overall_coverage),
+        sample_order=order,
         coverage_json=_json_for_script(coverage_json),
         stats_by_sample=_json_for_script(stats_by_sample),
         annotation_json=_json_for_script(annotation_model["by_segment"]),

@@ -25,8 +25,8 @@ from viralunity.scripts.python.generate_consensus_report import (
     _json_for_script,
     _load_coverage_cache,
     _stats_rows_by_sample,
-    build_aggregated_coverage_line_plot,
     build_annotation_model,
+    build_heatmap_model,
     build_kpi_summary,
     build_reads_histogram,
     build_report_metadata,
@@ -42,7 +42,9 @@ from viralunity.scripts.python.generate_consensus_report import (
     resolve_basewise_path,
     ReportParams,
     report_params_from_config,
+    sample_overall_coverage,
     throughput_series,
+    worst_first_order,
 )
 
 _MODULE = "viralunity.scripts.python.generate_consensus_report"
@@ -667,34 +669,59 @@ class TestFigureBuilders(unittest.TestCase):
         self.assertEqual(s["_removed"], 0)
         self.assertEqual(s["_qc_unmapped"], 400)
 
-    def test_aggregated_over_8_samples_falls_back_to_emphasis(self):
-        # >8 series exceeds the CVD-safe categorical ceiling, so identity is no
-        # longer colour-coded: a single muted hue, dimmed, with the legend off
-        # (the stats table carries per-sample identity instead).
-        series = {f"s{i}": (np.array([1, 2, 3]), np.array([10.0, 20.0, 30.0])) for i in range(9)}
-        fig = build_aggregated_coverage_line_plot(series)
-        self.assertFalse(fig.layout.showlegend)
-        self.assertTrue(all(t.line.color == EMPHASIS_MUTED for t in fig.data))
-        self.assertTrue(all(t.opacity == 0.6 for t in fig.data))
 
-    def test_aggregated_8_samples_keeps_categorical_legend(self):
-        # At the 8-series ceiling the categorical palette is still used (legend on,
-        # no forced muted hue).
-        series = {f"s{i}": (np.array([1, 2, 3]), np.array([10.0, 20.0, 30.0])) for i in range(8)}
-        fig = build_aggregated_coverage_line_plot(series)
-        self.assertTrue(fig.layout.showlegend)
-        self.assertFalse(any(t.line.color == EMPHASIS_MUTED for t in fig.data))
+class TestHeatmapModel(unittest.TestCase):
+    def test_worst_first_order(self):
+        overall = {"a": 0.9, "b": 0.4, "c": 0.7}
+        self.assertEqual(worst_first_order(overall, ["a", "b", "c"]), ["b", "c", "a"])
 
-    def test_aggregated_coverage_is_linear_with_honest_zeros(self):
-        series = {"sample-A": (np.array([1, 2, 3, 4]), np.array([0.0, 10.0, 100.0, 0.0]))}
-        fig = build_aggregated_coverage_line_plot(series)
-        # linear by default (Plotly leaves type unset for linear axes).
-        self.assertIn(fig.layout.yaxis.type, (None, "linear"))
-        # zeros are plotted as zero, never clamped to 1 for a log axis.
-        self.assertEqual(list(fig.data[0].y), [0.0, 10.0, 100.0, 0.0])
-        # y-range is fit to the data and anchored at zero.
-        self.assertEqual(fig.layout.yaxis.range[0], 0.0)
-        self.assertAlmostEqual(fig.layout.yaxis.range[1], 108.0)
+    def test_overall_coverage_unsegmented(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        ov = sample_overall_coverage(df, False, {})
+        self.assertAlmostEqual(ov["sample-B"], 0.6)
+        self.assertAlmostEqual(ov["sample-A"], 0.9959535832525165)
+
+    def test_overall_coverage_segmented_length_weighted(self):
+        df = pd.read_csv(io.StringIO(SEG_CSV))
+        lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
+        ov = sample_overall_coverage(df, True, lengths)
+        # (0.95*3000 + 0.80*1000)/4000 = 0.9125
+        self.assertAlmostEqual(ov["sample-A"], 0.9125)
+
+    def test_unsegmented_position_grid(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        cache = {
+            ("sample-A", None): (np.array([1, 2, 3, 4]), np.array([10.0, 20.0, 0.0, 40.0])),
+            ("sample-B", None): (np.array([1, 2, 3, 4]), np.array([1.0, 2.0, 3.0, 4.0])),
+        }
+        lengths = {("sample-A", None): 4, ("sample-B", None): 4}
+        order = ["sample-B", "sample-A"]  # worst first
+        m = build_heatmap_model(df, cache, lengths, False, order)
+        self.assertFalse(m["segmented"])
+        self.assertIsNone(m["grid"])
+        self.assertEqual(m["samples"], order)
+        pos = m["position"][""]
+        self.assertEqual(len(pos["x"]), 150)
+        self.assertEqual(len(pos["zNatural"]), 2)  # one row per sample, in order
+        self.assertEqual(len(pos["zNatural"][0]), 150)
+        # log of a zero-depth bin is None (honest gap), never -inf / a fake floor.
+        flat = [v for row in pos["zLog"] for v in row]
+        self.assertNotIn(float("-inf"), flat)
+
+    def test_segmented_grid_is_coverage_percent(self):
+        df = pd.read_csv(io.StringIO(SEG_CSV))
+        cache = {
+            ("sample-A", "S1"): (np.array([1, 2]), np.array([100.0, 80.0])),
+            ("sample-A", "S2"): (np.array([1, 2]), np.array([40.0, 60.0])),
+        }
+        lengths = {("sample-A", "S1"): 2, ("sample-A", "S2"): 2}
+        m = build_heatmap_model(df, cache, lengths, True, ["sample-A"])
+        self.assertTrue(m["segmented"])
+        self.assertEqual(m["grid"]["segments"], ["S1", "S2"])
+        # coverage rendered as a percentage (0-100): 0.95 -> 95.0, 0.80 -> 80.0
+        self.assertEqual(m["grid"]["z"], [[95.0, 80.0]])
+        self.assertIn("S1", m["position"])
+        self.assertIn("S2", m["position"])
 
 
 def _one_sample_df(name):

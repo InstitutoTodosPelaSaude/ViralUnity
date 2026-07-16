@@ -92,6 +92,11 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn('id="throughput-scale"', html)
         self.assertIn("Removed by QC", html)
         self.assertIn("QC-passed, unmapped", html)
+        # the coverage heatmap replaces the old aggregated line overlay.
+        self.assertIn('id="vu-heatmap"', html)
+        self.assertIn('id="heatmapData"', html)
+        self.assertIn("Coverage heatmap", html)
+        self.assertNotIn('id="aggregated-card"', html)
 
     def test_illumina_paired_snapshot(self):
         html = _render("unsegmented")

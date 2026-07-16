@@ -342,26 +342,29 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
     {{ reads_fig_html|safe }}
   </div>
 
-  <div class="card" id="aggregated-card">
-    <h2>Aggregated coverage</h2>
-    {% if segmented %}
-    <div>
-      <label class="control" for="aggSegmentSelect">Segment</label>
-      <select id="aggSegmentSelect" onchange="showPanel('agg-panel', this.value)">
-        {% for panel in aggregated_panels %}
-        <option value="{{ panel.segment }}">{{ panel.segment }}</option>
+  {% if has_coverage %}
+  <p class="section-title">Coverage</p>
+  <div class="card" id="coverage-heatmap-card">
+    <h2>Coverage heatmap</h2>
+    <div class="chart-controls">
+      {% if segmented %}
+      <div class="seg-chips" id="heatmapSegChips" role="group" aria-label="Heatmap view">
+        <button type="button" class="seg-chip active" data-seg="__all__" aria-pressed="true">All segments</button>
+        {% for s in segments %}
+        <button type="button" class="seg-chip" data-seg="{{ s }}" aria-pressed="false">{{ s }}</button>
         {% endfor %}
-      </select>
+      </div>
+      {% endif %}
+      <div class="scale-toggle" role="group" aria-label="Depth scale" id="heatmapScale">
+        <button type="button" data-scale="log" class="active" aria-pressed="true">Log10</button>
+        <button type="button" data-scale="linear" aria-pressed="false">Natural</button>
+      </div>
+      <div class="track-toggles-holder" id="heatmapTrackHolder"></div>
     </div>
-    {% endif %}
-    {% for panel in aggregated_panels %}
-    <div class="agg-panel" data-key="{{ panel.segment }}"
-         data-log-range="{{ panel.log_range|join(',') }}" data-lin-max="{{ panel.lin_max }}"
-         style="display: {{ 'block' if loop.first else 'none' }};">
-      {{ panel.html|safe }}
-    </div>
-    {% endfor %}
+    <div id="vu-heatmap" class="plot-holder"></div>
+    <p class="chart-note" id="heatmapNote"></p>
   </div>
+  {% endif %}
 
   {% if has_coverage %}
   <p class="section-title">Details</p>
@@ -427,6 +430,7 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 <script id="kpiData" type="application/json">{{ kpi_json|safe }}</script>
 <script id="annotationData" type="application/json">{{ annotation_json|safe }}</script>
 <script id="paramsData" type="application/json">{{ params_json|safe }}</script>
+<script id="heatmapData" type="application/json">{{ heatmap_json|safe }}</script>
 <script>
 const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
 const STATS = JSON.parse(document.getElementById('statsData').textContent);
@@ -436,6 +440,9 @@ const ANNOT = JSON.parse(document.getElementById('annotationData').textContent);
 // Tweakable report params (thresholds/colours); the single client source for
 // threshold-derived labels and the accent/status hues (spec §9).
 const PARAMS = JSON.parse(document.getElementById('paramsData').textContent);
+// Coverage-heatmap model (samples worst-first; per-segment binned depth grids +
+// the segmented coverage-% grid). Plain arrays, so no typed-array surprises.
+const HEATMAP = JSON.parse(document.getElementById('heatmapData').textContent);
 const FIG_WIDTH = 900, FIG_HEIGHT = 420;
 
 /* ---- theme ---- */
@@ -474,16 +481,12 @@ function recolorCharts() {
   if (!window.Plotly) return;
   const pal = seriesPalette();
   if (!pal.length || !pal[0]) return;
-  // Single-hue coverage line charts (by sample / by segment / aggregated).
+  // Single-hue coverage line charts (by sample / by segment).
   document.querySelectorAll('#sample-coverage .js-plotly-plot, #segment-coverage .js-plotly-plot')
     .forEach(function (gd) { try { Plotly.restyle(gd, {'line.color': pal[0]}); } catch (e) {} });
-  // Aggregated coverage: one line per sample (categorical), except the >8-series
-  // emphasis fallback which is a single theme-neutral muted grey — leave it be.
-  document.querySelectorAll('#aggregated-card .js-plotly-plot').forEach(function (gd) {
-    const n = (gd.data || []).length;
-    if (n === 0 || n > 8) return;
-    try { Plotly.restyle(gd, {'line.color': pal.slice(0, n)}); } catch (e) {}
-  });
+  // Coverage heatmap: fully rebuilt on theme change (its colourscale zero-end and
+  // axis colours are theme-specific), so redraw rather than restyle.
+  if (typeof buildHeatmap === 'function') { try { buildHeatmap(); } catch (e) {} }
   // Sequencing throughput: mapped (accent) + QC-passed-unmapped (green) recolour
   // by theme; "Removed by QC" stays the theme-neutral muted grey (index 2).
   const tc = document.getElementById('throughput-card');
@@ -501,14 +504,6 @@ function recolorCharts() {
       try { Plotly.restyle(gd, {'marker.color': c.fill, 'marker.line.color': c.line}, [i]); } catch (e) {}
     });
   });
-}
-
-/* ---- generic display:none panel toggle (aggregated segment switch) ---- */
-function showPanel(cls, key) {
-  document.querySelectorAll('.' + cls).forEach(function (p) {
-    p.style.display = (p.getAttribute('data-key') === key) ? 'block' : 'none';
-  });
-  themeCharts();
 }
 
 /* ---- client-side table sort ---- */
@@ -924,67 +919,11 @@ function showSegment(segment) {
   const box = document.getElementById('segment-stats');
   if (box) box.innerHTML = segment ? statsTableHTML(rowsForSegment(segment)) : '';
 }
-/* ---- aggregated-coverage Linear/Log10 toggle (server-rendered linear first) ----
-   Rebuilds every segment panel via Plotly.react on toggle (never a yaxis.type
-   relayout). Both axis ranges come from Python (per-panel data attributes), the
-   same single source the per-sample charts use — no JS re-derivation. */
-function aggregatedLayout(scale, logRange, linMax) {
-  const g = depthGuides();
-  const linRange = (linMax && linMax > 0) ? [0, linMax] : undefined;
-  return {
-    autosize: true, height: FIG_HEIGHT, margin: {l: 60, r: 30, t: 24, b: 60},
-    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
-    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
-    yaxis: depthYAxis(scale, logRange, linRange),
-    hovermode: 'x unified', showlegend: false, shapes: g.shapes, annotations: g.annotations
-  };
-}
-function enhanceAggregatedToggle() {
-  if (!window.Plotly) return;
-  const card = document.getElementById('aggregated-card');
-  if (!card) return;
-  const plots = Array.from(card.querySelectorAll('.js-plotly-plot'));
-  // Capture each panel's server-rendered depth traces once, so the track traces
-  // can be appended fresh on every rebuild without accumulating duplicates.
-  plots.forEach(function (gd) { if (!gd._depthData) gd._depthData = (gd.data || []).slice(); });
-  const setScale = function (s) {
-    aggScale = s;
-    plots.forEach(function (gd) {
-      const panel = gd.closest('.agg-panel');
-      const logRange = panel ? panel.getAttribute('data-log-range').split(',').map(Number) : undefined;
-      const linMax = panel ? parseFloat(panel.getAttribute('data-lin-max')) : undefined;
-      const seg = panel ? panel.getAttribute('data-key') : '';
-      const tm = annotationTraces(seg, aggTrackOpts());
-      const layout = withTrackAxes(aggregatedLayout(s, logRange, linMax), tm);
-      // Rebuild via react (never a yaxis.type relayout). The depth traces pass
-      // through untouched — the y arrays may be Plotly typed-array specs, so we
-      // don't remap them; on the log axis Plotly drops the true zeros as gaps,
-      // matching the per-sample charts' explicit nulls. Track traces (y2) are
-      // appended fresh from the captured depth data.
-      try { Plotly.react(gd, gd._depthData.concat(tm.traces), layout, {responsive: true, displayModeBar: false}); } catch (e) {}
-    });
-  };
-  enhanceAggregatedToggle._setScale = setScale;
-  const toggle = scaleToggleEl('linear', setScale);
-  // Place the toggle after the segment selector when present, else after the heading.
-  (card.querySelector('select') || card.querySelector('h2')).insertAdjacentElement('afterend', toggle);
-  // Draw the annotation tracks on load (the server render is depth-only), and
-  // offer the Genes/Primers on-off chips next to the scale toggle. Skip entirely
-  // when no annotation was staged, so a plain run is unchanged.
-  if (Object.keys(ANNOT).length) {
-    setScale('linear');
-    var chips = buildTrackToggles(aggTracks, function () { setScale(aggScale); });
-    if (chips) toggle.insertAdjacentElement('afterend', chips);
-  }
-}
 /* ---- annotation-track on/off chips (Genes / Primers) ----
    One chip per track kind that is actually present, default on, styled like the
    scale toggle (aria-pressed). Toggling re-renders the affected view via the
    same Plotly.react/newPlot path the scale toggle uses (never a yaxis.type
    relayout), recomputing lanes so hiding a track reclaims its row. */
-var aggTracks = {showGenes: true, showPrimers: true};
-var aggScale = 'linear';
-function aggTrackOpts() { return aggTracks; }
 // Which track kinds exist anywhere in the embedded model.
 function annotKinds() {
   var genes = false, primers = false;
@@ -1029,6 +968,142 @@ function buildTrackToggles(state, rerender) {
     }));
   }
   return wrap;
+}
+
+/* ---- coverage heatmap (spec §5): mode A position-depth, mode B segment grid ----
+   Rendered client-side from the embedded HEATMAP model (plain arrays). Samples on
+   the y-axis, worst-coverage-first (reversed so the worst sit at the top). The
+   colour scale is themed (dark zero-end in dark mode) and keyed on chartColor.
+   Height is computed in px and set on BOTH the container and the Plotly layout so
+   a redraw never leaves a stale oversized SVG overflowing the card (§11.1). */
+var HM_ROW_PX = 20, HM_BASE_PX = 96;
+var heatmapScale = 'log';        // depth scale in position mode (log default)
+var heatmapSeg = null;           // segmented: '__all__' or a segment; else ''
+var heatmapTracks = {showGenes: true, showPrimers: true};
+function _mixHex(a, b, t) {
+  function h(x) { x = (x || '').replace('#', ''); return [parseInt(x.slice(0,2),16), parseInt(x.slice(2,4),16), parseInt(x.slice(4,6),16)]; }
+  var A = h(a), B = h(b);
+  return 'rgb(' + Math.round(A[0]+(B[0]-A[0])*t) + ',' + Math.round(A[1]+(B[1]-A[1])*t) +
+         ',' + Math.round(A[2]+(B[2]-A[2])*t) + ')';
+}
+function heatmapColorscale() {
+  var accent = PARAMS.chartColor || '#2a78d6';
+  // Zero/low end is pale on light, near-card-dark on dark (so no-coverage never
+  // glares near-white in dark mode, spec §10).
+  var low = isDark() ? '#15151a' : '#eef3fa';
+  return [[0, low], [0.5, _mixHex(low, accent, 0.55)], [1, accent]];
+}
+function buildHeatmap() {
+  var holder = document.getElementById('vu-heatmap');
+  if (!holder || !window.Plotly || !HEATMAP || !HEATMAP.samples || !HEATMAP.samples.length) return;
+  var samples = HEATMAP.samples, nRows = samples.length;
+  var mode, segKey = '';
+  if (HEATMAP.segmented) {
+    if (heatmapSeg === null) heatmapSeg = '__all__';
+    if (heatmapSeg === '__all__') { mode = 'grid'; } else { mode = 'position'; segKey = heatmapSeg; }
+  } else { mode = 'position'; segKey = ''; heatmapSeg = ''; }
+
+  var cs = heatmapColorscale();
+  var heatPx = Math.max(160, HM_BASE_PX + nRows * HM_ROW_PX);
+  var grid = 'rgba(137,135,129,0.25)';
+  var traces, layout;
+
+  if (mode === 'grid') {
+    var g = HEATMAP.grid || {segments: [], z: []};
+    traces = [{
+      type: 'heatmap', x: g.segments, y: samples, z: g.z, zmin: 0, zmax: 100,
+      colorscale: cs, xgap: 1, ygap: 1,
+      colorbar: {title: {text: 'Genome coverage', side: 'right'}, ticksuffix: '%',
+                 thickness: PARAMS.colorbarThickness || 14, len: 1, y: 1, yanchor: 'top'},
+      hovertemplate: '%{y} · %{x}<br>%{z:.1f}% coverage<extra></extra>'
+    }];
+    layout = {
+      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 40},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+      xaxis: {type: 'category', side: 'top', gridcolor: 'rgba(0,0,0,0)', zeroline: false},
+      yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
+    };
+  } else {
+    var p = (HEATMAP.position || {})[segKey || ''] || {x: [], zNatural: [], zLog: []};
+    var isLog = heatmapScale === 'log';
+    var cb = {title: {text: 'Sequencing depth', side: 'right'},
+              thickness: PARAMS.colorbarThickness || 14, len: 1, y: 1, yanchor: 'top'};
+    if (isLog) {
+      cb.tickmode = 'array';
+      cb.tickvals = [0, 1, 2, 3, 4, 5];
+      cb.ticktext = ['1', '10', '100', '1k', '10k', '100k'];
+    }
+    traces = [{
+      type: 'heatmap', x: p.x, y: samples, z: isLog ? p.zLog : p.zNatural,
+      colorscale: cs, colorbar: cb,
+      hovertemplate: isLog ? '%{y}<br>pos %{x:.0f}<br>~10^%{z:.2f}x<extra></extra>'
+                           : '%{y}<br>pos %{x:.0f}<br>%{z:.0f}x<extra></extra>'
+    }];
+    layout = {
+      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 48},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+      xaxis: {title: {text: 'Genome position'}, gridcolor: grid, zeroline: false},
+      yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
+    };
+    // Annotation band beneath the heatmap (shares the genome x-axis). Reuses the
+    // same y2 lane traces as the by-sample plot; the colour bar is shortened to
+    // span only the heatmap band, not the track lanes (§11.3).
+    var tm = annotationTraces(segKey || '', heatmapTracks);
+    if (tm.nLanes) {
+      var trackPx = tm.nLanes * TRACK_LANE_PX, gap = TRACK_GAP_PX, total = heatPx + gap + trackPx;
+      layout.height = total;
+      layout.yaxis.domain = [(trackPx + gap) / total, 1];
+      layout.yaxis2 = {
+        domain: [0, trackPx / total], range: [-0.5, tm.nLanes - 0.5], fixedrange: true,
+        zeroline: false, showgrid: false, tickmode: 'array',
+        tickvals: tm.ticktext.map(function (_v, i) { return i; }),
+        ticktext: tm.ticktext, tickfont: {size: 11}
+      };
+      cb.len = 1 - (trackPx + gap) / total;
+      traces = traces.concat(tm.traces);
+    }
+  }
+  holder.style.height = layout.height + 'px';
+  try { Plotly.react(holder, traces, layout, {responsive: true, displayModeBar: false}); } catch (e) {}
+  var scaleGrp = document.getElementById('heatmapScale');
+  if (scaleGrp) scaleGrp.style.display = (mode === 'position') ? '' : 'none';
+  var trackHolder = document.getElementById('heatmapTrackHolder');
+  if (trackHolder) trackHolder.style.display = (mode === 'position') ? '' : 'none';
+  var note = document.getElementById('heatmapNote');
+  if (note) note.textContent = (mode === 'grid')
+    ? 'Per-segment genome (horizontal) coverage; samples sorted worst-first.'
+    : 'Binned sequencing depth along the genome; samples sorted worst-first.';
+}
+function initHeatmap() {
+  if (!document.getElementById('vu-heatmap')) return;
+  var scaleGrp = document.getElementById('heatmapScale');
+  if (scaleGrp) scaleGrp.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      scaleGrp.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active'); x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true');
+      heatmapScale = b.getAttribute('data-scale');
+      buildHeatmap();
+    });
+  });
+  var chipBox = document.getElementById('heatmapSegChips');
+  if (chipBox) chipBox.querySelectorAll('.seg-chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      chipBox.querySelectorAll('.seg-chip').forEach(function (x) {
+        x.classList.remove('active'); x.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
+      heatmapSeg = btn.getAttribute('data-seg');
+      buildHeatmap();
+    });
+  });
+  var trackHolder = document.getElementById('heatmapTrackHolder');
+  if (trackHolder) {
+    var chips = buildTrackToggles(heatmapTracks, function () { buildHeatmap(); });
+    if (chips) trackHolder.appendChild(chips);
+  }
+  buildHeatmap();
 }
 
 /* ---- sequencing-throughput Absolute | Percent toggle ----
@@ -1207,7 +1282,7 @@ window.addEventListener('load', function () {
   if (segChips && segControls) segControls.appendChild(segChips);
 
   [themeCharts, initKpiControls, enhanceSortHeaders, initStatsControls,
-   enhanceThroughputToggle, enhanceAggregatedToggle].forEach(function (fn) {
+   enhanceThroughputToggle, initHeatmap].forEach(function (fn) {
     try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }
   });
 });
