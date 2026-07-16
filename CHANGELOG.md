@@ -7,30 +7,50 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
-## [1.4.0] - 2026-07-15
+## [1.4.0] - 2026-07-16
 
-Adds an interactive, self-contained HTML report for consensus runs.
+Adds an interactive, self-contained HTML report for consensus runs, designed to
+stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
 
 ### Added
 
 - Interactive consensus HTML report: a single offline-openable `report.html`
-  visualizing a consensus run — a sortable assembly-statistics table; KPI summary
-  tiles (samples analyzed, samples with ≥90% horizontal coverage, median
-  horizontal coverage, median mean depth, with a Global | Per-segment switch on
-  segmented runs); a "Sequencing throughput" chart (total vs QC-passed reads plus
-  a mapping-rate panel); an aggregated per-position coverage plot (one panel per
-  segment in segmented mode) with a Linear/Log10 scale toggle and 20x/100x depth
-  guides; and a per-sample / per-segment coverage viewer. Depth charts default to
-  a linear axis with honest zeros (no coverage reads as a gap, never a false depth
-  of 1). Charts use a colourblind-safe palette and support light/dark mode. Built
-  with Plotly, inlined once so the file has no external dependencies.
+  visualizing a consensus run —
+  - **Summary KPI tiles**: samples analyzed (with an "N segments each"/amplicon
+    subtitle), samples ≥ the pass threshold (with "% of run"), samples below the
+    warn threshold (tile turns red when non-zero), median horizontal coverage, and
+    mean depth. Thresholds are configurable and every label is derived from them.
+  - **Assembly-statistics data table**: a sample/segment search box, a "low
+    coverage only" filter, a live row count, worst-coverage-first default sort, and
+    visual pass/fail encoding (status dot + tinted coverage cell + inline bar).
+    Segmented runs roll up to one summary row per sample (mean coverage, median
+    depth, whole-sample mapped %) that expands to per-segment rows, plus a
+    segment-focus chip row.
+  - **Sequencing throughput**: horizontal stacked bars (mapped / QC-passed-unmapped
+    / removed-by-QC) summing to total reads in reconciled units, with an
+    Absolute/Percent toggle; height grows with sample count.
+  - **Coverage heatmap** (replacing per-sample line overlays): samples worst-first
+    on the y-axis; a position-depth mode (binned genome position × depth, with a
+    Natural/Log10 toggle and the annotation band) and, for segmented runs, an "All
+    segments" grid of per-segment horizontal coverage %.
+  - **By-sample panel**: a searchable, worst-first sample list (status dot +
+    coverage badge) beside the selected sample's depth plot with 20x/100x guides;
+    segmented samples default to an "All (concatenated)" view plus a per-segment
+    selector.
+  Depth charts default to honest zeros (no coverage reads as a gap, never a false
+  depth of 1). Charts use a colourblind-safe palette and support light/dark mode
+  and print/PDF. Built with Plotly, inlined once so the file has no external
+  dependencies.
+- Report-generation parameters, as `viralunity report` flags (or config keys):
+  `--pass-threshold` (0.90), `--warn-threshold` (0.70), `--chart-color`, and
+  `--colorbar-thickness`.
 - Run-parameters slide-over drawer showing the full run config, HTML-escaped and
   behind a focus-trapped modal.
-- Optional annotation tracks beneath every coverage plot: a **gene track** from a
-  new `--gene-annotation FILE` / `--segmented-gene-annotation SEGMENT=PATH` GFF3
-  input, and a **primer-scheme track** (amplicons paired into pool rows) from the
-  existing `--primer-scheme` BED. Both are drawn as rectangles aligned to the
-  genome x-axis on the aggregated, by-sample and by-segment views, with Genes /
+- Optional annotation tracks beneath the by-sample and position-mode coverage
+  views: a **gene track** from a new `--gene-annotation FILE` /
+  `--segmented-gene-annotation SEGMENT=PATH` GFF3 input, and a **primer-scheme
+  track** (amplicons paired into pool rows) from the existing `--primer-scheme`
+  BED. Both are drawn as rectangles aligned to the genome x-axis, with Genes /
   Primers on-off toggles. The files are staged into `<output>/annotation/` so the
   report and `viralunity report` keep working after the run. Absent when no
   annotation is provided.
@@ -46,6 +66,12 @@ Adds an interactive, self-contained HTML report for consensus runs.
 
 - New runtime dependencies `plotly` and `jinja2`; the packaged `.j2` template is
   now shipped as package data.
+
+### Fixed
+
+- A segment literally named `NA` (influenza's neuraminidase segment) is no longer
+  parsed as `NaN` when reading the stats summary, which previously crashed
+  coverage-path resolution on real NA-segment runs.
 
 ## [1.3.3] - 2026-07-14
 

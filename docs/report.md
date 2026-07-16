@@ -9,33 +9,48 @@ network access and no external dependencies.
 The report covers the four consensus entry points (`illumina` / `nanopore`,
 segmented and unsegmented). It is not generated for `viralunity meta`.
 
+The report is designed to stay legible from a single sample up to ~96 (≈96×8
+per-segment rows for segmented viruses), so every panel scales instead of
+crowding.
+
 ## What it shows
 
-**Overview (whole run)**
+- **Summary tiles** — samples analyzed, how many reach the pass-coverage
+  threshold (default 90%, with the percentage of the run), how many fall below
+  the warn threshold (default 70%; this tile turns red when any do), the median
+  horizontal coverage, and the mean depth. On segmented runs a Global |
+  Per-segment switch recomputes the tiles for one segment.
+- **Assembly statistics** — `assembly/assembly_stats_summary.csv` as a filterable
+  table: search by sample (or segment), a "low coverage only" filter, a live row
+  count, and a worst-coverage-first default sort so problems surface first. Each
+  row carries a coloured status dot and an inline coverage bar. Segmented runs
+  collapse to one row per sample that expands to its per-segment rows, with a
+  chip row to focus a single segment.
+- **Sequencing throughput** — one horizontal stacked bar per sample: mapped reads,
+  QC-passed-but-unmapped reads, and reads removed by QC, summing to the sample's
+  total. An Absolute/Percent toggle normalises each bar to 100% to compare QC loss
+  across samples of different depth.
+- **Coverage heatmap** — samples on the y-axis, sorted worst-coverage-first. For
+  amplicon (single-segment) runs the colour is sequencing depth along the genome
+  (with a Natural/Log10 toggle); for segmented runs an "All segments" grid shows
+  each segment's horizontal coverage %, and a chip switches to the depth view for
+  one segment. This replaces per-sample line overlays, which become unreadable
+  past a handful of samples.
+- **By sample** — a searchable, worst-first list (each row with a status dot and
+  coverage badge) beside the selected sample's per-base coverage/depth plot, with
+  20× and 100× depth guides. Segmented samples default to an "All (concatenated)"
+  view across segments, with a per-segment selector.
 
-- **Assembly statistics** — the contents of
-  `assembly/assembly_stats_summary.csv` as a sortable table (click any column
-  header). Coverage-breadth columns are shown as percentages and depth is
-  rounded for readability.
-- **Reads per sample** — grouped bars of total, QC/trimmed, and mapped reads.
-  In segmented mode, total/trimmed reads are shown once per sample and mapped
-  reads are summed across segments.
-- **Average depth** — a log-scale bar chart of mean depth per sample (per
-  sample × segment in segmented mode), with horizontal guide lines at 20× and
-  100×.
-- **Aggregated coverage** — per-position depth, one line per sample. In
-  segmented mode a dropdown switches between one plot per segment (segments have
-  different lengths and so cannot share an x-axis).
+Optional gene (GFF3) and primer-scheme (BED) annotation tracks are drawn beneath
+the by-sample plot and the position-mode heatmap when provided (see the
+consensus `--gene-annotation` / `--primer-scheme` options), with Genes / Primers
+toggles.
 
-**Per-sample detail**
-
-- A sample selector shows the chosen sample's statistics and its per-base
-  coverage plot (one plot per segment in segmented mode). Only the selected
-  sample is drawn at a time, keeping the page light even for large runs.
-
-Charts use a colourblind-safe palette and support a light/dark toggle (top
-right). Per-base coverage is downsampled with min-pooling before plotting, so
-coverage dips are preserved rather than averaged away.
+Charts use a colourblind-safe palette and support a light/dark toggle (top right)
+and print/PDF. Per-base coverage is downsampled with min-pooling before plotting,
+so coverage dips are preserved rather than averaged away. The pass/warn coverage
+thresholds and the accent colour can be tuned with `viralunity report`
+`--pass-threshold` / `--warn-threshold` / `--chart-color` / `--colorbar-thickness`.
 
 ## Regenerating the report
 

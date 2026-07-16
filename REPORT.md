@@ -7,10 +7,12 @@ mistakes fixed in the v1.3.4 UX pass don't quietly return. Follow them when touc
 report; the test suite (below) enforces most of them.
 
 ## Depth axes are linear by default
-Coverage/depth charts render **linear** with the y-range fit to the data. A log axis makes
-Plotly's default ticks (1, 10, 100) read as linear and silently misjudges every value by
-orders of magnitude. A per-chart **Linear / Log10** toggle is available for genuinely
-wide-dynamic-range cases.
+The **by-sample coverage line plot** renders **linear** with the y-range fit to the data. A log
+axis makes Plotly's default ticks (1, 10, 100) read as linear and silently misjudges every value
+by orders of magnitude. A per-chart **Linear / Log10** toggle is available for genuinely
+wide-dynamic-range cases. (The coverage **heatmap**'s position-depth mode is the deliberate
+exception — depth spans orders of magnitude across the plate, so its colour scale defaults to
+**Log10** with a Natural toggle, and its colour-bar ticks are labelled as powers of ten.)
 
 - **Never flip an axis with `Plotly.relayout({'yaxis.type': …})`.** On the ~2000-point
   coverage lines that hits a Plotly slow path (~6 s freeze). Rebuild the figure with
@@ -52,14 +54,32 @@ reflow instead of scrolling sideways. Sortable headers are keyboard-operable wit
 `aria-sort`; encodings are never colour-only (legend + labels). Both light and dark themes
 must keep working on anything you touch.
 
-## Progressive disclosure
-Run-level cards (assembly stats, sequencing throughput, aggregated coverage) lead. Per-sample
-and per-segment detail live in collapsed, lazily rendered `<details>` accordions ("By sample",
-"By segment") so a many-sample plate stays fast to open.
+## Designed for 96 samples, not 2
+Every component must stay legible from 1 to ~96 samples (≈96×8 segmented rows). Concretely:
+- **No per-sample line overlays.** Aggregate coverage is a **heatmap** (samples worst-first on
+  the y-axis) — a position-depth mode (binned genome position, Natural/Log10) and, for segmented
+  runs, an "All segments" grid of per-segment horizontal coverage %. Its height is computed in px
+  and set on **both** the container and the Plotly `layout.height` (a `responsive:true` plot with
+  no explicit height leaves a stale oversized SVG that overflows the card).
+- **The assembly-statistics table is a real data table**: search, a "low coverage only" filter, a
+  live row count, worst-coverage-first default sort, status dot + inline coverage bar, a frozen
+  first column, and — for segmented runs — a one-row-per-sample roll-up that expands to per-segment
+  rows, plus segment-focus chips.
+- **Throughput is horizontal 3-series stacked bars** (mapped / QC-passed-unmapped / removed-by-QC),
+  height growing with sample count, with an Absolute/Percent toggle.
+- **By sample** is a searchable, worst-first list beside one coverage plot (segmented: an "All
+  (concatenated)" view + per-segment selector). Rendered client-side from embedded JSON.
+
+## Thresholds are configurable, labels are derived
+`pass`/`warn` coverage thresholds (defaults 0.90/0.70), the accent `chartColor`, and the
+`colorbarThickness` are report-generation parameters (`ReportParams`, exposed as `viralunity
+report` flags / config keys). Never hardcode 90/70 in user-facing text — derive it from the params
+(Python `ReportParams.pass_pct_label`, JS `PARAMS`).
 
 ## Annotation tracks (genes + primers)
 Optional gene (GFF3) and primer-scheme (BED) tracks are drawn as rectangles on a second y-axis
-beneath the depth line, sharing the genome x-axis, on all three coverage views. They are Plotly
+beneath the depth line, sharing the genome x-axis, on the by-sample and position-mode heatmap
+views. They are Plotly
 traces (not layout shapes) so they survive the Linear/Log10 rebuild and stay fixed while the depth
 axis toggles. The files are staged into `<output>/annotation/` by the workflow (column 1 is
 sanitized on Nanopore to match the sanitized coverage contig names), and the report matches features
