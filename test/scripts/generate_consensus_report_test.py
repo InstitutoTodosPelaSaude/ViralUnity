@@ -21,10 +21,9 @@ import pandas as pd
 import plotly.graph_objects as go
 
 from viralunity.scripts.python.generate_consensus_report import (
-    EMPHASIS_MUTED,
+    ReportParams,
     _json_for_script,
     _load_coverage_cache,
-    _stats_rows_by_sample,
     build_annotation_model,
     build_heatmap_model,
     build_kpi_summary,
@@ -38,10 +37,9 @@ from viralunity.scripts.python.generate_consensus_report import (
     parse_gff3,
     parse_primer_bed,
     read_stats_summary,
+    report_params_from_config,
     resolve_annotation_path,
     resolve_basewise_path,
-    ReportParams,
-    report_params_from_config,
     sample_overall_coverage,
     throughput_series,
     worst_first_order,
@@ -816,13 +814,6 @@ class TestHtmlEscaping(unittest.TestCase):
         html = build_stats_table_html(df, paired=True)
         self.assertNotIn('title=""><img', html)
         self.assertNotIn("<img src=x onerror=alert(1)>", html)
-
-    def test_stats_rows_by_sample_escapes_cell_values(self):
-        df = _one_sample_df("<b>x</b>")
-        rows = _stats_rows_by_sample(df, segmented=False, paired=False)
-        # the key is the raw name (a JS object key, not HTML); the rendered
-        # "Sample" cell value (inserted via innerHTML client-side) is escaped.
-        self.assertEqual(rows["<b>x</b>"][0]["Sample"], "&lt;b&gt;x&lt;/b&gt;")
 
     def test_json_for_script_neutralizes_script_breakout(self):
         payload = {"sample": "</script><script>alert(1)</script>"}

@@ -52,13 +52,14 @@ class TestReportSnapshot(unittest.TestCase):
         # honest zeros: the log clamp is gone; the line breaks at true zeros.
         self.assertNotIn("Math.max(1,", app)
         self.assertIn("connectgaps: false", app)
-        # both progressive-disclosure accordions are server-rendered (structure
-        # present in the HTML, not reconstructed at load by JS).
-        self.assertIn('id="by-sample-details"', html)
-        self.assertIn('id="by-segment-details"', html)
-        self.assertIn("<summary>", html)
+        # the by-sample panel is server-rendered: a searchable list of samples
+        # (worst-first) beside the coverage plot holder.
+        self.assertIn('id="by-sample-card"', html)
+        self.assertIn('id="sampleList"', html)
+        self.assertIn('class="sample-row"', html)
         self.assertIn("By sample", html)
-        self.assertIn("By segment", html)
+        # the standalone "By segment" card is gone (folded into the selectors).
+        self.assertNotIn('id="by-segment-details"', html)
         # the scale toggle rebuilds via react, NOT a yaxis.type relayout (guards
         # the ~6 s freeze). yaxis.type appears only unquoted in a comment; a real
         # relayout would quote it as an object key.
@@ -141,8 +142,12 @@ class TestReportSnapshot(unittest.TestCase):
     def test_segmented_snapshot(self):
         html = _render("segmented")
         self._assert_common_invariants(html)
-        # a segment selector is offered for the by-segment view.
-        self.assertIn("segmentSelect", html)
+        # segment selectors are offered for the heatmap, the stats table, and the
+        # by-sample view (the standalone by-segment card is gone).
+        self.assertIn('id="heatmapSegChips"', html)
+        self.assertIn('id="statsSegChips"', html)
+        self.assertIn('id="bysampleSegSelect"', html)
+        self.assertIn("All (concatenated)", html)
         # segmented runs get the Global | Per-segment KPI switch.
         self.assertIn('id="kpi-scope"', html)
         self.assertIn("Per segment", html)

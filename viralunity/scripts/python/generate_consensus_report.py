@@ -1363,6 +1363,16 @@ def render_report(
     # by-sample list so both surface problem samples first.
     overall_coverage = sample_overall_coverage(df, segmented, coverage_lengths)
     order = worst_first_order(overall_coverage, samples)
+    # Server-rendered by-sample list rows (worst-first), each with a status dot +
+    # coverage badge so a reviewer can jump straight to a bad sample.
+    sample_list = [
+        {
+            "sample": s,
+            "tier": params.tier(overall_coverage.get(s, 0.0)),
+            "pct": _fmt_pct(overall_coverage.get(s, 0.0)),
+        }
+        for s in order
+    ]
 
     # Global figures.
     stats_table_html = build_stats_table_html(df, paired, params)
@@ -1395,11 +1405,9 @@ def render_report(
             )
         coverage_json[sample] = entries
 
-    # The per-sample / per-segment detail accordions are only meaningful when at
-    # least one coverage track was found (a fully pruned dir has none).
+    # The by-sample panel is only meaningful when at least one coverage track was
+    # found (a fully pruned dir has none).
     has_coverage = any(entries for entries in coverage_json.values())
-
-    stats_by_sample = _stats_rows_by_sample(df, segmented, paired)
 
     env = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
@@ -1420,10 +1428,8 @@ def render_report(
         stats_table_html=stats_table_html,
         reads_fig_html=reads_fig_html,
         heatmap_json=_json_for_script(heatmap_model),
-        overall_coverage_json=_json_for_script(overall_coverage),
-        sample_order=order,
+        sample_list=sample_list,
         coverage_json=_json_for_script(coverage_json),
-        stats_by_sample=_json_for_script(stats_by_sample),
         annotation_json=_json_for_script(annotation_model["by_segment"]),
         palette_light=PALETTE_LIGHT,
         palette_dark=PALETTE_DARK,
@@ -1432,40 +1438,6 @@ def render_report(
         params=params,
         params_json=_json_for_script(params.as_client_dict()),
     )
-
-
-def _stats_rows_by_sample(
-    df: pd.DataFrame, segmented: bool, paired: bool = True
-) -> Dict[str, list]:
-    """Formatted per-sample stat rows for the per-sample detail panel.
-
-    Mirrors :func:`build_stats_table_html`: the mapped column is rendered as a
-    mapping rate (unit-reconciled by ``paired``), other numbers are grouped.
-    """
-    out: Dict[str, list] = {}
-    for _, row in df.iterrows():
-        rendered = {}
-        for col in df.columns:
-            if col in PERCENTAGE_ABOVE_COLS:
-                continue
-            label = COLUMN_LABELS.get(col, col)
-            raw = row[col]
-            if col == "number_of_mapped_reads":
-                rendered[label] = _fmt_rate(
-                    _mapping_rate(raw, row.get("number_of_trim_paired_reads"), paired)
-                )
-            elif col in PERCENTAGE_COLS:
-                rendered[label] = _fmt_pct(raw)
-            elif col == "average_depth":
-                rendered[label] = _fmt_depth(raw)
-            elif col in INT_COLS:
-                rendered[label] = _fmt_int(raw)
-            else:
-                # These values are injected client-side via innerHTML
-                # (statsTableHTML), so escape the data-controlled ones here.
-                rendered[label] = html.escape(str(raw))
-        out.setdefault(row["sample_name"], []).append(rendered)
-    return out
 
 
 def write_report(
