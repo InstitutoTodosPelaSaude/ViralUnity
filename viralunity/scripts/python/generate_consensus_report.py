@@ -55,11 +55,17 @@ COLUMN_LABELS = {
     "sample_name": "Sample",
     "segment": "Segment",
     "number_of_reads": "Total reads",
-    "number_of_trim_paired_reads": "QC-passed reads",
+    "number_of_trim_paired_reads": "QC-passed",
     "number_of_mapped_reads": "Mapped %",
     "average_depth": "Mean depth",
-    "horizontal_coverage": "Genome coverage",
+    # "Horizontal coverage" (not "Genome coverage") to disambiguate breadth from
+    # the segmented heatmap and from depth (spec §3).
+    "horizontal_coverage": "Horizontal coverage",
 }
+
+# Columns rendered right-aligned with tabular figures (everything numeric); the
+# sample/segment identity columns stay left-aligned.
+NUMERIC_COLS = set(INT_COLS) | {"average_depth", "horizontal_coverage"} | set(PERCENTAGE_COLS)
 
 FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 GRID_COLOR = "rgba(137,135,129,0.25)"  # semi-transparent gray: reads on light + dark
@@ -677,34 +683,91 @@ def _fmt_rate(pct: Optional[float]) -> str:
     return "0%"
 
 
-def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
-    """Render the stats summary as a sortable HTML table.
-
-    The ``percentage_above_*x`` columns are dropped and headers are humanized.
-    ``horizontal_coverage`` is shown x100 with a ``%`` suffix; ``average_depth``
-    is rounded; read counts are grouped; ``number_of_mapped_reads`` becomes a
-    **mapping rate** (``mapped / QC-passed``, denominator doubled when
-    ``paired``), with the raw count kept in the cell tooltip. Sorting is handled
-    by inline JS in the template (``data-sort`` carries the raw numeric value);
-    headers carry the a11y attributes the JS keeps in sync.
-    """
-    columns = [c for c in df.columns if c not in PERCENTAGE_ABOVE_COLS]
-    header_cells = "".join(
-        f'<th data-col="{i}" role="button" tabindex="0" aria-sort="none" '
-        f'onclick="sortTable(this)">{html.escape(str(COLUMN_LABELS.get(col, col)))}'
-        f'<span class="sort-arrow"></span></th>'
-        for i, col in enumerate(columns)
+def _coverage_cell_html(raw, params: ReportParams) -> str:
+    """Coverage cell: tinted value + status dot are handled elsewhere; this cell
+    carries the value and an inline proportion bar (width = coverage %)."""
+    try:
+        frac = float(raw)
+    except (TypeError, ValueError):
+        return f'<td class="num">{html.escape(str(raw))}</td>'
+    tier = params.tier(frac)
+    pct = max(0.0, min(100.0, frac * 100.0))
+    display = html.escape(_fmt_pct(raw))
+    return (
+        f'<td class="num cov-cell" data-sort="{html.escape(str(raw))}">'
+        f'<span class="cov-val cov-{tier}">{display}</span>'
+        f'<span class="cov-bar cov-bar-{tier}" style="width:{pct:.1f}%"></span></td>'
     )
+
+
+def build_stats_table_html(
+    df: pd.DataFrame, paired: bool = True, params: Optional[ReportParams] = None
+) -> str:
+    """Render the stats summary as a filterable, sortable data table (spec §3).
+
+    The ``percentage_above_*x`` columns are dropped and headers are humanized;
+    ``horizontal_coverage`` (labelled "Horizontal coverage") is shown x100 with a
+    ``%`` suffix, coloured by status tier, and carries an inline proportion bar; a
+    status **dot** precedes the sample name. ``average_depth`` is rounded; read
+    counts are grouped; ``number_of_mapped_reads`` becomes a **mapping rate**
+    (``mapped / QC-passed``, denominator doubled when ``paired``), raw count in the
+    tooltip. Rows sort **worst-coverage-first** by default (server-side) so
+    problems surface without interaction; every numeric column stays client-
+    sortable. Each row carries ``data-sample``/``data-segment``/``data-coverage``
+    for the search box and the "low coverage only" filter. Numeric cells are
+    right-aligned with tabular figures.
+    """
+    if params is None:
+        params = ReportParams()
+    columns = [c for c in df.columns if c not in PERCENTAGE_ABOVE_COLS]
+    # Default sort = coverage ascending (worst first). Stable so ties keep input
+    # order. NaN/garbage coverage sinks to the top (treated as worst).
+    if "horizontal_coverage" in df.columns:
+        order = pd.to_numeric(df["horizontal_coverage"], errors="coerce")
+        df = df.assign(_covsort=order).sort_values(
+            "_covsort", ascending=True, kind="stable", na_position="first"
+        )
+    cov_idx = columns.index("horizontal_coverage") if "horizontal_coverage" in columns else -1
+
+    header_cells = []
+    for i, col in enumerate(columns):
+        # The coverage column starts pre-sorted ascending; its header reflects that
+        # so a click toggles to descending (worst<->best).
+        is_cov = i == cov_idx
+        aria = "ascending" if is_cov else "none"
+        asc = ' data-asc="true"' if is_cov else ""
+        arrow = "▲" if is_cov else ""
+        cls = " ".join(
+            c
+            for c in ("th-num" if col in NUMERIC_COLS else "", "col-freeze" if i == 0 else "")
+            if c
+        )
+        header_cells.append(
+            f'<th class="{cls}" data-col="{i}" role="button" tabindex="0" '
+            f'aria-sort="{aria}"{asc} onclick="sortTable(this)">'
+            f"{html.escape(str(COLUMN_LABELS.get(col, col)))}"
+            f'<span class="sort-arrow">{arrow}</span></th>'
+        )
 
     body_rows = []
     for _, row in df.iterrows():
+        sample = html.escape(str(row.get("sample_name", "")))
+        segment = html.escape(str(row.get("segment", ""))) if "segment" in columns else ""
+        try:
+            cov_frac = float(row.get("horizontal_coverage"))
+        except (TypeError, ValueError):
+            cov_frac = 0.0
+        tier = params.tier(cov_frac)
         cells = []
-        for col in columns:
+        for i, col in enumerate(columns):
             raw = row[col]
-            # The numeric formatters fall back to str(value) on a non-numeric
-            # value, so a corrupt/crafted stats CSV could otherwise inject markup
-            # through a "numeric" column. Escape every emitted display value and
-            # data-sort/title attribute; for clean numbers this is a no-op.
+            if col == "sample_name":
+                # Status dot + name, frozen as the first column.
+                cells.append(
+                    f'<td class="col-freeze cell-sample"><span class="cov-dot cov-dot-{tier}" '
+                    f'aria-hidden="true"></span>{html.escape(str(raw))}</td>'
+                )
+                continue
             if col == "number_of_mapped_reads":
                 rate = _mapping_rate(raw, row.get("number_of_trim_paired_reads"), paired)
                 sort_val = html.escape(str(rate if rate is not None else -1))
@@ -712,9 +775,17 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
                     f'{_fmt_int(raw)} mapped reads / {"2× " if paired else ""}QC-passed reads'
                 )
                 cells.append(
-                    f'<td data-sort="{sort_val}" title="{tip}">{html.escape(_fmt_rate(rate))}</td>'
+                    f'<td class="num" data-sort="{sort_val}" title="{tip}">'
+                    f"{html.escape(_fmt_rate(rate))}</td>"
                 )
                 continue
+            if col == "horizontal_coverage":
+                cells.append(_coverage_cell_html(raw, params))
+                continue
+            # The numeric formatters fall back to str(value) on a non-numeric
+            # value, so a corrupt/crafted stats CSV could otherwise inject markup
+            # through a "numeric" column. Escape every emitted display value and
+            # data-sort attribute; for clean numbers this is a no-op.
             if col in PERCENTAGE_COLS:
                 display, sort_val = html.escape(_fmt_pct(raw)), html.escape(str(raw))
             elif col == "average_depth":
@@ -722,16 +793,17 @@ def build_stats_table_html(df: pd.DataFrame, paired: bool = True) -> str:
             elif col in INT_COLS:
                 display, sort_val = html.escape(_fmt_int(raw)), html.escape(str(raw))
             else:
-                # Non-numeric, data-controlled columns (sample name, segment,
-                # reference id). Escape for both the cell text and the quoted
-                # data-sort attribute so a crafted id cannot inject markup.
                 display = sort_val = html.escape(str(raw))
-            cells.append(f'<td data-sort="{sort_val}">{display}</td>')
-        body_rows.append("<tr>" + "".join(cells) + "</tr>")
+            cls = "num" if col in NUMERIC_COLS else ""
+            cells.append(f'<td class="{cls}" data-sort="{sort_val}">{display}</td>')
+        body_rows.append(
+            f'<tr data-sample="{sample}" data-segment="{segment}" '
+            f'data-coverage="{cov_frac:.6f}">' + "".join(cells) + "</tr>"
+        )
 
     return (
         '<table class="stats-table" id="stats-table">'
-        f"<thead><tr>{header_cells}</tr></thead>"
+        f"<thead><tr>{''.join(header_cells)}</tr></thead>"
         f'<tbody>{"".join(body_rows)}</tbody></table>'
     )
 
@@ -1112,7 +1184,7 @@ def render_report(
     annotation_model = build_annotation_model(output_dir, segments, contig_by_segment)
 
     # Global figures.
-    stats_table_html = build_stats_table_html(df, paired)
+    stats_table_html = build_stats_table_html(df, paired, params)
     reads_fig_html = _fig_to_html(build_reads_histogram(dedupe_and_sum_reads(df), paired))
 
     # Aggregated coverage: one panel per segment (segments have different lengths).

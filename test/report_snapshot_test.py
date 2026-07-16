@@ -81,6 +81,13 @@ class TestReportSnapshot(unittest.TestCase):
         # these fixtures all ship a config, so the run-parameters drawer is present.
         self.assertIn('id="params-btn"', html)
         self.assertIn('id="params-drawer"', html)
+        # the assembly-stats table carries its search box + low-coverage filter,
+        # a worst-first pre-sort, and visual status encoding.
+        self.assertIn('id="statsSearch"', html)
+        self.assertIn('id="lowCovToggle"', html)
+        self.assertIn('id="statsRowCount"', html)
+        self.assertIn("cov-dot", html)
+        self.assertIn("cov-bar", html)
 
     def test_illumina_paired_snapshot(self):
         html = _render("unsegmented")

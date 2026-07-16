@@ -177,7 +177,38 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn(">Sample<", html)
         self.assertIn("Total reads", html)
         self.assertIn("Mean depth", html)
-        self.assertIn("Genome coverage", html)
+        # "Horizontal coverage" (not "Genome coverage") disambiguates breadth.
+        self.assertIn("Horizontal coverage", html)
+        self.assertNotIn("Genome coverage", html)
+
+    def test_table_default_sorts_worst_coverage_first(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))  # A cov 0.996, B cov 0.60
+        html = build_stats_table_html(df)
+        # sample-B (0.60) must render before sample-A (0.996): worst first.
+        self.assertLess(html.index('data-sample="sample-B"'), html.index('data-sample="sample-A"'))
+        # the coverage header advertises the ascending pre-sort.
+        self.assertIn('aria-sort="ascending"', html)
+
+    def test_table_encodes_status_visually(self):
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        params = ReportParams(pass_threshold=0.90, warn_threshold=0.70)
+        html = build_stats_table_html(df, paired=True, params=params)
+        # status dots keyed by tier: A passes, B fails (0.60 < 0.70).
+        self.assertIn("cov-dot-pass", html)
+        self.assertIn("cov-dot-fail", html)
+        # coverage cell carries an inline proportion bar with width = coverage %.
+        self.assertIn('cov-bar cov-bar-pass" style="width:99.6%"', html)
+        self.assertIn('cov-bar cov-bar-fail" style="width:60.0%"', html)
+        # rows expose search/filter data attributes.
+        self.assertIn('data-coverage="0.600000"', html)
+
+    def test_table_filter_hooks_present(self):
+        # A crafted-but-clean fixture confirms the numeric columns are right-
+        # aligned (class "num") and the sample column is frozen.
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        html = build_stats_table_html(df)
+        self.assertIn('class="col-freeze cell-sample"', html)
+        self.assertIn('<td class="num"', html)
 
 
 _P = ReportParams()  # default 0.90 / 0.70 thresholds

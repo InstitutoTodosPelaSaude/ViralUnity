@@ -22,6 +22,10 @@
   --status-fail-fill: rgba(227,73,72,0.08);
   --status-warn-fill: rgba(224,161,0,0.10);
   --status-pass-fill: rgba(27,158,90,0.10);
+  --input: #ffffff;
+  --subrow: #f4f4f2;
+  --selrow: rgba(42,120,214,0.12);
+  --rowhover: rgba(42,120,214,0.08);
 }
 :root[data-theme="dark"] {
   --page-bg: #0d0d0d;
@@ -38,6 +42,10 @@
   --status-fail-fill: rgba(227,73,72,0.16);
   --status-warn-fill: rgba(224,161,0,0.18);
   --status-pass-fill: rgba(27,158,90,0.16);
+  --input: #232322;
+  --subrow: #141413;
+  --selrow: rgba(57,135,229,0.20);
+  --rowhover: rgba(57,135,229,0.12);
 }
 * { box-sizing: border-box; }
 body {
@@ -80,10 +88,51 @@ table.stats-table th, table.stats-table td {
   padding: 7px 14px; text-align: center; white-space: nowrap;
   border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
 }
+/* Numeric columns right-aligned (tabular); the Sample identity column left. */
+table.stats-table td.num, table.stats-table th.th-num { text-align: right; }
+table.stats-table td.cell-sample, table.stats-table th.col-freeze { text-align: left; }
 table.stats-table th {
   cursor: pointer; user-select: none; color: var(--text-secondary);
-  font-weight: 600; position: sticky; top: 0; background: var(--card-bg);
+  font-weight: 600; position: sticky; top: 0; background: var(--card-bg); z-index: 2;
 }
+/* Freeze the first (Sample) column when the table scrolls sideways on narrow
+   screens; the header corner needs the higher z so it stays above both. */
+.table-scroll { overflow-x: auto; }
+table.stats-table td.col-freeze, table.stats-table th.col-freeze {
+  position: sticky; left: 0; background: var(--card-bg); z-index: 1;
+}
+table.stats-table th.col-freeze { z-index: 3; }
+/* Table controls (search + low-coverage filter + row count). */
+.table-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+.table-search {
+  background: var(--input, var(--card-bg)); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 8px; padding: 7px 12px;
+  font-size: 0.85rem; min-width: 220px; flex: 0 1 280px;
+}
+.table-search:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chip-toggle {
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
+}
+.chip-toggle:hover { background: var(--hover); }
+.chip-toggle[aria-pressed="true"] { background: var(--status-fail); border-color: var(--status-fail); color: #fff; }
+.chip-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row-count { font-size: 0.8rem; color: var(--text-secondary); margin-left: auto; }
+/* Coverage status encodings (never colour-alone: dot + tinted value + bar). */
+.cov-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: baseline; }
+.cov-dot-pass { background: var(--status-pass); }
+.cov-dot-warn { background: var(--status-warn); }
+.cov-dot-fail { background: var(--status-fail); }
+.cov-cell { position: relative; }
+.cov-val { font-weight: 600; }
+.cov-pass { color: var(--status-pass); }
+.cov-warn { color: var(--status-warn); }
+.cov-fail { color: var(--status-fail); }
+.cov-bar { position: absolute; left: 0; bottom: 0; height: 3px; border-radius: 0 2px 2px 0; }
+.cov-bar-pass { background: var(--status-pass); }
+.cov-bar-warn { background: var(--status-warn); }
+.cov-bar-fail { background: var(--status-fail); }
+tr.row-hidden { display: none; }
 table.stats-table th:hover { color: var(--text-primary); }
 table.stats-table tbody tr:hover { background: var(--hover); }
 /* Client-rendered per-sample/per-segment tables are read-only (not sortable), so
@@ -242,9 +291,19 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   </p>
   {% endif %}
 
-  <div class="card">
+  <div class="card" id="stats-card">
     <h2>Assembly statistics</h2>
-    {{ stats_table_html|safe }}
+    <div class="table-controls">
+      <input type="search" id="statsSearch" class="table-search"
+             placeholder="Filter by sample{% if segmented %} or segment{% endif %}…"
+             aria-label="Filter table rows by sample{% if segmented %} or segment{% endif %} name">
+      <button type="button" id="lowCovToggle" class="chip-toggle" aria-pressed="false"
+              title="Show only samples below the {{ params.warn_pct_label }} warn threshold">
+        <span aria-hidden="true">&#9888;</span> Low coverage only
+      </button>
+      <span class="row-count" id="statsRowCount" aria-live="polite"></span>
+    </div>
+    <div class="table-scroll">{{ stats_table_html|safe }}</div>
   </div>
 
   <div class="card" id="throughput-card">
@@ -452,6 +511,46 @@ function enhanceSortHeaders() {
       if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); th.click(); }
     });
   });
+}
+
+/* ---- assembly-stats search + "low coverage only" filter + row count ----
+   Filters the main #stats-table by sample/segment substring and (optionally) to
+   rows below the warn threshold. Visibility is a CSS class so it survives column
+   re-sorts; the row-count label updates live. Roll-up subrows (segmented view,
+   added later) are skipped here — their parent summary row drives visibility. */
+function filterStatsTable() {
+  var table = document.getElementById('stats-table');
+  if (!table || !table.tBodies[0]) return;
+  var searchEl = document.getElementById('statsSearch');
+  var toggleEl = document.getElementById('lowCovToggle');
+  var q = (searchEl && searchEl.value ? searchEl.value : '').trim().toLowerCase();
+  var lowOnly = !!(toggleEl && toggleEl.getAttribute('aria-pressed') === 'true');
+  var warn = (PARAMS && typeof PARAMS.warnThreshold === 'number') ? PARAMS.warnThreshold : 0.70;
+  var shown = 0, total = 0;
+  Array.from(table.tBodies[0].rows).forEach(function (r) {
+    if (r.classList.contains('seg-subrow')) return;   // subrows follow their parent
+    total++;
+    var name = (r.getAttribute('data-sample') || '').toLowerCase();
+    var seg = (r.getAttribute('data-segment') || '').toLowerCase();
+    var cov = parseFloat(r.getAttribute('data-coverage'));
+    var matchQ = !q || name.indexOf(q) !== -1 || seg.indexOf(q) !== -1;
+    var matchLow = !lowOnly || (isFinite(cov) && cov < warn);
+    var show = matchQ && matchLow;
+    r.classList.toggle('row-hidden', !show);
+    if (show) shown++;
+  });
+  var label = document.getElementById('statsRowCount');
+  if (label) label.textContent = shown + ' of ' + total + ' samples';
+}
+function initStatsControls() {
+  var s = document.getElementById('statsSearch');
+  var t = document.getElementById('lowCovToggle');
+  if (s) s.addEventListener('input', filterStatsTable);
+  if (t) t.addEventListener('click', function () {
+    t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    filterStatsTable();
+  });
+  filterStatsTable();  // seed the row-count label
 }
 
 /* ---- Linear/Log10 scale toggle control ---- */
@@ -956,7 +1055,8 @@ window.addEventListener('load', function () {
   var segControls = document.querySelector('#by-segment-details .chart-controls');
   if (segChips && segControls) segControls.appendChild(segChips);
 
-  [themeCharts, initKpiControls, enhanceSortHeaders, enhanceAggregatedToggle].forEach(function (fn) {
+  [themeCharts, initKpiControls, enhanceSortHeaders, initStatsControls,
+   enhanceAggregatedToggle].forEach(function (fn) {
     try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }
   });
 });
