@@ -211,6 +211,47 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn('<td class="num"', html)
 
 
+class TestSegmentedRollupTable(unittest.TestCase):
+    def _html(self, paired=True):
+        df = pd.read_csv(io.StringIO(SEG_CSV))  # sample-A: S1 cov0.95/d100, S2 cov0.80/d50
+        return build_stats_table_html(df, paired=paired, params=ReportParams())
+
+    def test_rollup_has_one_summary_and_per_segment_subrows(self):
+        html = self._html()
+        self.assertIn("stats-rollup", html)
+        self.assertEqual(html.count('data-role="summary"'), 1)  # one sample
+        self.assertEqual(html.count('data-role="subrow"'), 2)  # two segments
+        self.assertIn("2 segments", html)  # the "N segments" tag
+        # subrows are collapsed by default (row-hidden) and expandable.
+        self.assertIn('class="seg-subrow row-hidden"', html)
+        self.assertIn('aria-expanded="false"', html)
+
+    def test_summary_is_mean_coverage_median_depth_wholesample_rate(self):
+        html = self._html(paired=True)
+        # mean coverage across segments = (0.95+0.80)/2 = 0.875 -> 87.5%.
+        self.assertIn('data-coverage="0.875000"', html)
+        self.assertIn(">87.5%<", html)
+        # median depth across segments = median(100,50) = 75.0.
+        self.assertIn(">75.0<", html)
+        # whole-sample rate = sum(3000+2000) / (2 x 4000 QC) = 5000/8000 = 62.5%.
+        self.assertIn(">62.5%<", html)
+
+    def test_subrow_uses_per_segment_values(self):
+        html = self._html(paired=True)
+        # S1 per-segment rate = 3000 / (2 x 4000) = 37.5%.
+        self.assertIn(">37.5%<", html)
+        # per-segment total/QC are blanked (redundant per-sample repeats).
+        self.assertIn('class="num cell-muted">—<', html)
+        # subrows carry the segment name in their data attribute for chip focus.
+        self.assertIn('data-segment="S1"', html)
+        self.assertIn('data-segment="S2"', html)
+
+    def test_nanopore_segmented_not_doubled(self):
+        html = self._html(paired=False)
+        # single-end: whole-sample rate = 5000 / 4000 = 125% (no doubling).
+        self.assertIn(">125.0%<", html)
+
+
 _P = ReportParams()  # default 0.90 / 0.70 thresholds
 
 

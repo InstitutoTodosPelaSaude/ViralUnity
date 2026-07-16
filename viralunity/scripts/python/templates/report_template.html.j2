@@ -133,6 +133,23 @@ table.stats-table th.col-freeze { z-index: 3; }
 .cov-bar-warn { background: var(--status-warn); }
 .cov-bar-fail { background: var(--status-fail); }
 tr.row-hidden { display: none; }
+/* Segmented roll-up: summary rows carry a caret + "N segments" tag; subrows are
+   indented and muted, revealed when the parent row is expanded. */
+.seg-summary { cursor: pointer; }
+.seg-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg-caret::before { content: '\25B8'; color: var(--text-muted); font-size: 0.85em; margin-right: 8px; display: inline-block; transition: transform 0.15s ease; }
+.seg-summary.open .seg-caret::before { transform: rotate(90deg); }
+.seg-tag { margin-left: 10px; font-size: 0.72rem; font-weight: 400; color: var(--text-muted); background: var(--chip, var(--subrow)); border-radius: 10px; padding: 1px 8px; }
+.seg-subrow > td { background: var(--subrow); }
+.cell-subrow { padding-left: 34px; color: var(--text-secondary); }
+.cell-muted { color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) { .seg-caret::before { transition: none; } }
+/* Segment selector chips (focus the table on All or one segment). */
+.seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.seg-chip { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.seg-chip:hover { background: var(--hover); }
+.seg-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 table.stats-table th:hover { color: var(--text-primary); }
 table.stats-table tbody tr:hover { background: var(--hover); }
 /* Client-rendered per-sample/per-segment tables are read-only (not sortable), so
@@ -293,6 +310,14 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 
   <div class="card" id="stats-card">
     <h2>Assembly statistics</h2>
+    {% if segmented %}
+    <div class="seg-chips" id="statsSegChips" role="group" aria-label="Focus table on a segment">
+      <button type="button" class="seg-chip active" data-seg="" aria-pressed="true">All</button>
+      {% for s in segments %}
+      <button type="button" class="seg-chip" data-seg="{{ s }}" aria-pressed="false">{{ s }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="table-controls">
       <input type="search" id="statsSearch" class="table-search"
              placeholder="Filter by sample{% if segmented %} or segment{% endif %}…"
@@ -513,44 +538,128 @@ function enhanceSortHeaders() {
   });
 }
 
-/* ---- assembly-stats search + "low coverage only" filter + row count ----
-   Filters the main #stats-table by sample/segment substring and (optionally) to
-   rows below the warn threshold. Visibility is a CSS class so it survives column
-   re-sorts; the row-count label updates live. Roll-up subrows (segmented view,
-   added later) are skipped here — their parent summary row drives visibility. */
-function filterStatsTable() {
+/* ---- assembly-stats search + "low coverage only" filter + roll-up + chips ----
+   Applies the current view to #stats-table: a sample/segment search substring, an
+   optional "below the warn threshold" filter, the segmented roll-up (caret-
+   expandable subrows), and the segment-focus chips (All ⇄ one segment). Row
+   visibility is a CSS class so it survives column re-sorts; the row-count label
+   updates live. */
+var statsSegMode = '';                 // '' = All (roll-up), else a segment name
+var statsExpanded = {};                // sid -> true for expanded summary rows
+function _statsQuery() {
+  var el = document.getElementById('statsSearch');
+  return (el && el.value ? el.value : '').trim().toLowerCase();
+}
+function _statsLowOnly() {
+  var el = document.getElementById('lowCovToggle');
+  return !!(el && el.getAttribute('aria-pressed') === 'true');
+}
+function _statsWarn() {
+  return (PARAMS && typeof PARAMS.warnThreshold === 'number') ? PARAMS.warnThreshold : 0.70;
+}
+function applyStatsView() {
   var table = document.getElementById('stats-table');
   if (!table || !table.tBodies[0]) return;
-  var searchEl = document.getElementById('statsSearch');
-  var toggleEl = document.getElementById('lowCovToggle');
-  var q = (searchEl && searchEl.value ? searchEl.value : '').trim().toLowerCase();
-  var lowOnly = !!(toggleEl && toggleEl.getAttribute('aria-pressed') === 'true');
-  var warn = (PARAMS && typeof PARAMS.warnThreshold === 'number') ? PARAMS.warnThreshold : 0.70;
-  var shown = 0, total = 0;
-  Array.from(table.tBodies[0].rows).forEach(function (r) {
-    if (r.classList.contains('seg-subrow')) return;   // subrows follow their parent
-    total++;
+  var rows = Array.from(table.tBodies[0].rows);
+  var q = _statsQuery(), lowOnly = _statsLowOnly(), warn = _statsWarn();
+  var segmented = !!document.getElementById('statsSegChips');
+  var shown = 0, total = 0, unit = 'samples';
+
+  var rowMatches = function (r) {
     var name = (r.getAttribute('data-sample') || '').toLowerCase();
     var seg = (r.getAttribute('data-segment') || '').toLowerCase();
     var cov = parseFloat(r.getAttribute('data-coverage'));
-    var matchQ = !q || name.indexOf(q) !== -1 || seg.indexOf(q) !== -1;
+    var matchQ = !q || name.indexOf(q) !== -1 || (seg && seg.indexOf(q) !== -1);
     var matchLow = !lowOnly || (isFinite(cov) && cov < warn);
-    var show = matchQ && matchLow;
-    r.classList.toggle('row-hidden', !show);
-    if (show) shown++;
-  });
+    return matchQ && matchLow;
+  };
+
+  if (!segmented) {
+    rows.forEach(function (r) {
+      total++;
+      var show = rowMatches(r);
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+    });
+  } else if (statsSegMode === '') {
+    // Roll-up view: summary rows drive counting/visibility; subrows appear only
+    // when their (visible) parent is expanded.
+    rows.forEach(function (r) {
+      if (r.getAttribute('data-role') !== 'summary') return;
+      total++;
+      var show = rowMatches(r);
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+      var open = !!statsExpanded[r.getAttribute('data-sid')];
+      r.classList.toggle('open', open);
+      r.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    rows.forEach(function (r) {
+      if (r.getAttribute('data-role') !== 'subrow') return;
+      var parent = table.querySelector(
+        'tr.seg-summary[data-sid="' + r.getAttribute('data-parent') + '"]');
+      var vis = parent && !parent.classList.contains('row-hidden') &&
+                parent.classList.contains('open');
+      r.classList.toggle('row-hidden', !vis);
+    });
+  } else {
+    // Single-segment flat view: hide summaries, show matching subrows only.
+    unit = 'segments';
+    rows.forEach(function (r) {
+      var role = r.getAttribute('data-role');
+      if (role === 'summary' || r.getAttribute('data-segment') !== statsSegMode) {
+        r.classList.add('row-hidden');
+        return;
+      }
+      total++;
+      var show = rowMatches(r);
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+    });
+  }
   var label = document.getElementById('statsRowCount');
-  if (label) label.textContent = shown + ' of ' + total + ' samples';
+  if (label) label.textContent = shown + ' of ' + total + ' ' + unit;
 }
 function initStatsControls() {
   var s = document.getElementById('statsSearch');
   var t = document.getElementById('lowCovToggle');
-  if (s) s.addEventListener('input', filterStatsTable);
+  if (s) s.addEventListener('input', applyStatsView);
   if (t) t.addEventListener('click', function () {
     t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
-    filterStatsTable();
+    applyStatsView();
   });
-  filterStatsTable();  // seed the row-count label
+  // Segmented roll-up: caret-expand summary rows (click or Enter/Space).
+  var table = document.getElementById('stats-table');
+  if (table) {
+    table.querySelectorAll('tr.seg-summary').forEach(function (tr) {
+      var toggle = function () {
+        var sid = tr.getAttribute('data-sid');
+        statsExpanded[sid] = !statsExpanded[sid];
+        applyStatsView();
+      };
+      tr.addEventListener('click', toggle);
+      tr.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+      });
+    });
+  }
+  // Segment-focus chips (All ⇄ single segment).
+  var chipBox = document.getElementById('statsSegChips');
+  if (chipBox) {
+    chipBox.querySelectorAll('.seg-chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        chipBox.querySelectorAll('.seg-chip').forEach(function (b) {
+          b.classList.remove('active');
+          b.setAttribute('aria-pressed', 'false');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        statsSegMode = btn.getAttribute('data-seg') || '';
+        applyStatsView();
+      });
+    });
+  }
+  applyStatsView();  // seed the row-count label + initial visibility
 }
 
 /* ---- Linear/Log10 scale toggle control ---- */

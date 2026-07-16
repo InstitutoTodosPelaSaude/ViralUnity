@@ -700,6 +700,127 @@ def _coverage_cell_html(raw, params: ReportParams) -> str:
     )
 
 
+_ROLLUP_HEADERS = [
+    ("Sample", "col-freeze"),
+    ("Total reads", "th-num"),
+    ("QC-passed", "th-num"),
+    ("Mapped %", "th-num"),
+    ("Mean depth", "th-num"),
+    ("Horizontal coverage", "th-num"),
+]
+
+
+def _segmented_stats_table_html(df: pd.DataFrame, paired: bool, params: ReportParams) -> str:
+    """Roll-up stats table for segmented runs (spec §3): one summary row per sample.
+
+    Instead of ~96×8 flat rows, each sample gets one summary row — coverage = the
+    **mean across its segments**, depth = the **median across its segments**, and
+    Mapped % = the **whole-sample rate** (Σ mapped ÷ QC-passed, denominator doubled
+    when paired; per the user's definition). A caret expands the row to its
+    per-segment subrows (indented, each with its own status dot + per-segment
+    Mapped %). Samples sort worst-mean-coverage-first. The segment selector chips
+    (rendered in the template) drive the All ⇄ single-segment view client-side.
+    """
+    header_cells = []
+    for i, (label, extra) in enumerate(_ROLLUP_HEADERS):
+        is_cov = i == 5
+        aria = "ascending" if is_cov else "none"
+        asc = ' data-asc="true"' if is_cov else ""
+        arrow = "▲" if is_cov else ""
+        header_cells.append(
+            f'<th class="{extra}" data-col="{i}" role="button" tabindex="0" '
+            f'aria-sort="{aria}"{asc} onclick="sortTable(this)">'
+            f'{html.escape(label)}<span class="sort-arrow">{arrow}</span></th>'
+        )
+
+    # Per-sample roll-up, preserving first-seen sample order before the worst-first
+    # sort so ties are stable.
+    samples = _ordered_unique(df["sample_name"].tolist())
+    rollups = []
+    for s in samples:
+        rows = df[df["sample_name"] == s]
+        covs = pd.to_numeric(rows["horizontal_coverage"], errors="coerce").dropna().tolist()
+        depths = pd.to_numeric(rows["average_depth"], errors="coerce").dropna().tolist()
+        qc = rows["number_of_trim_paired_reads"].iloc[0]
+        total = rows["number_of_reads"].iloc[0]
+        sum_mapped = pd.to_numeric(rows["number_of_mapped_reads"], errors="coerce").sum()
+        rollups.append(
+            {
+                "sample": s,
+                "mean_cov": float(np.mean(covs)) if covs else 0.0,
+                "median_depth": float(np.median(depths)) if depths else 0.0,
+                "total": total,
+                "qc": qc,
+                "rate": _mapping_rate(sum_mapped, qc, paired),
+                "n_seg": len(rows),
+                "rows": rows,
+            }
+        )
+    rollups.sort(key=lambda r: r["mean_cov"])  # worst mean coverage first
+
+    body_rows = []
+    for sid, r in enumerate(rollups):
+        s_esc = html.escape(str(r["sample"]))
+        tier = params.tier(r["mean_cov"])
+        rate_tip = html.escape(
+            f'sum of segment mapped reads / {"2× " if paired else ""}QC-passed reads'
+        )
+        summary = (
+            f'<tr class="seg-summary" data-role="summary" data-sid="{sid}" '
+            f'data-sample="{s_esc}" data-segment="" data-coverage="{r["mean_cov"]:.6f}" '
+            f'tabindex="0" role="button" aria-expanded="false">'
+            f'<td class="col-freeze cell-sample">'
+            f'<span class="seg-caret" aria-hidden="true"></span>'
+            f'<span class="cov-dot cov-dot-{tier}" aria-hidden="true"></span>{s_esc}'
+            f'<span class="seg-tag">{r["n_seg"]} segments</span></td>'
+            f'<td class="num" data-sort="{html.escape(str(r["total"]))}">{html.escape(_fmt_int(r["total"]))}</td>'
+            f'<td class="num" data-sort="{html.escape(str(r["qc"]))}">{html.escape(_fmt_int(r["qc"]))}</td>'
+            f'<td class="num" data-sort="{html.escape(str(r["rate"] if r["rate"] is not None else -1))}" '
+            f'title="{rate_tip}">{html.escape(_fmt_rate(r["rate"]))}</td>'
+            f'<td class="num" data-sort="{r["median_depth"]}">{html.escape(_fmt_depth(r["median_depth"]))}</td>'
+            + _coverage_cell_html(r["mean_cov"], params)
+            + "</tr>"
+        )
+        body_rows.append(summary)
+        # Per-segment subrows (hidden until the summary row is expanded).
+        for _, seg_row in r["rows"].iterrows():
+            seg = html.escape(str(seg_row.get("segment", "")))
+            try:
+                seg_cov = float(seg_row.get("horizontal_coverage"))
+            except (TypeError, ValueError):
+                seg_cov = 0.0
+            seg_tier = params.tier(seg_cov)
+            seg_rate = _mapping_rate(
+                seg_row.get("number_of_mapped_reads"),
+                seg_row.get("number_of_trim_paired_reads"),
+                paired,
+            )
+            seg_tip = html.escape(
+                f'{_fmt_int(seg_row.get("number_of_mapped_reads"))} mapped reads / '
+                f'{"2× " if paired else ""}QC-passed reads'
+            )
+            body_rows.append(
+                f'<tr class="seg-subrow row-hidden" data-role="subrow" data-parent="{sid}" '
+                f'data-sample="{s_esc}" data-segment="{seg}" data-coverage="{seg_cov:.6f}">'
+                f'<td class="col-freeze cell-sample cell-subrow">'
+                f'<span class="cov-dot cov-dot-{seg_tier}" aria-hidden="true"></span>{seg}</td>'
+                f'<td class="num cell-muted">—</td>'
+                f'<td class="num cell-muted">—</td>'
+                f'<td class="num" data-sort="{html.escape(str(seg_rate if seg_rate is not None else -1))}" '
+                f'title="{seg_tip}">{html.escape(_fmt_rate(seg_rate))}</td>'
+                f'<td class="num" data-sort="{html.escape(str(seg_row.get("average_depth")))}">'
+                f'{html.escape(_fmt_depth(seg_row.get("average_depth")))}</td>'
+                + _coverage_cell_html(seg_cov, params)
+                + "</tr>"
+            )
+
+    return (
+        '<table class="stats-table stats-rollup" id="stats-table">'
+        f"<thead><tr>{''.join(header_cells)}</tr></thead>"
+        f'<tbody>{"".join(body_rows)}</tbody></table>'
+    )
+
+
 def build_stats_table_html(
     df: pd.DataFrame, paired: bool = True, params: Optional[ReportParams] = None
 ) -> str:
@@ -716,9 +837,14 @@ def build_stats_table_html(
     sortable. Each row carries ``data-sample``/``data-segment``/``data-coverage``
     for the search box and the "low coverage only" filter. Numeric cells are
     right-aligned with tabular figures.
+
+    Segmented runs (a ``segment`` column) roll up to one summary row per sample
+    with expandable per-segment subrows — see :func:`_segmented_stats_table_html`.
     """
     if params is None:
         params = ReportParams()
+    if is_segmented(df):
+        return _segmented_stats_table_html(df, paired, params)
     columns = [c for c in df.columns if c not in PERCENTAGE_ABOVE_COLS]
     # Default sort = coverage ascending (worst first). Stable so ties keep input
     # order. NaN/garbage coverage sinks to the top (treated as worst).
