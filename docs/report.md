@@ -42,9 +42,13 @@ crowding.
   view across segments, with a per-segment selector.
 
 Optional gene (GFF3) and primer-scheme (BED) annotation tracks are drawn beneath
-the by-sample plot and the position-mode heatmap when provided (see the
-consensus `--gene-annotation` / `--primer-scheme` options), with Genes / Primers
-toggles.
+the by-sample plot and the position-mode heatmap, with Genes / Primers toggles.
+The report finds them in order: files staged into `<output>/annotation/` by the
+run, then the paths in the run config (`scheme` / `gene_annotation` — pass
+`--config-file` when regenerating an older run), and finally, for a missing gene
+track, a lookup on NCBI by the reference accession (on by default for `viralunity
+report`; use `--no-fetch-annotation` to stay fully offline). Fetched annotations
+are cached next to the run so later renders need no network.
 
 Charts use a colourblind-safe palette and support a light/dark toggle (top right)
 and print/PDF. Per-base coverage is downsampled with min-pooling before plotting,

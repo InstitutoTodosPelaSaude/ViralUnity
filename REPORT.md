@@ -91,6 +91,15 @@ Two reporting choices are baked into the GFF3 parser (`parse_gff3`) and open to 
 - **Feature type:** `gene` features are drawn, falling back to `CDS` on a contig with no genes.
 - **Label:** the first present of `Name → gene → gene_name → locus_tag → product → ID`.
 
+**Annotation source order** (`build_annotation_model`): the staged
+`<output>/annotation/` file first, then the run config's `scheme` (primer BED) /
+`gene_annotation` (GFF3) paths, then — for a still-missing gene track and only when
+`fetch_annotation` is on (`viralunity report` default; the workflow stays offline) — an
+NCBI feature-table fetch by the reference accession (the coverage contig id), cached back
+as a GFF3 so re-renders don't hit the network. Contig matching tolerates accession-only vs
+pipe-delimited headers and the nanopore sanitisation. NCBI/parse failures degrade to no
+track, never a hard error.
+
 ## Tests
 - `test/scripts/generate_consensus_report_test.py` — pure helpers (metadata, formatting,
   mapping rate, figure builders).

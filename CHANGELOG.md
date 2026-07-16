@@ -51,9 +51,11 @@ stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
   `--segmented-gene-annotation SEGMENT=PATH` GFF3 input, and a **primer-scheme
   track** (amplicons paired into pool rows) from the existing `--primer-scheme`
   BED. Both are drawn as rectangles aligned to the genome x-axis, with Genes /
-  Primers on-off toggles. The files are staged into `<output>/annotation/` so the
-  report and `viralunity report` keep working after the run. Absent when no
-  annotation is provided.
+  Primers on-off toggles. The report resolves them from the staged
+  `<output>/annotation/` files, then the run config's `scheme` / `gene_annotation`
+  paths, then (for a missing gene track) an NCBI lookup by the reference accession
+  — `viralunity report --fetch-annotation/--no-fetch-annotation` (default on; the
+  workflow stays offline), with fetched annotations cached next to the run.
 - `viralunity report --input <consensus-output-dir> [--output report.html]`: a
   standalone subcommand to (re)generate the report from an existing output
   directory without rerunning the pipeline.
