@@ -70,11 +70,14 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn(">Mapped %<", html)
         # depth is linear by default: the old baked "(log)" axis title is gone.
         self.assertNotIn("Depth (log)", html)
-        # KPI summary tiles lead the report (server-rendered, four of them).
+        # KPI summary tiles lead the report (server-rendered, five of them).
         self.assertIn('id="kpi-grid"', html)
         self.assertIn("Samples analyzed", html)
-        for key in ("samples", "ge90", "median_coverage", "median_depth"):
+        for key in ("samples", "pass_count", "below_warn", "median_coverage", "mean_depth"):
             self.assertIn(f'data-kpi="{key}"', html)
+        # threshold labels are derived from the params, not hardcoded 90/70.
+        self.assertIn("&ge;90% coverage", html)
+        self.assertIn("Below 70%", html)
         # these fixtures all ship a config, so the run-parameters drawer is present.
         self.assertIn('id="params-btn"', html)
         self.assertIn('id="params-drawer"', html)
@@ -90,13 +93,16 @@ class TestReportSnapshot(unittest.TestCase):
         # paired x2 reconciliation: sample-A mapped 9000 / (2 x 9500) = 47.4%.
         self.assertIn("47.4%", html)
         # KPI tiles carry the actual server-rendered values (not just the keys):
-        # 2 samples, 1 at >=90% (sample-A 0.995; sample-B 0.70 fails), median
-        # coverage median(0.995,0.70)=0.8475 -> 84.7%, median depth
-        # median(512.4,45.7)=279.05 -> 279.1x (with the x suffix).
+        # 2 samples, 1 at >=90% (sample-A 0.995; sample-B 0.70 warns but is not
+        # below the 0.70 warn cutoff, so below_warn=0), median coverage
+        # median(0.995,0.70)=0.8475 -> 84.7%, mean depth mean(512.4,45.7)=279.05
+        # -> 279.1x (with the x suffix). pass_sub = 1/2 -> "50% of run".
         self.assertIn('data-kpi="samples">2<', html)
-        self.assertIn('data-kpi="ge90">1<', html)
+        self.assertIn('data-kpi="pass_count">1<', html)
+        self.assertIn('data-kpi="below_warn">0<', html)
+        self.assertIn('data-kpi="pass_sub">50% of run<', html)
         self.assertIn('data-kpi="median_coverage">84.7%<', html)
-        self.assertIn('data-kpi="median_depth">279.1×<', html)
+        self.assertIn('data-kpi="mean_depth">279.1×<', html)
 
     def test_nanopore_single_end_snapshot(self):
         html = _render("nanopore")
@@ -109,7 +115,7 @@ class TestReportSnapshot(unittest.TestCase):
         self.assertIn("462,000", html)
         # KPI tiles: single sample at 0.982 breadth / 845.3x depth.
         self.assertIn('data-kpi="median_coverage">98.2%<', html)
-        self.assertIn('data-kpi="median_depth">845.3×<', html)
+        self.assertIn('data-kpi="mean_depth">845.3×<', html)
         # the known zero-coverage run is preserved verbatim in the embedded data
         # (not clamped away): barcode05 begins with five depth-0 positions.
         cov = _coverage_json(html)
@@ -133,7 +139,9 @@ class TestReportSnapshot(unittest.TestCase):
         # weighted depth (220.5,88.2) = 154.35 -> 154.3x.
         self.assertIn('data-kpi="samples">1<', html)
         self.assertIn('data-kpi="median_coverage">94.5%<', html)
-        self.assertIn('data-kpi="median_depth">154.3×<', html)
+        self.assertIn('data-kpi="mean_depth">154.3×<', html)
+        # the "N segments each" subtitle appears under the Samples tile.
+        self.assertIn("2 segments each", html)
 
     def test_unsegmented_has_no_per_segment_kpi_switch(self):
         # a single-genome run has nothing to split by, so no Global/Per-segment toggle.

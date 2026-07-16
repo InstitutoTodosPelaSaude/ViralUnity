@@ -15,6 +15,13 @@
   --border: rgba(11,11,11,0.10);
   --accent: #2a78d6;
   --hover: rgba(42,120,214,0.08);
+  /* Coverage status tiers (constant hue across themes; faint fills differ). */
+  --status-pass: #1b9e5a;
+  --status-warn: #e0a100;
+  --status-fail: #e34948;
+  --status-fail-fill: rgba(227,73,72,0.08);
+  --status-warn-fill: rgba(224,161,0,0.10);
+  --status-pass-fill: rgba(27,158,90,0.10);
 }
 :root[data-theme="dark"] {
   --page-bg: #0d0d0d;
@@ -25,6 +32,12 @@
   --border: rgba(255,255,255,0.10);
   --accent: #3987e5;
   --hover: rgba(57,135,229,0.12);
+  --status-pass: #1b9e5a;
+  --status-warn: #e0a100;
+  --status-fail: #e34948;
+  --status-fail-fill: rgba(227,73,72,0.16);
+  --status-warn-fill: rgba(224,161,0,0.18);
+  --status-pass-fill: rgba(27,158,90,0.16);
 }
 * { box-sizing: border-box; }
 body {
@@ -120,6 +133,10 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
 .kpi-controls { margin: 4px 0 12px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 8px; }
 .kpi-tile { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+/* The "Below warn%" tile turns red only when the count is non-zero — the "how
+   many need attention" signal. Neutral (like every other tile) when zero. */
+.kpi-tile-alert { border-color: var(--status-fail); background: var(--status-fail-fill); }
+.kpi-tile-alert .kpi-value { color: var(--status-fail); }
 .kpi-value { font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text-primary); font-variant-numeric: proportional-nums; }
 .kpi-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 6px; }
 .kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
@@ -191,10 +208,29 @@ table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--acc
   </div>
   {% endif %}
   <div class="kpi-grid" id="kpi-grid">
-    <div class="kpi-tile"><div class="kpi-value" data-kpi="samples">{{ kpi_global.samples }}</div><div class="kpi-label">Samples analyzed</div></div>
-    <div class="kpi-tile"><div class="kpi-value" data-kpi="ge90">{{ kpi_global.ge90 }}</div><div class="kpi-label">&ge;90% coverage</div><div class="kpi-sub" data-kpi="ge90_sub">of {{ kpi_global.samples }} samples</div></div>
-    <div class="kpi-tile"><div class="kpi-value" data-kpi="median_coverage">{{ kpi_global.median_coverage }}</div><div class="kpi-label">Median horizontal coverage</div></div>
-    <div class="kpi-tile"><div class="kpi-value" data-kpi="median_depth">{{ kpi_global.median_depth }}</div><div class="kpi-label">Median mean depth</div></div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="samples">{{ kpi_global.samples }}</div>
+      <div class="kpi-label">Samples analyzed</div>
+      <div class="kpi-sub">{{ kpi_samples_sub }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="pass_count">{{ kpi_global.pass_count }}</div>
+      <div class="kpi-label">&ge;{{ params.pass_pct_label }} coverage</div>
+      <div class="kpi-sub" data-kpi="pass_sub">{{ kpi_global.pass_sub }}</div>
+    </div>
+    <div class="kpi-tile{% if kpi_global.below_warn_nonzero %} kpi-tile-alert{% endif %}" id="kpi-warn-tile" data-kpi-tile="below_warn">
+      <div class="kpi-value" data-kpi="below_warn">{{ kpi_global.below_warn }}</div>
+      <div class="kpi-label">Below {{ params.warn_pct_label }} <span aria-hidden="true">&#9888;</span></div>
+      <div class="kpi-sub">need attention</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="median_coverage">{{ kpi_global.median_coverage }}</div>
+      <div class="kpi-label">Median coverage</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="mean_depth">{{ kpi_global.mean_depth }}</div>
+      <div class="kpi-label">Mean depth</div>
+    </div>
   </div>
 
   <p class="section-title">Overview</p>
@@ -799,11 +835,17 @@ function renderKpi(block) {
     var el = g.querySelector('[data-kpi="' + key + '"]');
     if (el) el.textContent = text;
   };
+  var passPct = block.samples ? Math.round(block.pass_count / block.samples * 100) : 0;
   set('samples', GROUP_KPI.format(block.samples));
-  set('ge90', GROUP_KPI.format(block.ge90));
+  set('pass_count', GROUP_KPI.format(block.pass_count));
+  set('pass_sub', passPct + '% of run');
+  set('below_warn', GROUP_KPI.format(block.below_warn));
   set('median_coverage', kfmtPct(block.median_coverage));
-  set('median_depth', kfmtDepth(block.median_depth));
-  set('ge90_sub', 'of ' + GROUP_KPI.format(block.samples) + ' samples');
+  set('mean_depth', kfmtDepth(block.mean_depth));
+  // The warn tile is red only while its count is non-zero (per-segment scope
+  // may cross the boundary either way).
+  var warnTile = document.getElementById('kpi-warn-tile');
+  if (warnTile) warnTile.classList.toggle('kpi-tile-alert', block.below_warn > 0);
 }
 function initKpiControls() {
   var scope = document.getElementById('kpi-scope');

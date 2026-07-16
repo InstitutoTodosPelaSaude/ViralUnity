@@ -180,35 +180,41 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn("Genome coverage", html)
 
 
+_P = ReportParams()  # default 0.90 / 0.70 thresholds
+
+
 class TestKpiSummary(unittest.TestCase):
     def test_global_unsegmented_counts_and_median(self):
         df = pd.read_csv(io.StringIO(UNSEG_CSV))
-        kpi = build_kpi_summary(df, {}, segmented=False)
+        kpi = build_kpi_summary(df, {}, False, _P)
         g = kpi["global"]
         self.assertEqual(g["samples"], 2)
-        self.assertEqual(g["ge90"], 1)  # sample-A 0.996; sample-B 0.60 fails
+        self.assertEqual(g["pass_count"], 1)  # sample-A 0.996; sample-B 0.60 fails
+        self.assertEqual(g["below_warn"], 1)  # sample-B 0.60 < 0.70 warn cutoff
         # median horizontal coverage = median(0.9959…, 0.60)
         self.assertAlmostEqual(g["median_coverage"], (0.9959535832525165 + 0.6) / 2, places=4)
-        self.assertAlmostEqual(g["median_depth"], (3245.2445239608064 + 45.5) / 2, places=2)
+        # mean depth = mean(3245.24…, 45.5)
+        self.assertAlmostEqual(g["mean_depth"], (3245.2445239608064 + 45.5) / 2, places=2)
         self.assertEqual(kpi["per_segment"], {})
 
     def test_segmented_global_is_length_weighted(self):
         df = pd.read_csv(io.StringIO(SEG_CSV))  # sample-A: S1 hc0.95/d100, S2 hc0.80/d50
         lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
-        g = build_kpi_summary(df, lengths, segmented=True)["global"]
+        g = build_kpi_summary(df, lengths, True, _P)["global"]
         self.assertEqual(g["samples"], 1)
         # weighted breadth = (0.95*3000 + 0.80*1000)/4000 = 0.9125 -> clears 90%
-        self.assertEqual(g["ge90"], 1)
+        self.assertEqual(g["pass_count"], 1)
+        self.assertEqual(g["below_warn"], 0)
         self.assertAlmostEqual(g["median_coverage"], 0.9125, places=4)
         # weighted depth = (100*3000 + 50*1000)/4000 = 87.5
-        self.assertAlmostEqual(g["median_depth"], 87.5, places=3)
+        self.assertAlmostEqual(g["mean_depth"], 87.5, places=3)
 
     def test_segmented_weighting_actually_matters(self):
         # equal weights give breadth 0.875 < 0.90, so the sample would NOT pass —
         # confirms the length weighting is doing the work, not a coincidence.
         df = pd.read_csv(io.StringIO(SEG_CSV))
         equal = {("sample-A", "S1"): 1000, ("sample-A", "S2"): 1000}
-        self.assertEqual(build_kpi_summary(df, equal, segmented=True)["global"]["ge90"], 0)
+        self.assertEqual(build_kpi_summary(df, equal, True, _P)["global"]["pass_count"], 0)
 
     def test_segmented_falls_back_to_equal_weight_when_no_track_lengths(self):
         # Coverage tracks unavailable for every segment (empty lengths) while the
@@ -216,22 +222,46 @@ class TestKpiSummary(unittest.TestCase):
         # equal-weight mean, not collapse to 0%/0x (regression guard for the
         # length-weights-vs-CSV-values divergence).
         df = pd.read_csv(io.StringIO(SEG_CSV))
-        g = build_kpi_summary(df, {}, segmented=True)["global"]
+        g = build_kpi_summary(df, {}, True, _P)["global"]
         self.assertAlmostEqual(g["median_coverage"], (0.95 + 0.80) / 2, places=4)
-        self.assertAlmostEqual(g["median_depth"], (100.0 + 50.0) / 2, places=3)
+        self.assertAlmostEqual(g["mean_depth"], (100.0 + 50.0) / 2, places=3)
         self.assertNotEqual(g["median_coverage"], 0.0)
 
     def test_segmented_per_segment_blocks(self):
         df = pd.read_csv(io.StringIO(SEG_CSV))
         lengths = {("sample-A", "S1"): 3000, ("sample-A", "S2"): 1000}
-        ps = build_kpi_summary(df, lengths, segmented=True)["per_segment"]
+        ps = build_kpi_summary(df, lengths, True, _P)["per_segment"]
         self.assertEqual(set(ps), {"S1", "S2"})
         self.assertEqual(
-            ps["S1"], {"samples": 1, "ge90": 1, "median_coverage": 0.95, "median_depth": 100.0}
+            ps["S1"],
+            {
+                "samples": 1,
+                "pass_count": 1,
+                "below_warn": 0,
+                "median_coverage": 0.95,
+                "mean_depth": 100.0,
+            },
         )
         self.assertEqual(
-            ps["S2"], {"samples": 1, "ge90": 0, "median_coverage": 0.80, "median_depth": 50.0}
+            ps["S2"],
+            {
+                "samples": 1,
+                "pass_count": 0,
+                "below_warn": 0,
+                "median_coverage": 0.80,
+                "mean_depth": 50.0,
+            },
         )
+
+    def test_custom_thresholds_change_counts(self):
+        # With a stricter warn cutoff, sample-B (0.60) still fails; with a lenient
+        # pass cutoff both samples pass. Confirms labels/counts follow params.
+        df = pd.read_csv(io.StringIO(UNSEG_CSV))
+        g = build_kpi_summary(df, {}, False, ReportParams(pass_threshold=0.5, warn_threshold=0.5))[
+            "global"
+        ]
+        self.assertEqual(g["pass_count"], 2)  # both >= 0.5
+        self.assertEqual(g["below_warn"], 0)  # none < 0.5
 
 
 class TestReportMetadata(unittest.TestCase):

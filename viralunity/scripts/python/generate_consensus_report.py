@@ -918,41 +918,76 @@ def _ordered_unique(values) -> List[str]:
     return out
 
 
-def _kpi_block(samples: List[str], breadth: Dict[str, float], depth: Dict[str, float]) -> dict:
-    """One KPI card set: sample count, #>=90% breadth, median breadth, median depth."""
+def _kpi_block(
+    samples: List[str],
+    breadth: Dict[str, float],
+    depth: Dict[str, float],
+    params: ReportParams,
+) -> dict:
+    """One KPI card set (spec §2): sample count, #>=pass, #<warn, median coverage, mean depth.
+
+    ``pass_count`` / ``below_warn`` are computed from the tweakable thresholds so
+    the tile labels can restate them without hardcoding 90/70.
+    """
     depths = [depth[s] for s in samples if s in depth]
     breadths = [breadth[s] for s in samples if s in breadth]
     return {
         "samples": len(samples),
-        "ge90": sum(1 for s in samples if breadth.get(s, 0.0) >= 0.90),
+        "pass_count": sum(1 for s in samples if breadth.get(s, 0.0) >= params.pass_threshold),
+        "below_warn": sum(1 for s in samples if breadth.get(s, 0.0) < params.warn_threshold),
         "median_coverage": float(np.median(breadths)) if breadths else 0.0,
-        "median_depth": float(np.median(depths)) if depths else 0.0,
+        "mean_depth": float(np.mean(depths)) if depths else 0.0,
     }
 
 
 def _kpi_display(block: dict) -> dict:
     """Formatted strings for one KPI block (server-rendered tile fallback)."""
+    samples = block["samples"]
+    pass_pct = (block["pass_count"] / samples * 100) if samples else 0.0
     return {
         "samples": f"{block['samples']:,}",
-        "ge90": f"{block['ge90']:,}",
+        "pass_count": f"{block['pass_count']:,}",
+        "pass_sub": f"{pass_pct:.0f}% of run",
+        "below_warn": f"{block['below_warn']:,}",
+        "below_warn_nonzero": block["below_warn"] > 0,
         "median_coverage": _fmt_pct(block["median_coverage"]),
-        "median_depth": _fmt_depth(block["median_depth"]) + "×",  # × suffix
+        "mean_depth": _fmt_depth(block["mean_depth"]) + "×",  # × suffix
     }
 
 
+def _kpi_samples_subtitle(
+    segments: List[Optional[str]], segmented: bool, metadata: Optional[dict]
+) -> str:
+    """Subtitle under the 'Samples analyzed' tile (spec §2).
+
+    Segmented: "N segments each". Amplicon: the primer-scheme basename if the run
+    declared one, else the generic "amplicon".
+    """
+    if segmented:
+        n = len([s for s in segments if s is not None]) or len(segments)
+        return f"{n} segments each"
+    scheme = (metadata or {}).get("primer_scheme")
+    if scheme:
+        return os.path.basename(str(scheme))
+    return "amplicon"
+
+
 def build_kpi_summary(
-    df: pd.DataFrame, lengths: Dict[Tuple[str, Optional[str]], int], segmented: bool
+    df: pd.DataFrame,
+    lengths: Dict[Tuple[str, Optional[str]], int],
+    segmented: bool,
+    params: ReportParams,
 ) -> dict:
     """Global (and, for segmented runs, per-segment) KPI figures for the top tiles.
 
-    Reports the sample count, the number of samples whose horizontal coverage is
-    >= 90%, the median horizontal coverage, and the median per-sample mean depth.
-    For segmented runs, a sample's breadth and
-    depth are **length-weighted across segments** (weight = each segment's
-    coverage-track length), so both read as whole-genome figures; a sample that
-    drops a segment is correctly penalised rather than having the segment ignored.
+    Reports the sample count, the number of samples at/above the pass threshold,
+    the number below the warn threshold, the median horizontal coverage, and the
+    run-level mean depth. For segmented runs, a sample's breadth and depth are
+    **length-weighted across segments** (weight = each segment's coverage-track
+    length), so both read as whole-genome figures; a sample that drops a segment
+    is correctly penalised rather than having the segment ignored.
 
-    Returns ``{"global": {samples, ge90, ge70, median_depth}, "per_segment": {seg: {...}}}``.
+    Returns ``{"global": {...}, "per_segment": {seg: {...}}}``.
     """
     samples = _ordered_unique(df["sample_name"].tolist())
 
@@ -960,7 +995,7 @@ def build_kpi_summary(
         by = df.drop_duplicates("sample_name").set_index("sample_name")
         breadth = {s: float(by.loc[s, "horizontal_coverage"]) for s in samples}
         depth = {s: float(by.loc[s, "average_depth"]) for s in samples}
-        return {"global": _kpi_block(samples, breadth, depth), "per_segment": {}}
+        return {"global": _kpi_block(samples, breadth, depth, params), "per_segment": {}}
 
     segments = _ordered_unique(df["segment"].tolist())
     # Canonical per-segment length = longest track seen for that segment.
@@ -990,8 +1025,12 @@ def build_kpi_summary(
             s_with,
             {s: hc[(s, seg)] for s in s_with},
             {s: dp[(s, seg)] for s in s_with},
+            params,
         )
-    return {"global": _kpi_block(samples, g_breadth, g_depth), "per_segment": per_segment}
+    return {
+        "global": _kpi_block(samples, g_breadth, g_depth, params),
+        "per_segment": per_segment,
+    }
 
 
 def _load_coverage_cache(output_dir: str, df: pd.DataFrame, segmented: bool) -> Tuple[
@@ -1068,7 +1107,8 @@ def render_report(
     segments = _ordered_unique(df["segment"].tolist()) if segmented else [None]
 
     cache, coverage_lengths, contig_by_segment = _load_coverage_cache(output_dir, df, segmented)
-    kpi_summary = build_kpi_summary(df, coverage_lengths, segmented)
+    kpi_summary = build_kpi_summary(df, coverage_lengths, segmented, params)
+    kpi_samples_sub = _kpi_samples_subtitle(segments, segmented, metadata)
     annotation_model = build_annotation_model(output_dir, segments, contig_by_segment)
 
     # Global figures.
@@ -1137,6 +1177,7 @@ def render_report(
         metadata=metadata,
         kpi_global=_kpi_display(kpi_summary["global"]),
         kpi_json=_json_for_script(kpi_summary),
+        kpi_samples_sub=kpi_samples_sub,
         config_panel_html=build_config_panel_html(config),
         segmented=segmented,
         samples=samples,
