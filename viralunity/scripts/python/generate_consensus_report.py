@@ -146,6 +146,26 @@ class ReportParams:
     chart_color: str = DEFAULT_CHART_COLOR
     colorbar_thickness: int = DEFAULT_COLORBAR_THICKNESS
 
+    def __post_init__(self):
+        # Fail loudly on bad params rather than silently emitting a nonsensical
+        # report (e.g. --pass-threshold 90 read as a fraction, or warn > pass
+        # inverting the tiers, or a colour Plotly can't parse).
+        for name in ("pass_threshold", "warn_threshold"):
+            v = getattr(self, name)
+            if not (isinstance(v, (int, float)) and 0.0 <= float(v) <= 1.0):
+                raise ValueError(f"{name} must be a fraction in [0, 1], got {v!r}")
+        if self.warn_threshold > self.pass_threshold:
+            raise ValueError(
+                f"warn_threshold ({self.warn_threshold}) must be <= pass_threshold "
+                f"({self.pass_threshold})"
+            )
+        if not re.fullmatch(r"#[0-9A-Fa-f]{6}", str(self.chart_color)):
+            raise ValueError(f"chart_color must be a #RRGGBB hex colour, got {self.chart_color!r}")
+        if not (isinstance(self.colorbar_thickness, int) and self.colorbar_thickness > 0):
+            raise ValueError(
+                f"colorbar_thickness must be a positive integer, got {self.colorbar_thickness!r}"
+            )
+
     def tier(self, coverage: float) -> str:
         """Status tier for a horizontal-coverage fraction: ``pass``/``warn``/``fail``."""
         try:
@@ -191,17 +211,36 @@ def read_stats_summary(csv_path: str) -> pd.DataFrame:
     """Read the assembly stats summary CSV (has a header row).
 
     ``keep_default_na=False`` so a segment literally named ``NA`` (influenza's
-    neuraminidase segment) is read as the string ``"NA"``, not parsed to ``NaN``
-    — otherwise the segment key becomes a float and every downstream path/lookup
-    keyed on it breaks. Numeric columns still infer as numbers (the stats CSV
-    never has empty cells).
+    neuraminidase segment) is read as the string ``"NA"``, not parsed to ``NaN``.
+    The identity columns are then forced to ``str``: a segment named ``1``..``8``
+    (numbered influenza segments, or numeric sample ids) would otherwise infer to
+    ``int64`` and break every path/key built from it (``os.path.join`` rejects a
+    non-str). Numeric metric columns keep their inferred numeric dtype.
     """
-    return pd.read_csv(csv_path, keep_default_na=False)
+    df = pd.read_csv(csv_path, keep_default_na=False)
+    for col in ("sample_name", "segment"):
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+    return df
 
 
 def is_segmented(df: pd.DataFrame) -> bool:
     """Segmented runs carry a ``segment`` column (one row per sample x segment)."""
     return "segment" in df.columns
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    """Parse a metric cell to float, degrading to ``default`` on garbage.
+
+    The stats table already coerces its numeric cells defensively; the KPI and
+    ordering paths use this so one non-numeric coverage/depth cell (a crafted or
+    corrupt CSV) degrades that sample rather than crashing the whole report.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
 
 
 def resolve_basewise_path(output_dir: str, sample: str, segment: Optional[str] = None) -> str:
@@ -535,14 +574,24 @@ def _parse_ncbi_feature_table(text: str, feature_types) -> List[dict]:
     return out
 
 
-def fetch_ncbi_gene_features(accession: str, timeout: int = 20) -> List[dict]:
+# A nuccore accession looks like 1-2 letters, optional "_", digits, ".version"
+# (MN908947.3, NC_007373.1, KP164568.1). Contig ids that don't match (de-novo
+# contigs, custom names) are skipped so we never burn a network timeout on an id
+# NCBI could never resolve.
+_ACCESSION_RE = re.compile(r"^[A-Z]{1,2}_?\d{4,}\.\d+$")
+
+
+def fetch_ncbi_gene_features(accession: str, timeout: int = 12) -> List[dict]:
     """Fetch gene features for a nuccore accession from NCBI (efetch feature table).
 
     Network- and parse-failures degrade to ``[]`` with a warning — the report is
     never blocked by an unreachable NCBI or an unannotated accession. Genes are
-    preferred; a record with no gene features falls back to CDS.
+    preferred; a record with no gene features falls back to CDS. An id that does
+    not look like a nuccore accession is skipped without a request.
     """
-    if not accession:
+    if not accession or not _ACCESSION_RE.match(accession):
+        if accession:
+            logger.warning("Skipping NCBI annotation fetch for non-accession contig %r", accession)
         return []
     url = _EFETCH_FT.format(acc=quote(accession))
     try:
@@ -571,9 +620,12 @@ def _write_gff3_cache(path: str, contig: str, features: List[dict]) -> None:
         with open(path, "w") as fh:
             fh.write("##gff-version 3\n")
             for f in features:
+                # Strip GFF3-structural chars from the label so a product name with
+                # ';', a tab or a newline can't corrupt the cached record on re-read.
+                name = re.sub(r"[;\t\r\n]+", " ", str(f["name"])).strip()
                 fh.write(
                     f"{contig}\tNCBI\tgene\t{f['start']}\t{f['end']}\t.\t"
-                    f"{f.get('strand', '.')}\t.\tName={f['name']}\n"
+                    f"{f.get('strand', '.')}\t.\tName={name}\n"
                 )
     except OSError as exc:
         logger.warning("Could not cache fetched annotation to %s: %s", path, exc)
@@ -1313,14 +1365,15 @@ def sample_overall_coverage(
     samples = _ordered_unique(df["sample_name"].tolist())
     if not segmented:
         by = df.drop_duplicates("sample_name").set_index("sample_name")
-        return {s: float(by.loc[s, "horizontal_coverage"]) for s in samples}
+        return {s: _safe_float(by.loc[s, "horizontal_coverage"]) for s in samples}
     segments = _ordered_unique(df["segment"].tolist())
     seg_len = {seg: max((lengths.get((s, seg), 0) for s in samples), default=0) for seg in segments}
     if sum(seg_len.values()) == 0:
         seg_len = {seg: 1 for seg in segments}
     genome = sum(seg_len.values()) or 1
     hc = {
-        (r["sample_name"], r["segment"]): float(r["horizontal_coverage"]) for _, r in df.iterrows()
+        (r["sample_name"], r["segment"]): _safe_float(r["horizontal_coverage"])
+        for _, r in df.iterrows()
     }
     return {
         s: sum(hc.get((s, seg), 0.0) * seg_len[seg] for seg in segments) / genome for s in samples
@@ -1416,10 +1469,10 @@ def _kpi_display(block: dict) -> dict:
     samples = block["samples"]
     pass_pct = (block["pass_count"] / samples * 100) if samples else 0.0
     return {
-        "samples": f"{block['samples']:,}",
-        "pass_count": f"{block['pass_count']:,}",
+        "samples": _fmt_int(block["samples"]),
+        "pass_count": _fmt_int(block["pass_count"]),
         "pass_sub": f"{pass_pct:.0f}% of run",
-        "below_warn": f"{block['below_warn']:,}",
+        "below_warn": _fmt_int(block["below_warn"]),
         "below_warn_nonzero": block["below_warn"] > 0,
         "median_coverage": _fmt_pct(block["median_coverage"]),
         "mean_depth": _fmt_depth(block["mean_depth"]) + "×",  # × suffix
@@ -1464,8 +1517,8 @@ def build_kpi_summary(
 
     if not segmented:
         by = df.drop_duplicates("sample_name").set_index("sample_name")
-        breadth = {s: float(by.loc[s, "horizontal_coverage"]) for s in samples}
-        depth = {s: float(by.loc[s, "average_depth"]) for s in samples}
+        breadth = {s: _safe_float(by.loc[s, "horizontal_coverage"]) for s in samples}
+        depth = {s: _safe_float(by.loc[s, "average_depth"]) for s in samples}
         return {"global": _kpi_block(samples, breadth, depth, params), "per_segment": {}}
 
     segments = _ordered_unique(df["segment"].tolist())
@@ -1480,9 +1533,12 @@ def build_kpi_summary(
         seg_len = {seg: 1 for seg in segments}
     genome_len = sum(seg_len.values()) or 1
     hc = {
-        (r["sample_name"], r["segment"]): float(r["horizontal_coverage"]) for _, r in df.iterrows()
+        (r["sample_name"], r["segment"]): _safe_float(r["horizontal_coverage"])
+        for _, r in df.iterrows()
     }
-    dp = {(r["sample_name"], r["segment"]): float(r["average_depth"]) for _, r in df.iterrows()}
+    dp = {
+        (r["sample_name"], r["segment"]): _safe_float(r["average_depth"]) for _, r in df.iterrows()
+    }
 
     g_breadth, g_depth = {}, {}
     for s in samples:

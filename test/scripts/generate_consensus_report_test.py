@@ -29,6 +29,8 @@ from viralunity.scripts.python.generate_consensus_report import (
     _json_for_script,
     _load_coverage_cache,
     _parse_ncbi_feature_table,
+    _safe_float,
+    _write_gff3_cache,
     build_annotation_model,
     build_heatmap_model,
     build_kpi_summary,
@@ -37,6 +39,7 @@ from viralunity.scripts.python.generate_consensus_report import (
     build_stats_table_html,
     dedupe_and_sum_reads,
     downsample_min_pool,
+    fetch_ncbi_gene_features,
     is_segmented,
     load_basewise_table,
     parse_gff3,
@@ -165,6 +168,25 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertEqual(df["segment"].iloc[0], "NA")
         self.assertIsInstance(df["segment"].iloc[0], str)
 
+    def test_numeric_segment_names_are_read_as_strings(self):
+        # Numbered influenza segments (1..8) must not infer to int64, or every
+        # path/key built from the segment (e.g. os.path.join) blows up.
+        csv = (
+            "sample_name,segment,number_of_reads,number_of_trim_paired_reads,"
+            "number_of_mapped_reads,average_depth,percentage_above_10x,"
+            "percentage_above_100x,percentage_above_1000x,horizontal_coverage\n"
+            "42,1,5000,4000,3000,100.0,0.9,0.8,0.5,0.95\n"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "s.csv")
+            with open(path, "w") as fh:
+                fh.write(csv)
+            df = read_stats_summary(path)
+        self.assertIsInstance(df["segment"].iloc[0], str)
+        self.assertEqual(df["segment"].iloc[0], "1")
+        self.assertIsInstance(df["sample_name"].iloc[0], str)  # numeric sample id too
+        self.assertEqual(df["sample_name"].iloc[0], "42")
+
     def test_table_formats_percentages_and_depth(self):
         df = pd.read_csv(io.StringIO(UNSEG_CSV))
         html = build_stats_table_html(df)
@@ -249,6 +271,18 @@ class TestSegmentedRollupTable(unittest.TestCase):
         # subrows are collapsed by default (row-hidden) and expandable.
         self.assertIn('class="seg-subrow row-hidden"', html)
         self.assertIn('aria-expanded="false"', html)
+
+    def test_subrows_link_to_their_parent_summary(self):
+        # The client's hierarchy-aware sort keys on data-sid/data-parent; if this
+        # contract breaks, sorting silently scatters subrows (the PI-caught bug).
+        import re as _re
+
+        html = self._html()
+        sids = _re.findall(r'data-role="summary" data-sid="(\d+)"', html)
+        parents = _re.findall(r'data-role="subrow" data-parent="(\d+)"', html)
+        self.assertEqual(sids, ["0"])  # one sample
+        self.assertTrue(parents)  # subrows present
+        self.assertTrue(all(p in sids for p in parents))  # every subrow points at a real summary
 
     def test_summary_is_mean_coverage_median_depth_wholesample_rate(self):
         html = self._html(paired=True)
@@ -348,6 +382,15 @@ class TestKpiSummary(unittest.TestCase):
                 "mean_depth": 50.0,
             },
         )
+
+    def test_tolerates_non_numeric_coverage_cell(self):
+        # A corrupt/non-numeric coverage cell must degrade that sample to 0, not
+        # crash the whole KPI computation (consistent with the hardened stats table).
+        csv = UNSEG_CSV.replace(",0.6\n", ",notanumber\n")
+        df = pd.read_csv(io.StringIO(csv), keep_default_na=False)
+        g = build_kpi_summary(df, {}, False, _P)["global"]
+        self.assertEqual(g["samples"], 2)
+        self.assertEqual(g["below_warn"], 1)  # the unparseable sample -> 0.0 < warn
 
     def test_custom_thresholds_change_counts(self):
         # With a stricter warn cutoff, sample-B (0.60) still fails; with a lenient
@@ -682,8 +725,54 @@ class TestAnnotationSourcing(unittest.TestCase):
         self.assertEqual(genes[0], {"start": 266, "end": 500, "name": "orf1ab", "strand": "+"})
         s = genes[1]
         self.assertEqual((s["start"], s["end"], s["name"], s["strand"]), (600, 800, "S", "-"))
-        # no gene features -> CDS fallback finds the CDS.
-        self.assertTrue(_parse_ncbi_feature_table(ft, ("CDS",)))
+        # no gene features -> CDS fallback finds the CDS with real coords/name.
+        cds = _parse_ncbi_feature_table(ft, ("CDS",))
+        self.assertEqual(cds[0], {"start": 266, "end": 500, "name": "pp1ab", "strand": "+"})
+
+    def test_parse_ncbi_multi_interval_span_and_locus_tag(self):
+        ft = (
+            ">Feature gb|X|\n"
+            # multi-exon gene: span must widen to min-start..max-end across intervals
+            "100\t200\tgene\n300\t450\n\t\t\tlocus_tag\tLT_1\n"
+        )
+        genes = _parse_ncbi_feature_table(ft, ("gene",))
+        self.assertEqual(len(genes), 1)
+        self.assertEqual((genes[0]["start"], genes[0]["end"]), (100, 450))  # spans both intervals
+        self.assertEqual(genes[0]["name"], "LT_1")  # locus_tag used when no gene qualifier
+
+    def test_fetch_skips_non_accession_without_network(self):
+        # A de-novo/custom contig id must not trigger a (doomed) network call.
+        with mock.patch("urllib.request.urlopen") as u:
+            self.assertEqual(fetch_ncbi_gene_features("contig_00017"), [])
+            u.assert_not_called()
+
+    def test_fetch_parses_and_degrades(self):
+        ft = b">Feature gb|MN908947.3|\n266\t500\tgene\n\t\t\tgene\torf1ab\n"
+        cm = mock.MagicMock()
+        cm.read.return_value = ft
+        cm.__enter__.return_value = cm
+        with mock.patch("urllib.request.urlopen", return_value=cm):
+            genes = fetch_ncbi_gene_features("MN908947.3")
+        self.assertEqual(genes, [{"start": 266, "end": 500, "name": "orf1ab", "strand": "+"}])
+        # a network error degrades to [] (never blocks the report).
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("no net")):
+            self.assertEqual(fetch_ncbi_gene_features("MN908947.3"), [])
+
+    def test_gff3_cache_sanitizes_feature_names(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "annotation", "gene_annotation.gff3")
+            _write_gff3_cache(
+                path, "chrX", [{"start": 1, "end": 9, "name": "a;b\tc", "strand": "+"}]
+            )
+            body = open(path).read()
+        # the ';'/tab in the product name must not break the GFF3 attribute column.
+        self.assertIn("Name=a b c", body)
+        # and it round-trips cleanly back through the parser.
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "g.gff3")
+            _write_gff3_cache(path, "chrX", [{"start": 1, "end": 9, "name": "x;y", "strand": "+"}])
+            feats = parse_gff3(path, "chrX")
+        self.assertEqual(feats[0]["name"], "x y")
 
     def test_build_model_falls_back_to_config_paths(self):
         # An output dir with coverage but NO staged annotation/ ; the config points
@@ -875,6 +964,30 @@ class TestReportParams(unittest.TestCase):
 
     def test_from_config_empty(self):
         self.assertEqual(report_params_from_config(None), ReportParams())
+
+    def test_rejects_out_of_range_and_inverted_thresholds(self):
+        with self.assertRaises(ValueError):
+            ReportParams(pass_threshold=90)  # percent mistaken for a fraction
+        with self.assertRaises(ValueError):
+            ReportParams(pass_threshold=0.90, warn_threshold=0.95)  # warn > pass
+        with self.assertRaises(ValueError):
+            ReportParams(pass_threshold=-0.1)
+
+    def test_rejects_bad_colour_and_thickness(self):
+        with self.assertRaises(ValueError):
+            ReportParams(chart_color="notacolor")
+        with self.assertRaises(ValueError):
+            ReportParams(chart_color="#12345")  # 5 hex digits
+        with self.assertRaises(ValueError):
+            ReportParams(colorbar_thickness=0)
+
+
+class TestSafeFloat(unittest.TestCase):
+    def test_parses_and_degrades(self):
+        self.assertEqual(_safe_float("0.95"), 0.95)
+        self.assertEqual(_safe_float('"><img>'), 0.0)  # crafted cell -> default
+        self.assertEqual(_safe_float(float("inf")), 0.0)  # non-finite -> default
+        self.assertEqual(_safe_float(None, default=-1.0), -1.0)
 
 
 class TestHtmlEscaping(unittest.TestCase):
