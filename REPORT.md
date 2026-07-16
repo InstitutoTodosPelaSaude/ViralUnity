@@ -81,11 +81,13 @@ Optional gene (GFF3) and primer-scheme (BED) tracks are drawn as rectangles on a
 beneath the depth line, sharing the genome x-axis, on the by-sample and position-mode heatmap
 views. They are Plotly
 traces (not layout shapes) so they survive the Linear/Log10 rebuild and stay fixed while the depth
-axis toggles. The files are staged into `<output>/annotation/` by the workflow (column 1 is
-sanitized on Nanopore to match the sanitized coverage contig names), and the report matches features
-to each segment's contig by exact name. Genes / Primers chips toggle each track; both default on and
-appear only when that data is present. Track hues are low-chroma, sourced from Python, and kept
-distinct from the depth-series blue (validated in `palette_validation_test.py`).
+axis toggles. The band uses fixed **pixel geometry** (`annotationTraces`): one thin **Annotation**
+lane whose feature names sit in a label strip *above* the bars (so a short feature's name never
+spills right into its neighbour), then a larger gap, then the primer **pool** lanes drawn thin (6px)
+and clustered tightly under a single "Primers" label (the pools are one concept). **Annotation** and
+**Primers** are independent on-off pill toggles, each present only when that data is. Track hues are
+low-chroma, sourced from Python, and kept distinct from the depth-series blue (validated in
+`palette_validation_test.py`).
 
 Two reporting choices are baked into the GFF3 parser (`parse_gff3`) and open to revision:
 - **Feature type:** `gene` features are drawn, falling back to `CDS` on a contig with no genes.
