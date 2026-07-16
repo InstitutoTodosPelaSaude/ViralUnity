@@ -185,8 +185,15 @@ class ReportParams:
 # Data loading / shape
 # --------------------------------------------------------------------------- #
 def read_stats_summary(csv_path: str) -> pd.DataFrame:
-    """Read the assembly stats summary CSV (has a header row)."""
-    return pd.read_csv(csv_path)
+    """Read the assembly stats summary CSV (has a header row).
+
+    ``keep_default_na=False`` so a segment literally named ``NA`` (influenza's
+    neuraminidase segment) is read as the string ``"NA"``, not parsed to ``NaN``
+    — otherwise the segment key becomes a float and every downstream path/lookup
+    keyed on it breaks. Numeric columns still infer as numbers (the stats CSV
+    never has empty cells).
+    """
+    return pd.read_csv(csv_path, keep_default_na=False)
 
 
 def is_segmented(df: pd.DataFrame) -> bool:

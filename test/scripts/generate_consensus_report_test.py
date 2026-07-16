@@ -142,6 +142,24 @@ class TestReadStatsAndTable(unittest.TestCase):
         self.assertIn("sample_name", df.columns)
         self.assertEqual(len(df), 2)
 
+    def test_na_segment_name_is_not_parsed_as_nan(self):
+        # Influenza's NA (neuraminidase) segment must stay the string "NA", not be
+        # coerced to NaN (which would make the segment key a float and break every
+        # path/lookup keyed on it).
+        csv = (
+            "sample_name,segment,number_of_reads,number_of_trim_paired_reads,"
+            "number_of_mapped_reads,average_depth,percentage_above_10x,"
+            "percentage_above_100x,percentage_above_1000x,horizontal_coverage\n"
+            "sample-A,NA,5000,4000,3000,100.0,0.9,0.8,0.5,0.95\n"
+        )
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "s.csv")
+            with open(path, "w") as fh:
+                fh.write(csv)
+            df = read_stats_summary(path)
+        self.assertEqual(df["segment"].iloc[0], "NA")
+        self.assertIsInstance(df["segment"].iloc[0], str)
+
     def test_table_formats_percentages_and_depth(self):
         df = pd.read_csv(io.StringIO(UNSEG_CSV))
         html = build_stats_table_html(df)
