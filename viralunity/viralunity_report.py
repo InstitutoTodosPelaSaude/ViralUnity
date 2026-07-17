@@ -15,13 +15,6 @@ import os
 
 import click
 
-from viralunity.scripts.python.generate_consensus_report import (
-    build_report_metadata,
-    load_run_config,
-    report_params_from_config,
-    write_report,
-)
-
 logger = logging.getLogger(__name__)
 
 
@@ -94,6 +87,24 @@ def report(
     fetch_annotation,
 ):
     """Generate an interactive HTML report from a consensus output directory."""
+    # Imported lazily so the report generator's dependencies (plotly, jinja2)
+    # are only required when a report is actually built. A module-scope import
+    # here would make them hard requirements for every ``viralunity`` subcommand,
+    # even though the pipeline builds reports in a separate ``envs/report.yaml``
+    # conda env. See test/cli_import_constraint_test.py.
+    try:
+        from viralunity.scripts.python.generate_consensus_report import (
+            build_report_metadata,
+            load_run_config,
+            report_params_from_config,
+            write_report,
+        )
+    except ImportError as e:
+        raise click.ClickException(
+            f"The report generator's dependencies are missing ({e}). "
+            "Install them with 'pip install plotly jinja2' (or reinstall "
+            "viralunity, which declares them)."
+        )
     if not os.path.isdir(input_dir):
         raise click.ClickException(f"Input directory not found: {input_dir}")
     if config_file and not os.path.isfile(config_file):

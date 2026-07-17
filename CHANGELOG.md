@@ -71,6 +71,12 @@ stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
 
 ### Fixed
 
+- The `plotly`/`jinja2` report dependencies are now imported lazily, only when a
+  report is actually built. Previously the top-level CLI eagerly imported the
+  report generator, so **every** `viralunity` subcommand (`create-samplesheet`,
+  `meta`, `consensus`, …) crashed with `ModuleNotFoundError: No module named
+  'plotly'` in any environment that predates 1.4.0, even though the pipeline
+  builds reports in a separate conda env that never needs them in the base env.
 - A segment literally named `NA` (influenza's neuraminidase segment) is no longer
   parsed as `NaN` when reading the stats summary, which previously crashed
   coverage-path resolution on real NA-segment runs.
