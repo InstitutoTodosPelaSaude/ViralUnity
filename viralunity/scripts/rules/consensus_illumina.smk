@@ -83,23 +83,36 @@ rule generate_vcf_consensus:
         set -euo pipefail
         out_prefix=$(echo {output.vcf} | sed 's/.vcf.gz//')
 
-        # Check if the consensus FASTA has sequence content (excluding header)
-        if grep -v "^>" {input.consensus} | grep -q "[A-Za-z]"; then
+        write_mock_vcf() {{
+            echo "##fileformat=VCFv4.2" > $out_prefix.vcf
+            printf "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" >> $out_prefix.vcf
+            bgzip -f $out_prefix.vcf
+            tabix -p vcf {output.vcf} || touch {output.vcf_index}
+        }}
+
+        # Only align when the consensus has real bases. "N" is not sequence
+        # content, so an all-N / near-empty consensus (a zero-coverage sample
+        # against a divergent reference) must NOT be sent to GSAlign -- it would
+        # produce no VCF and fail the whole run under `set -euo pipefail`.
+        if grep -v "^>" {input.consensus} | grep -qi "[ACGT]"; then
+            # GSAlign may still emit no VCF on a degenerate query; keep going and
+            # fall back to a mock VCF rather than aborting the run.
             GSAlign \
                 -r {input.reference} \
                 -q {input.consensus} \
                 -o $out_prefix \
                 -fmt 1 \
-                -sen
-
-            bgzip -f $out_prefix.vcf
-            tabix -p vcf {output.vcf}
+                -sen || true
             rm -f $out_prefix.maf
+            if [ -s "$out_prefix.vcf" ]; then
+                bgzip -f $out_prefix.vcf
+                tabix -p vcf {output.vcf} || touch {output.vcf_index}
+            else
+                echo "Warning: GSAlign produced no VCF for {wildcards.sample}. Creating a mock VCF." >&2
+                write_mock_vcf
+            fi
         else
             echo "Warning: Consensus sequence for {wildcards.sample} is empty. Creating a mock VCF." >&2
-            echo "##fileformat=VCFv4.2" > $out_prefix.vcf
-            printf "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n" >> $out_prefix.vcf
-            bgzip -f $out_prefix.vcf
-            tabix -p vcf {output.vcf} || touch {output.vcf_index}
+            write_mock_vcf
         fi
         """

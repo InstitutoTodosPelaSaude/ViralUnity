@@ -71,6 +71,18 @@ stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
 
 ### Fixed
 
+- A near-empty (all-`N`) consensus no longer aborts an entire Illumina consensus
+  run. The `generate_vcf_consensus` emptiness guard matched `N` (via `[A-Za-z]`),
+  so a zero-coverage sample against a divergent reference was sent to GSAlign,
+  which then produced no VCF and failed the rule under `pipefail` — and because
+  every per-sample VCF is a required target, one bad sample discarded the
+  consensus of every other sample in the run (and in the segmented workflow, every
+  sample×segment). The guard now tests for real bases (`[ACGT]`) so all-N
+  consensuses take the existing mock-VCF branch, and the GSAlign branch falls back
+  to a mock VCF if GSAlign emits nothing. This also affects
+  `viralunity meta --run-reference-assembly`, which reuses the same rule.
+  *Behavior change for review: zero-coverage samples now yield a valid empty VCF
+  and their (all-N) consensus is retained, instead of crashing the run.*
 - The `plotly`/`jinja2` report dependencies are now imported lazily, only when a
   report is actually built. Previously the top-level CLI eagerly imported the
   report generator, so **every** `viralunity` subcommand (`create-samplesheet`,
