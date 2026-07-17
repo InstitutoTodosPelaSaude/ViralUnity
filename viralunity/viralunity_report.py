@@ -100,6 +100,11 @@ def report(
             write_report,
         )
     except ImportError as e:
+        # Only translate a missing report dependency into a friendly hint; a real
+        # ImportError from inside the report core (e.g. a bad refactor) must
+        # surface as itself rather than a misleading "install plotly" message.
+        if (e.name or "").split(".")[0] not in {"plotly", "jinja2"}:
+            raise
         raise click.ClickException(
             f"The report generator's dependencies are missing ({e}). "
             "Install them with 'pip install plotly jinja2' (or reinstall "

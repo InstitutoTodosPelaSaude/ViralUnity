@@ -29,7 +29,12 @@ class _Blocker:
         self.names = set(names)
     def find_spec(self, fullname, path, target=None):
         if fullname.split(".")[0] in self.names:
-            raise ModuleNotFoundError(fullname + " is blocked (report-only dep)")
+            # Set `name` like a real missing-module error so code that inspects
+            # `e.name` (e.g. the report command's dependency hint) behaves as it
+            # would in a genuinely plotly-less environment.
+            raise ModuleNotFoundError(
+                fullname + " is blocked (report-only dep)", name=fullname
+            )
         return None
 
 BLOCKED = {"plotly", "jinja2"}
@@ -45,6 +50,16 @@ from click.testing import CliRunner
 for sub in ("meta", "create-samplesheet", "consensus"):
     result = CliRunner().invoke(cli, [sub, "--help"])
     assert result.exit_code == 0, sub + " --help failed:\n" + result.output
+
+# report --help must also work without the deps (the callback never runs)...
+assert CliRunner().invoke(cli, ["report", "--help"]).exit_code == 0, "report --help failed"
+# ...but actually running report without the deps must fail with the friendly hint,
+# not a raw ModuleNotFoundError traceback.
+result = CliRunner().invoke(cli, ["report", "--input", "/nonexistent/vu/dir"])
+assert result.exit_code != 0, "report should fail when deps are missing"
+assert "dependencies are missing" in result.output, (
+    "expected the friendly missing-deps message, got:\n" + result.output
+)
 
 print("OK")
 """

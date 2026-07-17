@@ -95,15 +95,24 @@ rule generate_vcf_consensus:
         # against a divergent reference) must NOT be sent to GSAlign -- it would
         # produce no VCF and fail the whole run under `set -euo pipefail`.
         if grep -v "^>" {input.consensus} | grep -qi "[ACGT]"; then
-            # GSAlign may still emit no VCF on a degenerate query; keep going and
-            # fall back to a mock VCF rather than aborting the run.
+            # Clear any stale VCF from a previous run so the emptiness check below
+            # reflects only this GSAlign invocation (the raw .vcf is not a tracked
+            # Snakemake output, so it is not cleaned automatically).
+            rm -f "$out_prefix.vcf"
+            # GSAlign may legitimately emit no VCF on a degenerate query; capture
+            # its exit status so a genuine tool failure is logged distinctly, but
+            # neither case aborts the run -- both fall back to a mock VCF.
+            gsalign_rc=0
             GSAlign \
                 -r {input.reference} \
                 -q {input.consensus} \
                 -o $out_prefix \
                 -fmt 1 \
-                -sen || true
+                -sen || gsalign_rc=$?
             rm -f $out_prefix.maf
+            if [ "$gsalign_rc" -ne 0 ]; then
+                echo "Warning: GSAlign exited with status $gsalign_rc for {wildcards.sample}; falling back to a mock VCF." >&2
+            fi
             if [ -s "$out_prefix.vcf" ]; then
                 bgzip -f $out_prefix.vcf
                 tabix -p vcf {output.vcf} || touch {output.vcf_index}

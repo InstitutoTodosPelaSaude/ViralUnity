@@ -1266,6 +1266,8 @@ def build_reads_histogram(
     # ~20px per row (matching the coverage heatmap) so every sample gets a tick
     # label: at a tighter row height Plotly thins the category labels (drops every
     # other one), leaving the visible labels no longer aligned 1:1 with the bars.
+    # (``segmented`` no longer affects the row height -- it is kept in the
+    # signature for symmetry with the other ``build_*`` helpers.)
     height = max(220, 96 + n * 20)
     fig = go.Figure()
     fig.add_bar(
