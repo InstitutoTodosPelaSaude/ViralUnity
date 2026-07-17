@@ -25,6 +25,7 @@ After a successful run, the output directory is organised as follows:
 │       ├── table_cov_basewise.txt
 │       ├── raw_mapped_reads.bam
 │       └── trimmed_mapped_reads.bam
+├── report.html                      # interactive HTML report (unless --no-generate-html-report)
 └── benchmark.tsv                    # per-task runtime
 ```
 
@@ -36,6 +37,7 @@ After a successful run, the output directory is organised as follows:
 | `samples/{sample}/consensus.fasta` | Final consensus sequence |
 | `samples/{sample}/table_cov_basewise.txt` | Per-base coverage table |
 | `samples/{sample}/raw_mapped_reads.bam` | Reads mapped to the reference |
+| `report.html` | Interactive self-contained report — see [Interactive HTML Report](report.md) |
 | `benchmark.tsv` | Runtime and resource usage per task |
 
 ---

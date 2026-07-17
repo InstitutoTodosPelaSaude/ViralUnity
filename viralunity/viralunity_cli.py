@@ -9,6 +9,7 @@ from viralunity.viralunity_consensus_cli import consensus
 from viralunity.viralunity_create_samplesheet import create_samplesheet
 from viralunity.viralunity_get_databases_cli import get_databases
 from viralunity.viralunity_meta_cli import meta
+from viralunity.viralunity_report import report
 from viralunity.viralunity_setup_cli import setup
 
 
@@ -38,6 +39,7 @@ def cli(log_level: str, json_logs: bool) -> None:
     * create-samplesheet  generate a sample sheet from a sequencing directory
     * get-databases       download/build reference databases
     * build-deacon-index  build a Deacon index for host depletion
+    * report              build an interactive HTML report from a consensus output dir
 
     Run ``viralunity <subcommand> --help`` for subcommand-specific options.
     """
@@ -50,6 +52,7 @@ cli.add_command(setup)
 cli.add_command(create_samplesheet)
 cli.add_command(get_databases)
 cli.add_command(build_deacon_index)
+cli.add_command(report)
 
 
 def main() -> None:

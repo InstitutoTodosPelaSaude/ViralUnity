@@ -10,6 +10,7 @@ reference:
   SEG2: data/references/segment2.fasta
 
 scheme: NA
+gene_annotation: NA
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .

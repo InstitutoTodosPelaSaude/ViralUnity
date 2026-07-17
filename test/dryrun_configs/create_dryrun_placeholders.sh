@@ -28,6 +28,13 @@ touch data/references/segment1.fasta
 touch data/references/segment2.fasta
 touch data/references/segment3.fasta
 
+# Create dummy annotation files (primer BED + gene-annotation GFF3, incl. per-segment)
+touch data/references/primers.bed
+touch data/references/gene_annotation.gff3
+touch data/references/segment1.gff3
+touch data/references/segment2.gff3
+touch data/references/segment3.gff3
+
 # Create dummy database files
 touch databases/kraken2/hash.k2d
 touch databases/krona/taxonomy/taxonomy.tab

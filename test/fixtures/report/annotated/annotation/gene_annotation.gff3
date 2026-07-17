@@ -1,0 +1,3 @@
+##gff-version 3
+MN908947.3	RefSeq	gene	10	120	.	+	.	ID=gene-orf1ab;Name=ORF1ab
+MN908947.3	RefSeq	gene	130	260	.	+	.	ID=gene-S;Name=S

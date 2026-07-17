@@ -1,0 +1,2 @@
+sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,average_depth,percentage_above_10x,percentage_above_100x,percentage_above_1000x,horizontal_coverage
+barcode05,462000,462000,256410,845.3,0.98,0.90,0.20,0.982

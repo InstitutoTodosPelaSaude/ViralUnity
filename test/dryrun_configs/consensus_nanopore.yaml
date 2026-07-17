@@ -7,6 +7,7 @@ output: test/dryrun_output/consensus_nanopore/
 threads: 4
 reference: data/references/reference.fasta
 scheme: NA
+gene_annotation: NA
 minimum_depth: 20
 minimum_length: 50
 workflow_path: .

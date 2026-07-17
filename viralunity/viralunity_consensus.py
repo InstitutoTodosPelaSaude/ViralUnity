@@ -63,14 +63,22 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
     else:
         logger.info("A primer scheme was provided (Amplicon sequencing)...")
 
+    # Handle gene annotation - set to "NA" if not provided (a collapsed
+    # segmented dict is truthy and preserved).
+    if not args.get("gene_annotation"):
+        args["gene_annotation"] = "NA"
+
     # Validate data-type specific requirements
     validate_illumina_requirements(args)
 
     # ``validate_consensus_requirements`` parses ``--segmented-reference``
-    # (``L=/path/L.fasta``) into a dict stored under ``reference``. Now
-    # that the dict exists, resolve its values to absolute paths.
+    # (``L=/path/L.fasta``) into a dict stored under ``reference`` (and the
+    # segmented gene annotation into ``gene_annotation``). Now that the dicts
+    # exist, resolve their values to absolute paths.
     if isinstance(args.get("reference"), dict):
         resolve_path_args(args, ("reference",))
+    if isinstance(args.get("gene_annotation"), dict):
+        resolve_path_args(args, ("gene_annotation",))
 
     logger.info("All arguments validated successfully")
     return samples
@@ -93,6 +101,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
     generator.add_consensus_settings(
         reference=args["reference"],
         primer_scheme=args.get("primer_scheme", "NA"),
+        gene_annotation=args.get("gene_annotation", "NA"),
         minimum_coverage=args.get("minimum_coverage", 20),
         minimap2_consensus_align_flags=args.get(
             "minimap2_consensus_align_flags",
@@ -115,6 +124,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
             variant_quality=args.get("variant_quality", 20),
             variant_depth=args.get("variant_depth", 10),
             minimum_map_quality=args.get("minimum_map_quality", 30),
+            generate_html_report=args.get("generate_html_report", True),
         )
 
     # Add Illumina-specific settings if needed
@@ -131,6 +141,7 @@ def generate_config_file(samples: Dict[str, list], args: Dict[str, Any]) -> None
             af_threshold=args.get("af_threshold", 0.51),
             af_isnv_threshold=args.get("af_isnv_threshold", 0),
             run_isnv=args.get("run_isnv", False),
+            generate_html_report=args.get("generate_html_report", True),
         )
 
     # Add resource settings

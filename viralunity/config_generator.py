@@ -101,6 +101,7 @@ class ConfigGenerator:
         variant_quality: int,
         variant_depth: int,
         minimum_map_quality: int,
+        generate_html_report: bool = True,
     ) -> None:
         """Add Nanopore consensus-specific settings to configuration.
 
@@ -112,6 +113,7 @@ class ConfigGenerator:
             variant_quality: Minimum variant quality to call a variant into consensus [clair3]
             variant_depth: Minimum alt allele depth to call a variant into consensus [clair3]
             minimum_map_quality: Minimum map quality to call a variant into consensus [clair3]
+            generate_html_report: Whether to generate the interactive HTML report
         """
         P = self.SECTION_PARAMETERS
         self._set(ConfigKeys.MINIMUM_LENGTH, minimum_read_length, P)
@@ -121,6 +123,7 @@ class ConfigGenerator:
         self._set(ConfigKeys.VARIANT_QUALITY, variant_quality, P)
         self._set(ConfigKeys.VARIANT_DEPTH, variant_depth, P)
         self._set(ConfigKeys.MINIMUM_MAP_QUALITY, minimum_map_quality, P)
+        self._set(ConfigKeys.GENERATE_HTML_REPORT, generate_html_report, P)
 
     def add_illumina_settings(
         self,
@@ -135,6 +138,7 @@ class ConfigGenerator:
         af_threshold: float = 0.5,
         af_isnv_threshold: float = 0.05,
         run_isnv: bool = False,
+        generate_html_report: bool = True,
     ) -> None:
         """Add Illumina-specific settings to configuration (fastp QC).
 
@@ -150,6 +154,7 @@ class ConfigGenerator:
             af_threshold: Allele frequency threshold to call a variant into consensus
             af_isnv_threshold: Minimum allele frequency threshold to call a variant into iSNV analysis
             run_isnv: Whether to run iSNV analysis
+            generate_html_report: Whether to generate the interactive HTML report
         """
         P = self.SECTION_PARAMETERS
         self._set(ConfigKeys.ADAPTERS, adapters, P)
@@ -163,12 +168,14 @@ class ConfigGenerator:
         self._set(ConfigKeys.AF_THRESHOLD, af_threshold, P)
         self._set(ConfigKeys.AF_ISNV_THRESHOLD, af_isnv_threshold, P)
         self._set(ConfigKeys.RUN_ISNV, run_isnv, P)
+        self._set(ConfigKeys.GENERATE_HTML_REPORT, generate_html_report, P)
 
     def add_consensus_settings(
         self,
         reference: Union[str, Dict[str, str]],
         primer_scheme: str,
         minimum_coverage: int,
+        gene_annotation: Union[str, Dict[str, str]] = "NA",
         minimap2_consensus_align_flags: str = "-a --sam-hit-only --secondary=no --score-N=0",
     ) -> None:
         """Add consensus-specific settings to configuration.
@@ -178,6 +185,9 @@ class ConfigGenerator:
             segment names to paths for segmented viruses
             primer_scheme: Path to primer scheme file or "NA"
             minimum_coverage: Minimum coverage for consensus
+            gene_annotation: Path to a gene-annotation GFF3 (str), a dict
+                mapping segment names to GFF3 paths for segmented viruses,
+                or "NA" when no annotation was provided.
             minimap2_consensus_align_flags: Flags passed to minimap2 when
                 re-aligning the per-sample consensus FASTA back to the
                 reference for the final multiple-sequence alignment. The
@@ -186,6 +196,7 @@ class ConfigGenerator:
         P = self.SECTION_PARAMETERS
         self._set(ConfigKeys.REFERENCE, reference, P)
         self._set(ConfigKeys.SCHEME, primer_scheme, P)
+        self._set(ConfigKeys.GENE_ANNOTATION, gene_annotation, P)
         self._set(ConfigKeys.MINIMUM_DEPTH, minimum_coverage, P)
         self._set(
             ConfigKeys.MINIMAP2_CONSENSUS_ALIGN_FLAGS,

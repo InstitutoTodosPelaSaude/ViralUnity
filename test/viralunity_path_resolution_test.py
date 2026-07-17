@@ -281,6 +281,7 @@ class TestConsensusMainResolvesPaths(unittest.TestCase):
                         "output": "out/cons",
                         "reference": "refs/ref.fasta",
                         "primer_scheme": "schemes/scheme.bed",
+                        "gene_annotation": "annot/genes.gff3",
                         "adapters": "adapters/illumina.fa",
                         "create_config_only": True,
                         "threads_total": 1,
@@ -295,6 +296,7 @@ class TestConsensusMainResolvesPaths(unittest.TestCase):
             "output",
             "reference",
             "primer_scheme",
+            "gene_annotation",
             "adapters",
         ):
             self.assertTrue(

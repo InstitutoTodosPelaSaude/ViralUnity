@@ -24,6 +24,7 @@ commands
 architecture
 embedding
 output
+report
 notes
 citation
 ```

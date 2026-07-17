@@ -24,6 +24,7 @@ class ConfigKeys:
     KRONA_DATABASE = "krona_database"
     REFERENCE = "reference"
     SCHEME = "scheme"
+    GENE_ANNOTATION = "gene_annotation"
     ADAPTERS = "adapters"
     MINIMUM_LENGTH = "minimum_length"
     MINIMUM_DEPTH = "minimum_depth"
@@ -94,6 +95,7 @@ class ConfigKeys:
     VARIANT_DEPTH = "variant_depth"
     MINIMUM_MAP_QUALITY = "minimum_map_quality"
     RUN_ISNV = "run_isnv"
+    GENERATE_HTML_REPORT = "generate_html_report"
 
 
 class SampleSheetPattern:

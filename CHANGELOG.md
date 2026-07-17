@@ -7,6 +7,100 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.4.0] - 2026-07-16
+
+Adds an interactive, self-contained HTML report for consensus runs, designed to
+stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
+
+### Added
+
+- Interactive consensus HTML report: a single offline-openable `report.html`
+  visualizing a consensus run —
+  - **Summary KPI tiles**: samples analyzed (with an "N segments each"/amplicon
+    subtitle), samples ≥ the pass threshold (with "% of run"), samples below the
+    warn threshold (tile turns red when non-zero), median horizontal coverage, and
+    mean depth. Thresholds are configurable and every label is derived from them.
+  - **Assembly-statistics data table**: a sample/segment search box, a "low
+    coverage only" filter, a live row count, worst-coverage-first default sort, and
+    visual pass/fail encoding (status dot + tinted coverage cell + inline bar).
+    Segmented runs roll up to one summary row per sample (mean coverage, median
+    depth, whole-sample mapped %) that expands to per-segment rows, plus a
+    segment-focus chip row.
+  - **Sequencing throughput**: horizontal stacked bars (mapped / QC-passed-unmapped
+    / removed-by-QC) summing to total reads in reconciled units, with an
+    Absolute/Percent toggle; height grows with sample count.
+  - **Coverage heatmap** (replacing per-sample line overlays): samples worst-first
+    on the y-axis; a position-depth mode (binned genome position × depth, with a
+    Natural/Log10 toggle and the annotation band) and, for segmented runs, an "All
+    segments" grid of per-segment horizontal coverage %.
+  - **By-sample panel**: a searchable, worst-first sample list (status dot +
+    coverage badge) beside the selected sample's depth plot with 20x/100x guides;
+    segmented samples default to an "All (concatenated)" view plus a per-segment
+    selector.
+  Depth charts default to honest zeros (no coverage reads as a gap, never a false
+  depth of 1). Charts use a colourblind-safe palette and support light/dark mode
+  and print/PDF. Built with Plotly, inlined once so the file has no external
+  dependencies.
+- Report-generation parameters, as `viralunity report` flags (or config keys):
+  `--pass-threshold` (0.90), `--warn-threshold` (0.70), `--chart-color`, and
+  `--colorbar-thickness`.
+- Run-parameters slide-over drawer showing the full run config, HTML-escaped and
+  behind a focus-trapped modal.
+- Optional annotation tracks beneath the by-sample and position-mode coverage
+  views: a **gene track** from a new `--gene-annotation FILE` /
+  `--segmented-gene-annotation SEGMENT=PATH` GFF3 input, and a **primer-scheme
+  track** (amplicons paired into pool rows) from the existing `--primer-scheme`
+  BED. Both are drawn as rectangles aligned to the genome x-axis, with Genes /
+  Primers on-off toggles. The report resolves them from the staged
+  `<output>/annotation/` files, then the run config's `scheme` / `gene_annotation`
+  paths, then (for a missing gene track) an NCBI lookup by the reference accession
+  — `viralunity report --fetch-annotation/--no-fetch-annotation` (default on; the
+  workflow stays offline), with fetched annotations cached next to the run.
+- `viralunity report --input <consensus-output-dir> [--output report.html]`: a
+  standalone subcommand to (re)generate the report from an existing output
+  directory without rerunning the pipeline.
+- `--generate-html-report / --no-generate-html-report` (default on) on both
+  `viralunity consensus illumina` and `viralunity consensus nanopore`: the
+  report is produced automatically at the end of every consensus run and can be
+  opted out of on very large runs.
+
+### Changed
+
+- New runtime dependencies `plotly` and `jinja2`; the packaged `.j2` template is
+  now shipped as package data.
+
+### Fixed
+
+- The sequencing-throughput chart now shows a y-axis label for every sample,
+  aligned with its bar. Previously, on runs with many samples the rows were too
+  short for the tick font, so Plotly thinned the category labels (dropping every
+  other one) and the remaining labels no longer lined up with the bars. The chart
+  now allocates ~20px per row (matching the coverage heatmap) and forces one tick
+  per bar.
+- A near-empty (all-`N`) consensus no longer aborts an entire Illumina consensus
+  run. The `generate_vcf_consensus` emptiness guard matched `N` (via `[A-Za-z]`),
+  so a zero-coverage sample against a divergent reference was sent to GSAlign,
+  which then produced no VCF and failed the rule under `pipefail` — and because
+  every per-sample VCF is a required target, one bad sample discarded the
+  consensus of every other sample in the run (and in the segmented workflow, every
+  sample×segment). The guard now tests for real bases (`[ACGT]`) so all-N
+  consensuses take the existing mock-VCF branch, and the GSAlign branch falls back
+  to a mock VCF if GSAlign emits nothing. This also affects
+  `viralunity meta --run-reference-assembly`, which reuses the same rule.
+  *Behavior change for review: zero-coverage samples now yield a valid empty VCF
+  and their (all-N) consensus is retained, instead of crashing the run.*
+- The `plotly`/`jinja2` report dependencies are now imported lazily, only when a
+  report is actually built. Previously the top-level CLI eagerly imported the
+  report generator, so **every** `viralunity` subcommand (`create-samplesheet`,
+  `meta`, `consensus`, …) crashed with `ModuleNotFoundError: No module named
+  'plotly'` in any environment that predates 1.4.0. A correct install always ships
+  these (they are declared core dependencies); the lazy import is defence-in-depth
+  so a legacy or partial environment can still run the non-report commands, with a
+  clear hint if a report is requested without them.
+- A segment literally named `NA` (influenza's neuraminidase segment) is no longer
+  parsed as `NaN` when reading the stats summary, which previously crashed
+  coverage-path resolution on real NA-segment runs.
+
 ## [1.3.3] - 2026-07-14
 
 Documentation-only release: the user-facing docs are brought in line with the

@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ViralUnity consensus report</title>
+<script>{{ plotly_js|safe }}</script>
+<style>
+:root {
+  --page-bg: #f9f9f7;
+  --card-bg: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --border: rgba(11,11,11,0.10);
+  --accent: #2a78d6;
+  --hover: rgba(42,120,214,0.08);
+  /* Coverage status tiers (constant hue across themes; faint fills differ). */
+  --status-pass: #1b9e5a;
+  --status-warn: #e0a100;
+  --status-fail: #e34948;
+  --status-fail-fill: rgba(227,73,72,0.08);
+  --status-warn-fill: rgba(224,161,0,0.10);
+  --status-pass-fill: rgba(27,158,90,0.10);
+  --input: #ffffff;
+  --subrow: #f4f4f2;
+  --selrow: rgba(42,120,214,0.12);
+  --rowhover: rgba(42,120,214,0.08);
+}
+:root[data-theme="dark"] {
+  --page-bg: #0d0d0d;
+  --card-bg: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --border: rgba(255,255,255,0.10);
+  --accent: #3987e5;
+  --hover: rgba(57,135,229,0.12);
+  --status-pass: #1b9e5a;
+  --status-warn: #e0a100;
+  --status-fail: #e34948;
+  --status-fail-fill: rgba(227,73,72,0.16);
+  --status-warn-fill: rgba(224,161,0,0.18);
+  --status-pass-fill: rgba(27,158,90,0.16);
+  --input: #232322;
+  --subrow: #141413;
+  --selrow: rgba(57,135,229,0.20);
+  --rowhover: rgba(57,135,229,0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page-bg);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 28px; border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 1.25rem; margin: 0; font-weight: 600; }
+main { max-width: 1000px; margin: 0 auto; padding: 24px 20px 64px; }
+.section-title {
+  font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 28px 4px 12px;
+}
+.card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px; margin-bottom: 18px;
+  overflow-x: auto;
+}
+.card h2 { font-size: 1rem; margin: 0 0 14px; font-weight: 600; }
+.theme-toggle {
+  background: var(--card-bg); border: 1px solid var(--border);
+  color: var(--text-secondary); border-radius: 8px; padding: 7px 12px;
+  cursor: pointer; font-size: 0.85rem;
+}
+.theme-toggle:hover { background: var(--hover); }
+select {
+  background: var(--card-bg); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 8px; padding: 7px 10px;
+  font-size: 0.9rem; margin: 0 8px 14px 0;
+}
+label.control { font-size: 0.85rem; color: var(--text-secondary); margin-right: 6px; }
+table.stats-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+table.stats-table th, table.stats-table td {
+  padding: 7px 14px; text-align: center; white-space: nowrap;
+  border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums;
+}
+/* Numeric columns right-aligned (tabular); the Sample identity column left. */
+table.stats-table td.num, table.stats-table th.th-num { text-align: right; }
+table.stats-table td.cell-sample, table.stats-table th.col-freeze { text-align: left; }
+table.stats-table th {
+  cursor: pointer; user-select: none; color: var(--text-secondary);
+  font-weight: 600; position: sticky; top: 0; background: var(--card-bg); z-index: 2;
+}
+/* Freeze the first (Sample) column when the table scrolls sideways on narrow
+   screens; the header corner needs the higher z so it stays above both. */
+.table-scroll { overflow-x: auto; }
+table.stats-table td.col-freeze, table.stats-table th.col-freeze {
+  position: sticky; left: 0; background: var(--card-bg); z-index: 1;
+}
+table.stats-table th.col-freeze { z-index: 3; }
+/* Table controls (search + low-coverage filter + row count). */
+.table-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+.table-search {
+  background: var(--input, var(--card-bg)); border: 1px solid var(--border);
+  color: var(--text-primary); border-radius: 8px; padding: 7px 12px;
+  font-size: 0.85rem; min-width: 220px; flex: 0 1 280px;
+}
+.table-search:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.chip-toggle {
+  background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 0.82rem; cursor: pointer;
+}
+.chip-toggle:hover { background: var(--hover); }
+.chip-toggle[aria-pressed="true"] { background: var(--status-fail); border-color: var(--status-fail); color: #fff; }
+.chip-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row-count { font-size: 0.8rem; color: var(--text-secondary); margin-left: auto; }
+/* Coverage status encodings (never colour-alone: dot + tinted value + bar). */
+.cov-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: baseline; }
+.cov-dot-pass { background: var(--status-pass); }
+.cov-dot-warn { background: var(--status-warn); }
+.cov-dot-fail { background: var(--status-fail); }
+.cov-cell { position: relative; }
+.cov-val { font-weight: 600; }
+.cov-pass { color: var(--status-pass); }
+.cov-warn { color: var(--status-warn); }
+.cov-fail { color: var(--status-fail); }
+.cov-bar { position: absolute; left: 0; bottom: 0; height: 3px; border-radius: 0 2px 2px 0; }
+.cov-bar-pass { background: var(--status-pass); }
+.cov-bar-warn { background: var(--status-warn); }
+.cov-bar-fail { background: var(--status-fail); }
+tr.row-hidden { display: none; }
+/* Segmented roll-up: summary rows carry a caret + "N segments" tag; subrows are
+   indented and muted, revealed when the parent row is expanded. */
+.seg-summary { cursor: pointer; }
+.seg-summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg-caret::before { content: '\25B8'; color: var(--text-muted); font-size: 0.85em; margin-right: 8px; display: inline-block; transition: transform 0.15s ease; }
+.seg-summary.open .seg-caret::before { transform: rotate(90deg); }
+.seg-tag { margin-left: 10px; font-size: 0.72rem; font-weight: 400; color: var(--text-muted); background: var(--chip, var(--subrow)); border-radius: 10px; padding: 1px 8px; }
+.seg-subrow > td { background: var(--subrow); }
+.cell-subrow { padding-left: 34px; color: var(--text-secondary); }
+.cell-muted { color: var(--text-muted); }
+@media (prefers-reduced-motion: reduce) { .seg-caret::before { transition: none; } }
+/* Segment selector chips (focus the table on All or one segment). */
+.seg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.seg-chip { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 5px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.seg-chip:hover { background: var(--hover); }
+.seg-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.seg-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+table.stats-table th:hover { color: var(--text-primary); }
+table.stats-table tbody tr:hover { background: var(--hover); }
+.sort-arrow { font-size: 0.7em; color: var(--text-muted); margin-left: 4px; }
+.plot-holder { min-height: 60px; }
+.chart-note { font-size: 0.8rem; color: var(--text-muted); margin: 8px 4px 0; }
+.run-meta { font-size: 0.85rem; color: var(--text-secondary); margin: 0 4px 16px; }
+/* Charts fill the card (responsive) but never stretch past their design width. */
+.card .plotly-graph-div, .card .js-plotly-plot { width: 100%; max-width: 900px; }
+/* By-sample panel: searchable list (left) + coverage plot (right). */
+.bysample-layout { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.bysample-list { flex: 0 0 240px; max-width: 100%; }
+.bysample-main { flex: 1 1 420px; min-width: 0; }
+#sampleList {
+  list-style: none; margin: 10px 0 0; padding: 0; max-height: 420px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.sample-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  border-bottom: 1px solid var(--hair, var(--border)); font-size: 0.85rem;
+}
+.sample-row:last-child { border-bottom: none; }
+.sample-row:hover { background: var(--rowhover); }
+.sample-row.selected { background: var(--selrow); }
+.sample-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sample-row-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sample-badge { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 0.8rem; }
+/* Linear/Log10 toggle */
+.scale-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; vertical-align: middle; margin: 0 0 14px; }
+.scale-toggle button { border: none; background: var(--card-bg); color: var(--text-secondary); font: inherit; font-size: 0.8rem; padding: 6px 12px; cursor: pointer; }
+.scale-toggle button + button { border-left: 1px solid var(--border); }
+.scale-toggle button.active { background: var(--accent); color: #fff; }
+.scale-toggle button:hover:not(.active) { background: var(--hover); }
+.scale-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chart-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin-bottom: 10px; }
+.chart-controls .scale-toggle { margin: 0; }
+/* Annotation / Primers are independent on-off toggles (different concepts), so
+   they render as separate pill buttons, not one segmented control. */
+.track-toggles { display: inline-flex; gap: 8px; margin-left: 18px; vertical-align: middle; }
+.track-chip { background: var(--card-bg); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 0.8rem; cursor: pointer; }
+.track-chip:hover { background: var(--hover); }
+.track-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.track-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+table.stats-table th[role="button"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* KPI summary tiles (big BI-style numbers). Values wear text tokens, not a
+   series colour; proportional figures (not tabular) so a big number isn't loose. */
+.kpi-controls { margin: 4px 0 12px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.kpi-tile { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; }
+/* The "Below warn%" tile turns red only when the count is non-zero — the "how
+   many need attention" signal. Neutral (like every other tile) when zero. */
+.kpi-tile-alert { border-color: var(--status-fail); background: var(--status-fail-fill); }
+.kpi-tile-alert .kpi-value { color: var(--status-fail); }
+.kpi-value { font-size: 2rem; font-weight: 600; line-height: 1.1; color: var(--text-primary); font-variant-numeric: proportional-nums; }
+.kpi-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 6px; }
+.kpi-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+/* Run-parameters slide-over drawer (a memory of exactly what was run). */
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.params-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 40; }
+.params-drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: min(460px, 92vw);
+  background: var(--card-bg); border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.18); z-index: 50;
+  display: flex; flex-direction: column; transform: translateX(0);
+}
+.params-drawer[hidden], .params-overlay[hidden] { display: none; }
+.params-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.params-title { font-size: 1rem; font-weight: 600; }
+.params-close {
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.params-close:hover { color: var(--text-primary); }
+.params-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.params-body { overflow-y: auto; padding: 8px 20px 24px; }
+.cfg-section {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-muted); margin: 20px 0 8px;
+}
+.cfg-block { display: flex; flex-direction: column; }
+.cfg-row {
+  display: grid; grid-template-columns: minmax(120px, 40%) 1fr; gap: 12px;
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.83rem;
+}
+.cfg-key { color: var(--text-secondary); word-break: break-word; }
+.cfg-val { color: var(--text-primary); word-break: break-word; font-variant-numeric: tabular-nums; }
+.cfg-null { color: var(--text-muted); }
+.cfg-nested { display: flex; flex-direction: column; gap: 2px; }
+.cfg-nested .cfg-row { border-bottom: none; padding: 2px 0; grid-template-columns: minmax(80px, 45%) 1fr; }
+.cfg-list { margin: 0; padding-left: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  .params-drawer { animation: params-slide 0.16s ease-out; }
+  @keyframes params-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+}
+/* Print / PDF: force light surfaces, hide interactive chrome, and avoid breaking
+   a card across pages. Reports get saved and emailed (spec §10). */
+@media print {
+  :root, :root[data-theme="dark"] {
+    --page-bg: #ffffff; --card-bg: #ffffff; --text-primary: #0b0b0b;
+    --text-secondary: #333; --text-muted: #555; --border: rgba(0,0,0,0.15);
+  }
+  .theme-toggle, .header-actions, .scale-toggle, .track-toggles, .chip-toggle,
+  .seg-chips, .table-search, .kpi-controls, #bysample-controls select,
+  .params-overlay, .params-drawer { display: none !important; }
+  .card, .kpi-tile, #sampleList { break-inside: avoid; box-shadow: none; }
+  main { max-width: none; }
+  .bysample-list { display: none; }  /* the plot alone prints; the list is navigation */
+}
+</style>
+</head>
+<body data-palette="{{ palette_light|join(',') }}" data-palette-dark="{{ palette_dark|join(',') }}"
+      data-track-genes="{{ track_genes }}" data-track-primers="{{ track_primers }}">
+<header>
+  <h1>ViralUnity consensus report{% if segmented %} <span style="color:var(--text-muted);font-weight:400">· segmented</span>{% endif %}</h1>
+  <div class="header-actions">
+    {% if config_panel_html %}<button class="theme-toggle" id="params-btn" onclick="openParams()" aria-haspopup="dialog" aria-expanded="false" aria-controls="params-drawer">Parameters</button>{% endif %}
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">Dark mode</button>
+  </div>
+</header>
+<main>
+
+  <p class="section-title">Summary</p>
+  {% if segmented %}
+  <div class="chart-controls kpi-controls">
+    <div class="scale-toggle" role="group" aria-label="KPI scope" id="kpi-scope">
+      <button type="button" class="active" data-scope="global" aria-pressed="true">Global</button>
+      <button type="button" data-scope="segment" aria-pressed="false">Per segment</button>
+    </div>
+    <label class="control" for="kpiSegmentSelect" id="kpiSegmentLabel" style="display:none">Segment</label>
+    <select id="kpiSegmentSelect" style="display:none">
+      {% for s in segments %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="samples">{{ kpi_global.samples }}</div>
+      <div class="kpi-label">Samples analyzed</div>
+      <div class="kpi-sub">{{ kpi_samples_sub }}</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="pass_count">{{ kpi_global.pass_count }}</div>
+      <div class="kpi-label">&ge;{{ params.pass_pct_label }} coverage</div>
+      <div class="kpi-sub" data-kpi="pass_sub">{{ kpi_global.pass_sub }}</div>
+    </div>
+    <div class="kpi-tile{% if kpi_global.below_warn_nonzero %} kpi-tile-alert{% endif %}" id="kpi-warn-tile" data-kpi-tile="below_warn">
+      <div class="kpi-value" data-kpi="below_warn">{{ kpi_global.below_warn }}</div>
+      <div class="kpi-label">Below {{ params.warn_pct_label }} <span aria-hidden="true">&#9888;</span></div>
+      <div class="kpi-sub">need attention</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="median_coverage">{{ kpi_global.median_coverage }}</div>
+      <div class="kpi-label">Median coverage</div>
+    </div>
+    <div class="kpi-tile">
+      <div class="kpi-value" data-kpi="mean_depth">{{ kpi_global.mean_depth }}</div>
+      <div class="kpi-label">Mean depth</div>
+    </div>
+  </div>
+
+  <p class="section-title">Overview</p>
+
+  {% if metadata %}
+  <p class="run-meta">
+    {{ metadata.platform|capitalize }} &middot; {{ metadata.library_layout }}-end
+    {%- if not metadata.qc_performed %} &middot; no read-QC step (Nanopore){% endif %}
+  </p>
+  {% endif %}
+
+  <div class="card" id="stats-card">
+    <h2>Assembly statistics</h2>
+    {% if segmented %}
+    <div class="seg-chips" id="statsSegChips" role="group" aria-label="Focus table on a segment">
+      <button type="button" class="seg-chip active" data-seg="" aria-pressed="true">All</button>
+      {% for s in segments %}
+      <button type="button" class="seg-chip" data-seg="{{ s }}" aria-pressed="false">{{ s }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="table-controls">
+      <input type="search" id="statsSearch" class="table-search"
+             placeholder="Filter by sample{% if segmented %} or segment{% endif %}…"
+             aria-label="Filter table rows by sample{% if segmented %} or segment{% endif %} name">
+      <button type="button" id="lowCovToggle" class="chip-toggle" aria-pressed="false"
+              title="Show only samples below the {{ params.warn_pct_label }} warn threshold">
+        <span aria-hidden="true">&#9888;</span> Low coverage only
+      </button>
+      <span class="row-count" id="statsRowCount" aria-live="polite"></span>
+    </div>
+    <div class="table-scroll">{{ stats_table_html|safe }}</div>
+  </div>
+
+  <div class="card" id="throughput-card">
+    <h2>Sequencing throughput</h2>
+    <div class="chart-controls">
+      <div class="scale-toggle" role="group" aria-label="Throughput scale" id="throughput-scale">
+        <button type="button" class="active" data-mode="absolute" aria-pressed="true">Absolute</button>
+        <button type="button" data-mode="percent" aria-pressed="false">Percent</button>
+      </div>
+    </div>
+    {{ reads_fig_html|safe }}
+  </div>
+
+  {% if has_coverage %}
+  <p class="section-title">Coverage</p>
+  <div class="card" id="coverage-heatmap-card">
+    <h2>Coverage heatmap</h2>
+    <div class="chart-controls">
+      {% if segmented %}
+      <div class="seg-chips" id="heatmapSegChips" role="group" aria-label="Heatmap view">
+        <button type="button" class="seg-chip active" data-seg="__all__" aria-pressed="true">All segments</button>
+        {% for s in segments %}
+        <button type="button" class="seg-chip" data-seg="{{ s }}" aria-pressed="false">{{ s }}</button>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="scale-toggle" role="group" aria-label="Depth scale" id="heatmapScale">
+        <button type="button" data-scale="log" class="active" aria-pressed="true">Log10</button>
+        <button type="button" data-scale="linear" aria-pressed="false">Natural</button>
+      </div>
+      <div class="track-toggles-holder" id="heatmapTrackHolder"></div>
+    </div>
+    <div id="vu-heatmap" class="plot-holder"></div>
+    <p class="chart-note" id="heatmapNote"></p>
+  </div>
+  {% endif %}
+
+  {% if has_coverage %}
+  <p class="section-title">By sample</p>
+
+  <div class="card" id="by-sample-card">
+    <div class="bysample-layout">
+      <div class="bysample-list">
+        <input type="search" id="sampleSearch" class="table-search"
+               placeholder="Find a sample…" aria-label="Filter the sample list">
+        <ul id="sampleList" role="listbox" aria-label="Samples (worst coverage first)">
+          {% for item in sample_list %}
+          <li class="sample-row" data-sample="{{ item.sample }}" role="option"
+              tabindex="0" aria-selected="false">
+            <span class="cov-dot cov-dot-{{ item.tier }}" aria-hidden="true"></span>
+            <span class="sample-row-name">{{ item.sample }}</span>
+            <span class="sample-badge cov-{{ item.tier }}">{{ item.pct }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      <div class="bysample-main">
+        <div class="chart-controls" id="bysample-controls">
+          {% if segmented %}
+          <label class="control" for="bysampleSegSelect">View</label>
+          <select id="bysampleSegSelect">
+            <option value="__all__">All (concatenated)</option>
+            {% for s in segments %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        <div id="sample-coverage" class="plot-holder"></div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</main>
+
+{% if config_panel_html %}
+<div class="params-overlay" id="params-overlay" hidden onclick="closeParams()"></div>
+<aside class="params-drawer" id="params-drawer" role="dialog" aria-modal="true" aria-label="Run parameters" hidden>
+  <div class="params-head">
+    <span class="params-title">Run parameters</span>
+    <button class="params-close" id="params-close" onclick="closeParams()" aria-label="Close parameters">&times;</button>
+  </div>
+  <div class="params-body">{{ config_panel_html|safe }}</div>
+</aside>
+{% endif %}
+
+<script id="coverageData" type="application/json">{{ coverage_json|safe }}</script>
+<script id="kpiData" type="application/json">{{ kpi_json|safe }}</script>
+<script id="annotationData" type="application/json">{{ annotation_json|safe }}</script>
+<script id="paramsData" type="application/json">{{ params_json|safe }}</script>
+<script id="heatmapData" type="application/json">{{ heatmap_json|safe }}</script>
+<script>
+const COVERAGE = JSON.parse(document.getElementById('coverageData').textContent);
+const KPI = JSON.parse(document.getElementById('kpiData').textContent);
+// Per-segment annotation tracks (gene + primer lanes); {} when none were staged.
+const ANNOT = JSON.parse(document.getElementById('annotationData').textContent);
+// Tweakable report params (thresholds/colours); the single client source for
+// threshold-derived labels and the accent/status hues (spec §9).
+const PARAMS = JSON.parse(document.getElementById('paramsData').textContent);
+// Coverage-heatmap model (samples worst-first; per-segment binned depth grids +
+// the segmented coverage-% grid). Plain arrays, so no typed-array surprises.
+const HEATMAP = JSON.parse(document.getElementById('heatmapData').textContent);
+const FIG_WIDTH = 900, FIG_HEIGHT = 420;
+
+/* ---- theme ---- */
+function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+// Colourblind-safe categorical palettes (light/dark), read from the server-set
+// body attributes so Python stays the single source of the hues.
+function seriesPalette() {
+  const attr = isDark() ? 'data-palette-dark' : 'data-palette';
+  return (document.body.getAttribute(attr) || '').split(',');
+}
+function toggleTheme() {
+  const dark = !isDark();
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.getElementById('theme-btn').textContent = dark ? 'Light mode' : 'Dark mode';
+  themeCharts();
+}
+function themeCharts() {
+  // Gridlines use a semi-transparent gray that reads on both themes, so only
+  // the font colour needs to flip. Applying font.color globally also covers
+  // multi-axis subplots (the reads figure) that per-axis keys would miss.
+  const dark = isDark();
+  const upd = {
+    'font.color': dark ? '#c3c2b7' : '#52514e',
+    'paper_bgcolor': 'rgba(0,0,0,0)',
+    'plot_bgcolor': 'rgba(0,0,0,0)',
+  };
+  document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    try { Plotly.relayout(gd, upd); } catch (e) { /* not yet drawn */ }
+  });
+  recolorCharts();
+}
+// Series hues are theme-specific (the light hexes are not contrast-safe on the
+// dark surface), so restyle each chart's colours when the theme flips. Server-
+// rendered figures start in the light palette; this brings them to the dark set.
+function recolorCharts() {
+  if (!window.Plotly) return;
+  const pal = seriesPalette();
+  if (!pal.length || !pal[0]) return;
+  // By-sample coverage plot: rebuilt on theme change rather than blanket-
+  // restyled — the segmented "All (concatenated)" view has one coloured trace
+  // PER SEGMENT, so a single line.color restyle would collapse them to one hue.
+  if (typeof renderBySample === 'function') { try { renderBySample(); } catch (e) {} }
+  // Coverage heatmap: fully rebuilt on theme change (its colourscale zero-end and
+  // axis colours are theme-specific), so redraw rather than restyle.
+  if (typeof buildHeatmap === 'function') { try { buildHeatmap(); } catch (e) {} }
+  // Sequencing throughput: mapped (accent) + QC-passed-unmapped (green) recolour
+  // by theme; "Removed by QC" stays the theme-neutral muted grey (index 2).
+  const tc = document.getElementById('throughput-card');
+  if (tc) tc.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    try { Plotly.restyle(gd, {'marker.color': [pal[0]]}, [0]); } catch (e) {}
+    try { Plotly.restyle(gd, {'marker.color': [pal[1]]}, [1]); } catch (e) {}
+  });
+  // Annotation-track bars carry their kind on the trace; recolour each to the
+  // theme's track hue (trackColors reads the theme). Targeted by index so the
+  // depth line and sample series in the same figure are untouched.
+  document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    (gd.data || []).forEach(function (tr, i) {
+      if (!tr._track || tr._trackKind === 'gene-label') return;  // label text has no marker
+      const c = trackColors(tr._trackKind);
+      try { Plotly.restyle(gd, {'marker.color': c.fill, 'marker.line.color': c.line}, [i]); } catch (e) {}
+    });
+  });
+}
+
+/* ---- client-side table sort ----
+   On the segmented roll-up "All" view the rows are a two-level tree (summary rows
+   + their per-segment subrows), so a flat sort would scatter subrows away from
+   their parent. There we sort the SUMMARY rows by the column and re-attach each
+   summary's subrows (sorted within the group) right after it. In the flat views
+   (unsegmented, or a single-segment chip) a plain flat sort is correct. */
+function sortTable(th) {
+  const table = th.closest('table');
+  const idx = parseInt(th.getAttribute('data-col'), 10);
+  const asc = th.getAttribute('data-asc') !== 'true';
+  const tbody = table.tBodies[0];
+  const cmp = function (a, b) {
+    const ac = a.cells[idx], bc = b.cells[idx];
+    const av = ac ? ac.getAttribute('data-sort') : null;
+    const bv = bc ? bc.getAttribute('data-sort') : null;
+    const an = parseFloat(av), bn = parseFloat(bv);
+    let c;
+    if (!isNaN(an) && !isNaN(bn)) c = an - bn;
+    else c = String(av).localeCompare(String(bv));
+    return asc ? c : -c;
+  };
+  const rows = Array.from(tbody.rows);
+  const allSummary = rows.filter(function (r) { return r.getAttribute('data-role') === 'summary'; });
+  var grouped = allSummary.length > 0 &&
+    (typeof statsSegMode === 'undefined' || statsSegMode === '');
+  if (grouped) {
+    var subs = {};
+    rows.filter(function (r) { return r.getAttribute('data-role') === 'subrow'; })
+      .forEach(function (r) {
+        var p = r.getAttribute('data-parent');
+        (subs[p] = subs[p] || []).push(r);
+      });
+    allSummary.sort(cmp);
+    allSummary.forEach(function (s) {
+      tbody.appendChild(s);
+      var kids = subs[s.getAttribute('data-sid')] || [];
+      kids.sort(cmp);
+      kids.forEach(function (k) { tbody.appendChild(k); });
+    });
+  } else {
+    rows.sort(cmp);
+    rows.forEach(function (r) { tbody.appendChild(r); });
+  }
+  table.querySelectorAll('th').forEach(function (h) {
+    h.setAttribute('data-asc', 'false');
+    if (h.hasAttribute('aria-sort')) h.setAttribute('aria-sort', 'none');
+    const arr = h.querySelector('.sort-arrow'); if (arr) arr.textContent = '';
+  });
+  th.setAttribute('data-asc', asc ? 'true' : 'false');
+  if (th.hasAttribute('aria-sort')) th.setAttribute('aria-sort', asc ? 'ascending' : 'descending');
+  const arrow = th.querySelector('.sort-arrow'); if (arrow) arrow.textContent = asc ? '▲' : '▼';
+  // Re-assert visibility (collapsed subrows, active filters) after reordering.
+  if (typeof applyStatsView === 'function') { try { applyStatsView(); } catch (e) {} }
+}
+
+/* ---- sortable-header keyboard access (attrs are emitted server-side) ---- */
+function enhanceSortHeaders() {
+  document.querySelectorAll('table.stats-table th[onclick]').forEach(function (th) {
+    th.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); th.click(); }
+    });
+  });
+}
+
+/* ---- assembly-stats search + "low coverage only" filter + roll-up + chips ----
+   Applies the current view to #stats-table: a sample/segment search substring, an
+   optional "below the warn threshold" filter, the segmented roll-up (caret-
+   expandable subrows), and the segment-focus chips (All ⇄ one segment). Row
+   visibility is a CSS class so it survives column re-sorts; the row-count label
+   updates live. */
+var statsSegMode = '';                 // '' = All (roll-up), else a segment name
+var statsExpanded = {};                // sid -> true for expanded summary rows
+function _statsQuery() {
+  var el = document.getElementById('statsSearch');
+  return (el && el.value ? el.value : '').trim().toLowerCase();
+}
+function _statsLowOnly() {
+  var el = document.getElementById('lowCovToggle');
+  return !!(el && el.getAttribute('aria-pressed') === 'true');
+}
+function _statsWarn() {
+  return (PARAMS && typeof PARAMS.warnThreshold === 'number') ? PARAMS.warnThreshold : 0.70;
+}
+function applyStatsView() {
+  var table = document.getElementById('stats-table');
+  if (!table || !table.tBodies[0]) return;
+  var rows = Array.from(table.tBodies[0].rows);
+  var q = _statsQuery(), lowOnly = _statsLowOnly(), warn = _statsWarn();
+  var segmented = !!document.getElementById('statsSegChips');
+  var shown = 0, total = 0, unit = 'samples';
+
+  var rowMatches = function (r) {
+    var name = (r.getAttribute('data-sample') || '').toLowerCase();
+    var seg = (r.getAttribute('data-segment') || '').toLowerCase();
+    var cov = parseFloat(r.getAttribute('data-coverage'));
+    var matchQ = !q || name.indexOf(q) !== -1 || (seg && seg.indexOf(q) !== -1);
+    var matchLow = !lowOnly || (isFinite(cov) && cov < warn);
+    return matchQ && matchLow;
+  };
+
+  if (!segmented) {
+    rows.forEach(function (r) {
+      total++;
+      var show = rowMatches(r);
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+    });
+  } else if (statsSegMode === '') {
+    // Roll-up view: summary rows drive counting/visibility; subrows appear only
+    // when their (visible) parent is expanded. A summary matches the search if
+    // the query hits its sample name OR any of its segments' names (the summary
+    // row's own data-segment is empty), so "filter by sample or segment" holds.
+    var segsBySid = {};
+    rows.forEach(function (r) {
+      if (r.getAttribute('data-role') === 'subrow') {
+        var p = r.getAttribute('data-parent');
+        segsBySid[p] = (segsBySid[p] || '') + ' ' + (r.getAttribute('data-segment') || '').toLowerCase();
+      }
+    });
+    rows.forEach(function (r) {
+      if (r.getAttribute('data-role') !== 'summary') return;
+      total++;
+      var name = (r.getAttribute('data-sample') || '').toLowerCase();
+      var cov = parseFloat(r.getAttribute('data-coverage'));
+      var segText = segsBySid[r.getAttribute('data-sid')] || '';
+      var matchQ = !q || name.indexOf(q) !== -1 || segText.indexOf(q) !== -1;
+      var matchLow = !lowOnly || (isFinite(cov) && cov < warn);
+      var show = matchQ && matchLow;
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+      var open = !!statsExpanded[r.getAttribute('data-sid')];
+      r.classList.toggle('open', open);
+      r.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    rows.forEach(function (r) {
+      if (r.getAttribute('data-role') !== 'subrow') return;
+      var parent = table.querySelector(
+        'tr.seg-summary[data-sid="' + r.getAttribute('data-parent') + '"]');
+      var vis = parent && !parent.classList.contains('row-hidden') &&
+                parent.classList.contains('open');
+      r.classList.toggle('row-hidden', !vis);
+    });
+  } else {
+    // Single-segment flat view: hide summaries, show matching subrows only.
+    unit = 'segments';
+    rows.forEach(function (r) {
+      var role = r.getAttribute('data-role');
+      if (role === 'summary' || r.getAttribute('data-segment') !== statsSegMode) {
+        r.classList.add('row-hidden');
+        return;
+      }
+      total++;
+      var show = rowMatches(r);
+      r.classList.toggle('row-hidden', !show);
+      if (show) shown++;
+    });
+  }
+  var label = document.getElementById('statsRowCount');
+  if (label) label.textContent = shown + ' of ' + total + ' ' + unit;
+}
+function initStatsControls() {
+  var s = document.getElementById('statsSearch');
+  var t = document.getElementById('lowCovToggle');
+  if (s) s.addEventListener('input', applyStatsView);
+  if (t) t.addEventListener('click', function () {
+    t.setAttribute('aria-pressed', t.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    applyStatsView();
+  });
+  // Segmented roll-up: caret-expand summary rows (click or Enter/Space).
+  var table = document.getElementById('stats-table');
+  if (table) {
+    table.querySelectorAll('tr.seg-summary').forEach(function (tr) {
+      var toggle = function () {
+        var sid = tr.getAttribute('data-sid');
+        statsExpanded[sid] = !statsExpanded[sid];
+        applyStatsView();
+      };
+      tr.addEventListener('click', toggle);
+      tr.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+      });
+    });
+  }
+  // Segment-focus chips (All ⇄ single segment).
+  var chipBox = document.getElementById('statsSegChips');
+  if (chipBox) {
+    chipBox.querySelectorAll('.seg-chip').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        chipBox.querySelectorAll('.seg-chip').forEach(function (b) {
+          b.classList.remove('active');
+          b.setAttribute('aria-pressed', 'false');
+        });
+        btn.classList.add('active');
+        btn.setAttribute('aria-pressed', 'true');
+        statsSegMode = btn.getAttribute('data-seg') || '';
+        // Returning to the roll-up: a prior flat sort in a chip view may have left
+        // subrows detached from their parent in the DOM, so re-establish grouping.
+        if (statsSegMode === '') _regroupRollup(document.getElementById('stats-table'));
+        applyStatsView();
+      });
+    });
+  }
+  applyStatsView();  // seed the row-count label + initial visibility
+}
+// Re-attach each summary row's per-segment subrows immediately after it (in the
+// summaries' current DOM order), repairing grouping after a flat single-segment
+// sort scattered them.
+function _regroupRollup(table) {
+  if (!table || !table.tBodies[0]) return;
+  var tb = table.tBodies[0], rows = Array.from(tb.rows);
+  var subs = {};
+  rows.forEach(function (r) {
+    if (r.getAttribute('data-role') === 'subrow') {
+      var p = r.getAttribute('data-parent');
+      (subs[p] = subs[p] || []).push(r);
+    }
+  });
+  rows.forEach(function (r) {
+    if (r.getAttribute('data-role') !== 'summary') return;
+    tb.appendChild(r);
+    (subs[r.getAttribute('data-sid')] || []).forEach(function (k) { tb.appendChild(k); });
+  });
+}
+
+/* ---- Linear/Log10 scale toggle control ---- */
+function themeFont() {
+  return {family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 13,
+          color: isDark() ? '#c3c2b7' : '#52514e'};
+}
+function scaleToggleEl(initial, onChange) {
+  const wrap = document.createElement('div');
+  wrap.className = 'scale-toggle';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Y-axis scale');
+  ['linear', 'log'].forEach(function (s) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = s === 'linear' ? 'Linear' : 'Log10';
+    b.setAttribute('data-scale', s);
+    b.setAttribute('aria-pressed', s === initial ? 'true' : 'false');
+    if (s === initial) b.className = 'active';
+    b.addEventListener('click', function () {
+      wrap.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
+      onChange(s);
+    });
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+/* ---- depth-axis layouts (shared by the coverage line charts) ----
+   Depth axes are linear by default; the toggle switches to Log10 by REBUILDING
+   the figure (Plotly.react/newPlot), never a relayout that flips yaxis.type —
+   that path hits a Plotly slow path (~6s freeze) on the ~2000-point lines. The
+   Log10 range comes from Python (entry.logRange), computed once, not re-derived
+   here. The y-caption is just "Depth" in both modes (the toggle states the
+   scale); log ticks are pinned to powers of ten (dtick 1). */
+function depthYAxis(scale, logRange, linRange) {
+  const common = {title: {text: 'Depth'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false};
+  if (scale === 'log') {
+    return Object.assign(common, {type: 'log', range: logRange, dtick: 1});
+  }
+  // Explicit data-fit range (computed once in Python) rather than autorange;
+  // fall back to tozero if a range wasn't supplied.
+  return linRange
+    ? Object.assign(common, {type: 'linear', range: linRange})
+    : Object.assign(common, {type: 'linear', rangemode: 'tozero'});
+}
+function depthGuides() {
+  return {
+    shapes: [
+      {type: 'line', xref: 'x domain', x0: 0, x1: 1, y0: 20, y1: 20, line: {color: '#898781', width: 1, dash: 'dot'}},
+      {type: 'line', xref: 'x domain', x0: 0, x1: 1, y0: 100, y1: 100, line: {color: '#898781', width: 1, dash: 'dot'}}
+    ],
+    annotations: [
+      {xref: 'paper', x: 1, y: 20, yref: 'y', text: '20x', showarrow: false, xanchor: 'right', font: {color: '#898781', size: 11}},
+      {xref: 'paper', x: 1, y: 100, yref: 'y', text: '100x', showarrow: false, xanchor: 'right', font: {color: '#898781', size: 11}}
+    ]
+  };
+}
+function coverageLayout(title, scale, logRange, linRange) {
+  const g = depthGuides();
+  return {
+    autosize: true, height: FIG_HEIGHT, title: title ? {text: title} : undefined,
+    margin: {l: 60, r: 30, t: title ? 50 : 24, b: 60},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: themeFont(),
+    xaxis: {title: {text: 'Genome position'}, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: depthYAxis(scale, logRange, linRange),
+    hovermode: 'x unified', showlegend: false,
+    shapes: g.shapes, annotations: g.annotations
+  };
+}
+// Honest zeros: on a linear axis plot raw depth (0 on the baseline); on a log
+// axis break the line at true zeros (null) so no-coverage reads as a gap, never
+// a false depth of 1.
+function depthForScale(y, scale) {
+  return scale === 'log' ? y.map(function (v) { return v > 0 ? v : null; }) : y;
+}
+
+/* ---- annotation tracks (genes + primer amplicons) ----
+   Drawn as horizontal-bar traces on a second y-axis (y2) beneath the depth
+   line, aligned to the same genome x-axis. Traces (not layout shapes) so they
+   ride through the Plotly.react scale-toggle rebuild untouched and are
+   independent of the depth axis type (the Linear/Log10 toggle only rebuilds
+   y). The same helper feeds the aggregated, by-sample and by-segment views. */
+// The annotation band lives below the depth/heatmap plot. TRACK_GAP_PX clears the
+// depth plot's own x-axis. The band is laid out in PIXELS (constant regardless of
+// sample count): a thin Annotation lane with its feature names ABOVE the bars,
+// then a larger gap, then the primer POOL lanes drawn thin and clustered tightly
+// (the pools are one concept). y2 is measured in px so lane heights carry no data
+// meaning and the geometry stays fixed.
+var TRACK_GAP_PX = 104, DEPTH_PX = FIG_HEIGHT;
+var GENE_LABEL_PX = 16, GENE_LANE_PX = 12, GENE_GAP_PX = 6;
+var GENE_TO_PRIMER_PX = 16, PRIMER_LANE_PX = 6, PRIMER_GAP_PX = 4, BAND_BOTTOM_PX = 18;
+function _hexToRgba(hex, alpha) {
+  const h = (hex || '').replace('#', '');
+  if (h.length !== 6) return hex;
+  return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) +
+         ',' + parseInt(h.slice(4, 6), 16) + ',' + alpha + ')';
+}
+// Track border/fill for a lane kind, from the server-set body attributes
+// (Python is the single source; light/dark picked by theme). Fill is the border
+// hue at low alpha so bars read as recessive annotation, not a data series.
+function trackColors(kind) {
+  const attr = kind === 'gene' ? 'data-track-genes' : 'data-track-primers';
+  const pair = (document.body.getAttribute(attr) || '').split(',');
+  const line = (isDark() ? pair[1] : pair[0]) || '#5b6b7f';
+  return {fill: _hexToRgba(line, isDark() ? 0.34 : 0.24), line: line};
+}
+// Build the y2 traces for one segment's annotation lanes plus the layout metadata
+// both the coverage plot and the heatmap need to place the band. opts.showGenes /
+// opts.showPrimers gate the two kinds independently. y2 units are pixels in
+// [0, trackPx]; returns {traces, trackPx, tickvals, ticktext, hasLanes}.
+function annotationTraces(segLabel, opts) {
+  opts = opts || {};
+  const model = ANNOT[segLabel || ''];
+  if (!model || !model.lanes) return {traces: [], trackPx: 0, tickvals: [], ticktext: [], hasLanes: false};
+  const showGenes = opts.showGenes !== false, showPrimers = opts.showPrimers !== false;
+  const geneLanes = model.lanes.filter(function (ln) { return ln.kind === 'gene' && showGenes; });
+  const primerLanes = model.lanes.filter(function (ln) { return ln.kind === 'primer' && showPrimers; });
+  const ng = geneLanes.length, np = primerLanes.length;
+  if (!ng && !np) return {traces: [], trackPx: 0, tickvals: [], ticktext: [], hasLanes: false};
+
+  // Total band height (px), top -> bottom: [gene labels][gene lanes][gap]
+  // [primer lanes][bottom pad].
+  var trackPx = BAND_BOTTOM_PX;
+  if (ng) trackPx += GENE_LABEL_PX + ng * GENE_LANE_PX + (ng - 1) * GENE_GAP_PX;
+  if (np) trackPx += np * PRIMER_LANE_PX + (np - 1) * PRIMER_GAP_PX;
+  if (ng && np) trackPx += GENE_TO_PRIMER_PX;
+
+  var cursor = trackPx, traces = [], tickvals = [], ticktext = [];
+  var addBars = function (ln, center, laneH) {
+    var feats = ln.features || [], c = trackColors(ln.kind);
+    traces.push({
+      type: 'bar', orientation: 'h', yaxis: 'y2', xaxis: 'x',
+      // Features are 1-based inclusive [start, end]; the bar spans the full
+      // inclusive width (base start-0.5, width end-start+1).
+      base: feats.map(function (f) { return f.start - 0.5; }),
+      x: feats.map(function (f) { return (f.end - f.start) + 1; }),
+      y: feats.map(function () { return center; }),
+      width: laneH,
+      marker: {color: c.fill, line: {color: c.line, width: 1}},
+      hovertext: feats.map(function (f) { return f.name + ' (' + f.start + '–' + f.end + ')'; }),
+      hoverinfo: 'text', showlegend: false, name: ln.label,
+      _track: true, _trackKind: ln.kind
+    });
+  };
+  if (ng) cursor -= GENE_LABEL_PX;                    // reserve the label strip on top
+  geneLanes.forEach(function (ln, i) {
+    var center = cursor - GENE_LANE_PX / 2;
+    addBars(ln, center, GENE_LANE_PX);
+    // Gene names sit ABOVE their bars (centered), so a short bar's label no
+    // longer spills off to the right into the next feature.
+    var feats = ln.features || [];
+    traces.push({
+      type: 'scatter', mode: 'text', yaxis: 'y2', xaxis: 'x',
+      x: feats.map(function (f) { return (f.start + f.end) / 2; }),
+      y: feats.map(function () { return center + GENE_LANE_PX / 2 + GENE_LABEL_PX * 0.5; }),
+      text: feats.map(function (f) { return f.name; }),
+      textposition: 'middle center', textfont: {size: 10},
+      hoverinfo: 'skip', showlegend: false, cliponaxis: false, _track: true, _trackKind: 'gene-label'
+    });
+    tickvals.push(center); ticktext.push(ln.label);
+    cursor -= GENE_LANE_PX; if (i < ng - 1) cursor -= GENE_GAP_PX;
+  });
+  if (ng && np) cursor -= GENE_TO_PRIMER_PX;
+  var primerCenters = [];
+  primerLanes.forEach(function (ln, i) {
+    var center = cursor - PRIMER_LANE_PX / 2;
+    primerCenters.push(center);
+    addBars(ln, center, PRIMER_LANE_PX);
+    cursor -= PRIMER_LANE_PX; if (i < np - 1) cursor -= PRIMER_GAP_PX;
+  });
+  // One "Primers" tick centred on the (tightly clustered) pool block — the pools
+  // are the same concept, distinguished by row position, not by separate labels.
+  if (np) {
+    tickvals.push((primerCenters[0] + primerCenters[np - 1]) / 2);
+    ticktext.push('Primers');
+  }
+  return {traces: traces, trackPx: trackPx, tickvals: tickvals, ticktext: ticktext, hasLanes: true};
+}
+// Add the track y-axis (y2) to a depth/heatmap layout in place, shrinking the main
+// axis domain and growing the figure so the plot keeps ``basePx`` of height. y2 is
+// in pixels [0, trackPx]. No-op when there are no lanes.
+function withTrackAxes(layout, tm, basePx) {
+  if (!tm.hasLanes) return layout;
+  var base = basePx || DEPTH_PX;
+  var total = base + TRACK_GAP_PX + tm.trackPx;
+  layout.height = total;
+  layout.yaxis = Object.assign(layout.yaxis || {}, {domain: [(tm.trackPx + TRACK_GAP_PX) / total, 1]});
+  layout.yaxis2 = {
+    domain: [0, tm.trackPx / total], range: [0, tm.trackPx],
+    fixedrange: true, zeroline: false, showgrid: false, tickmode: 'array',
+    tickvals: tm.tickvals, ticktext: tm.ticktext, tickfont: {size: 11}
+  };
+  return layout;
+}
+
+/* ---- "By sample" panel: searchable list (left) + coverage plot (right) ----
+   The list is server-rendered worst-first with a status dot + coverage badge;
+   selecting a row draws that sample's depth plot with the annotation band and the
+   20x/100x guides. Segmented samples default to an "All (concatenated)" view
+   (one coloured trace per segment, segment ticks) plus a per-segment selector. */
+var bysampleSel = null;
+var bysampleSeg = null;   // segmented: '__all__' or a segment; unsegmented: ''
+var bysampleScale = 'linear';
+var bysampleTracks = {showGenes: true, showPrimers: true};
+function selectSample(sample) {
+  bysampleSel = sample;
+  // Roving tabindex: only the selected option is a tab stop (listbox pattern), so
+  // keyboard users don't Tab through all 96 rows.
+  document.querySelectorAll('#sampleList .sample-row').forEach(function (r) {
+    var on = r.getAttribute('data-sample') === sample;
+    r.classList.toggle('selected', on);
+    r.setAttribute('aria-selected', on ? 'true' : 'false');
+    r.setAttribute('tabindex', on ? '0' : '-1');
+  });
+  renderBySample();
+}
+function _bySampleSegChoice() {
+  var sel = document.getElementById('bysampleSegSelect');
+  return sel ? sel.value : '';
+}
+function renderBySample() {
+  var holder = document.getElementById('sample-coverage');
+  if (!holder || !bysampleSel) return;
+  var entries = COVERAGE[bysampleSel] || [];
+  // Purge any existing plot(s) before clearing, so responsive:true resize
+  // handlers on the old (about-to-be-detached) graph divs don't leak.
+  holder.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+    try { Plotly.purge(gd); } catch (e) {}
+  });
+  holder.innerHTML = '';
+  if (!entries.length) {
+    holder.innerHTML = '<p class="chart-note">No coverage data for this sample.</p>';
+    return;
+  }
+  var seg = HEATMAP.segmented ? (bysampleSeg || _bySampleSegChoice() || '__all__') : '';
+  if (HEATMAP.segmented && seg === '__all__') {
+    renderConcatenated(holder, entries);
+  } else {
+    var entry = entries.filter(function (e) { return (e.label || '') === seg; })[0] || entries[0];
+    renderSingleCoverage(holder, entry, bysampleSel);
+  }
+}
+function renderSingleCoverage(holder, e, sample) {
+  var div = document.createElement('div');
+  holder.appendChild(div);
+  var lineColor = seriesPalette()[0] || '#2a78d6';
+  var trace = {x: e.x, y: depthForScale(e.y, bysampleScale), mode: 'lines',
+               line: {width: 2, color: lineColor}, name: sample, connectgaps: false};
+  var title = e.label ? (sample + ' — ' + e.label) : sample;
+  var tm = annotationTraces(e.label || '', bysampleTracks);
+  var layout = withTrackAxes(coverageLayout(title, bysampleScale, e.logRange, e.linRange), tm);
+  Plotly.newPlot(div, [trace].concat(tm.traces), layout, {responsive: true, displayModeBar: false});
+}
+// Segmented "All (concatenated)": lay the segments end-to-end on one x-axis, one
+// coloured trace each, with a tick at each segment's midpoint. No annotation band
+// here (feature coords are per-segment, not on the concatenated axis).
+function renderConcatenated(holder, entries) {
+  var div = document.createElement('div');
+  holder.appendChild(div);
+  var pal = seriesPalette();
+  var traces = [], tickvals = [], ticktext = [], shapes = [], offset = 0;
+  // Combine the per-entry axis ranges (each computed ONCE in Python) rather than
+  // re-deriving the log-range formula in JS or scanning the raw depth arrays.
+  var logTop = 0, linTop = 1;
+  entries.forEach(function (e, i) {
+    var segLen = e.x.length ? e.x[e.x.length - 1] : 0;
+    var xoff = e.x.map(function (v) { return v + offset; });
+    traces.push({
+      x: xoff, y: depthForScale(e.y, bysampleScale), mode: 'lines',
+      line: {width: 1.6, color: pal[i % pal.length] || '#2a78d6'},
+      name: e.label, connectgaps: false,
+      hovertemplate: '%{y}<extra>' + (e.label || '') + '</extra>'
+    });
+    tickvals.push(offset + segLen / 2);
+    ticktext.push(e.label);
+    if (i > 0) shapes.push({type: 'line', x0: offset, x1: offset, yref: 'paper', y0: 0, y1: 1,
+                            line: {color: 'rgba(137,135,129,0.5)', width: 1, dash: 'dot'}});
+    if (e.logRange && e.logRange[1] > logTop) logTop = e.logRange[1];
+    if (e.linRange && e.linRange[1] > linTop) linTop = e.linRange[1];
+    offset += segLen;
+  });
+  var g = depthGuides();
+  var logRange = [0, logTop || Math.log10(150)];
+  var linRange = [0, linTop];
+  var layout = {
+    autosize: true, height: FIG_HEIGHT, margin: {l: 60, r: 30, t: 24, b: 60},
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+    xaxis: {title: {text: 'Genome position (segments concatenated)'}, tickmode: 'array',
+            tickvals: tickvals, ticktext: ticktext, gridcolor: 'rgba(137,135,129,0.25)', zeroline: false},
+    yaxis: depthYAxis(bysampleScale, logRange, linRange),
+    hovermode: 'x unified', showlegend: true,
+    legend: {orientation: 'h', yanchor: 'bottom', y: 1.02, xanchor: 'left', x: 0},
+    shapes: g.shapes.concat(shapes), annotations: g.annotations
+  };
+  Plotly.newPlot(div, traces, layout, {responsive: true, displayModeBar: false});
+}
+// Append a Linear/Log10 scale toggle into a server-rendered controls row.
+function injectScaleToggle(controls, onChange) {
+  if (controls) controls.appendChild(scaleToggleEl('linear', onChange));
+}
+
+/* ---- annotation-track on/off chips (Genes / Primers) ----
+   One chip per track kind that is actually present, default on, styled like the
+   scale toggle (aria-pressed). Toggling re-renders the affected view via the
+   same Plotly.react/newPlot path the scale toggle uses (never a yaxis.type
+   relayout), recomputing lanes so hiding a track reclaims its row. */
+// Which track kinds exist anywhere in the embedded model.
+function annotKinds() {
+  var genes = false, primers = false;
+  Object.keys(ANNOT).forEach(function (k) {
+    (ANNOT[k].lanes || []).forEach(function (ln) {
+      if (ln.kind === 'gene') genes = true; else primers = true;
+    });
+  });
+  return {genes: genes, primers: primers};
+}
+function trackToggleEl(label, initialOn, onChange) {
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = label;
+  b.className = initialOn ? 'track-chip active' : 'track-chip';
+  b.setAttribute('aria-pressed', initialOn ? 'true' : 'false');
+  b.addEventListener('click', function () {
+    var on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.classList.toggle('active', on);
+    onChange(on);
+  });
+  return b;
+}
+// Build the present chips as INDEPENDENT toggle buttons (Annotation and Primers
+// are different things, so they are not a single segmented control). `state` is
+// mutated on toggle; `rerender` redraws the view. Null when no track kind exists.
+function buildTrackToggles(state, rerender) {
+  var kinds = annotKinds();
+  if (!kinds.genes && !kinds.primers) return null;
+  var wrap = document.createElement('div');
+  wrap.className = 'track-toggles';
+  wrap.setAttribute('role', 'group');
+  wrap.setAttribute('aria-label', 'Annotation tracks');
+  if (kinds.genes) {
+    wrap.appendChild(trackToggleEl('Annotation', state.showGenes !== false, function (on) {
+      state.showGenes = on; rerender();
+    }));
+  }
+  if (kinds.primers) {
+    wrap.appendChild(trackToggleEl('Primers', state.showPrimers !== false, function (on) {
+      state.showPrimers = on; rerender();
+    }));
+  }
+  return wrap;
+}
+
+/* ---- coverage heatmap (spec §5): mode A position-depth, mode B segment grid ----
+   Rendered client-side from the embedded HEATMAP model (plain arrays). Samples on
+   the y-axis, worst-coverage-first (reversed so the worst sit at the top). The
+   colour scale is themed (dark zero-end in dark mode) and keyed on chartColor.
+   Height is computed in px and set on BOTH the container and the Plotly layout so
+   a redraw never leaves a stale oversized SVG overflowing the card (§11.1). */
+var HM_ROW_PX = 20, HM_BASE_PX = 96, HEATMAP_CB_MAX_PX = 260;
+var heatmapScale = 'log';        // depth scale in position mode (log default)
+var heatmapSeg = null;           // segmented: '__all__' or a segment; else ''
+var heatmapTracks = {showGenes: true, showPrimers: true};
+function _mixHex(a, b, t) {
+  function h(x) { x = (x || '').replace('#', ''); return [parseInt(x.slice(0,2),16), parseInt(x.slice(2,4),16), parseInt(x.slice(4,6),16)]; }
+  var A = h(a), B = h(b);
+  return 'rgb(' + Math.round(A[0]+(B[0]-A[0])*t) + ',' + Math.round(A[1]+(B[1]-A[1])*t) +
+         ',' + Math.round(A[2]+(B[2]-A[2])*t) + ')';
+}
+function heatmapColorscale() {
+  var accent = PARAMS.chartColor || '#2a78d6';
+  // Zero/low end is pale on light, near-card-dark on dark (so no-coverage never
+  // glares near-white in dark mode, spec §10).
+  var low = isDark() ? '#15151a' : '#eef3fa';
+  return [[0, low], [0.5, _mixHex(low, accent, 0.55)], [1, accent]];
+}
+function buildHeatmap() {
+  var holder = document.getElementById('vu-heatmap');
+  if (!holder || !window.Plotly || !HEATMAP || !HEATMAP.samples || !HEATMAP.samples.length) return;
+  var samples = HEATMAP.samples, nRows = samples.length;
+  var mode, segKey = '';
+  if (HEATMAP.segmented) {
+    if (heatmapSeg === null) heatmapSeg = '__all__';
+    if (heatmapSeg === '__all__') { mode = 'grid'; } else { mode = 'position'; segKey = heatmapSeg; }
+  } else { mode = 'position'; segKey = ''; heatmapSeg = ''; }
+
+  var cs = heatmapColorscale();
+  var heatPx = Math.max(160, HM_BASE_PX + nRows * HM_ROW_PX);
+  var grid = 'rgba(137,135,129,0.25)';
+  var traces, layout;
+
+  if (mode === 'grid') {
+    var g = HEATMAP.grid || {segments: [], z: []};
+    traces = [{
+      type: 'heatmap', x: g.segments, y: samples, z: g.z, zmin: 0, zmax: 100,
+      colorscale: cs, xgap: 1, ygap: 1,
+      colorbar: {title: {text: 'Genome coverage', side: 'right'}, ticksuffix: '%',
+                 thickness: PARAMS.colorbarThickness || 14, len: 1, y: 1, yanchor: 'top'},
+      hovertemplate: '%{y} · %{x}<br>%{z:.1f}% coverage<extra></extra>'
+    }];
+    layout = {
+      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 56},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+      // Segment labels sit BELOW the grid (side:'top' clipped them against the
+      // card's top edge); automargin keeps them fully in view.
+      xaxis: {type: 'category', side: 'bottom', gridcolor: 'rgba(0,0,0,0)', zeroline: false,
+              automargin: true},
+      yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
+    };
+  } else {
+    var p = (HEATMAP.position || {})[segKey || ''] || {x: [], zNatural: [], zLog: []};
+    var isLog = heatmapScale === 'log';
+    var cb = {title: {text: 'Sequencing depth', side: 'right'},
+              thickness: PARAMS.colorbarThickness || 14, len: 1, y: 1, yanchor: 'top'};
+    if (isLog) {
+      cb.tickmode = 'array';
+      cb.tickvals = [0, 1, 2, 3, 4, 5];
+      cb.ticktext = ['1', '10', '100', '1k', '10k', '100k'];
+    }
+    traces = [{
+      type: 'heatmap', x: p.x, y: samples, z: isLog ? p.zLog : p.zNatural,
+      colorscale: cs, colorbar: cb,
+      hovertemplate: isLog ? '%{y}<br>pos %{x:.0f}<br>~10^%{z:.2f}x<extra></extra>'
+                           : '%{y}<br>pos %{x:.0f}<br>%{z:.0f}x<extra></extra>'
+    }];
+    layout = {
+      autosize: true, height: heatPx, margin: {l: 130, r: 30, t: 16, b: 48},
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: themeFont(),
+      xaxis: {title: {text: 'Genome position'}, gridcolor: grid, zeroline: false},
+      yaxis: {type: 'category', autorange: 'reversed', gridcolor: 'rgba(0,0,0,0)', automargin: true}
+    };
+    // Annotation band beneath the heatmap (shares the genome x-axis), same y2
+    // lane traces as the by-sample plot.
+    var tm = annotationTraces(segKey || '', heatmapTracks);
+    withTrackAxes(layout, tm, heatPx);
+    traces = traces.concat(tm.traces);
+  }
+  // Cap the colour bar's height in px so it stays a sensible size at any sample
+  // count (it otherwise grew with the plot and dwarfed a large run). Anchored to
+  // the top of the heatmap band so it never overlaps the annotation lanes.
+  var _dom = layout.yaxis.domain || [0, 1];
+  var _bandFrac = _dom[1] - _dom[0];
+  var _cb = traces[0].colorbar;
+  _cb.lenmode = 'fraction';
+  _cb.len = Math.min(_bandFrac, HEATMAP_CB_MAX_PX / layout.height);
+  _cb.y = _dom[1];
+  _cb.yanchor = 'top';
+  holder.style.height = layout.height + 'px';
+  try { Plotly.react(holder, traces, layout, {responsive: true, displayModeBar: false}); } catch (e) {}
+  var scaleGrp = document.getElementById('heatmapScale');
+  if (scaleGrp) scaleGrp.style.display = (mode === 'position') ? '' : 'none';
+  var trackHolder = document.getElementById('heatmapTrackHolder');
+  if (trackHolder) trackHolder.style.display = (mode === 'position') ? '' : 'none';
+  var note = document.getElementById('heatmapNote');
+  if (note) note.textContent = (mode === 'grid')
+    ? 'Per-segment genome (horizontal) coverage; samples sorted worst-first.'
+    : 'Binned sequencing depth along the genome; samples sorted worst-first.';
+}
+function initHeatmap() {
+  if (!document.getElementById('vu-heatmap')) return;
+  var scaleGrp = document.getElementById('heatmapScale');
+  if (scaleGrp) scaleGrp.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      scaleGrp.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active'); x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true');
+      heatmapScale = b.getAttribute('data-scale');
+      buildHeatmap();
+    });
+  });
+  var chipBox = document.getElementById('heatmapSegChips');
+  if (chipBox) chipBox.querySelectorAll('.seg-chip').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      chipBox.querySelectorAll('.seg-chip').forEach(function (x) {
+        x.classList.remove('active'); x.setAttribute('aria-pressed', 'false');
+      });
+      btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true');
+      heatmapSeg = btn.getAttribute('data-seg');
+      buildHeatmap();
+    });
+  });
+  var trackHolder = document.getElementById('heatmapTrackHolder');
+  if (trackHolder) {
+    var chips = buildTrackToggles(heatmapTracks, function () { buildHeatmap(); });
+    if (chips) trackHolder.appendChild(chips);
+  }
+  buildHeatmap();
+}
+
+/* ---- sequencing-throughput Absolute | Percent toggle ----
+   Percent normalises each sample's stacked bar to 100% (fair QC-loss comparison
+   across very different depths). Toggled via a cheap layout `barnorm` relayout —
+   the freeze-prone slow path is `yaxis.type` on the ~2000-point coverage lines,
+   not `barnorm` on a handful of bars, so a relayout is safe here. */
+function enhanceThroughputToggle() {
+  var card = document.getElementById('throughput-card');
+  var group = document.getElementById('throughput-scale');
+  if (!card || !group || !window.Plotly) return;
+  var gd = card.querySelector('.js-plotly-plot');
+  if (!gd) return;
+  var apply = function (mode) {
+    var percent = mode === 'percent';
+    try {
+      Plotly.relayout(gd, {
+        barnorm: percent ? 'percent' : '',
+        'xaxis.title.text': percent ? '% of reads' : 'Reads',
+        'xaxis.ticksuffix': percent ? '%' : '',
+      });
+    } catch (e) { /* not yet drawn */ }
+  };
+  group.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      group.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
+      apply(b.getAttribute('data-mode'));
+    });
+  });
+}
+
+/* ---- KPI tiles: Global | Per-segment switch (segmented runs only) ---- */
+var GROUP_KPI = new Intl.NumberFormat('en-US');   // en-US pinned (see number-format gotcha)
+// One fixed fractional digit + thousands grouping, matching Python's _fmt_depth
+// (f"{v:,.1f}") so the server-rendered and JS-swapped depth tiles agree.
+var GROUP_DEPTH = new Intl.NumberFormat('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1});
+function kfmtDepth(v) {
+  if (v == null || !isFinite(v)) return '—';
+  return GROUP_DEPTH.format(v) + '×';
+}
+function kfmtPct(v) {  // fraction -> percent, matching Python's _fmt_pct
+  if (v == null || !isFinite(v)) return '—';
+  return (v * 100).toFixed(1) + '%';
+}
+function renderKpi(block) {
+  var g = document.getElementById('kpi-grid');
+  if (!g || !block) return;
+  var set = function (key, text) {
+    var el = g.querySelector('[data-kpi="' + key + '"]');
+    if (el) el.textContent = text;
+  };
+  var passPct = block.samples ? Math.round(block.pass_count / block.samples * 100) : 0;
+  set('samples', GROUP_KPI.format(block.samples));
+  set('pass_count', GROUP_KPI.format(block.pass_count));
+  set('pass_sub', passPct + '% of run');
+  set('below_warn', GROUP_KPI.format(block.below_warn));
+  set('median_coverage', kfmtPct(block.median_coverage));
+  set('mean_depth', kfmtDepth(block.mean_depth));
+  // The warn tile is red only while its count is non-zero (per-segment scope
+  // may cross the boundary either way).
+  var warnTile = document.getElementById('kpi-warn-tile');
+  if (warnTile) warnTile.classList.toggle('kpi-tile-alert', block.below_warn > 0);
+}
+function initKpiControls() {
+  var scope = document.getElementById('kpi-scope');
+  if (!scope) return;                       // unsegmented: global tiles only
+  var sel = document.getElementById('kpiSegmentSelect');
+  var lab = document.getElementById('kpiSegmentLabel');
+  var apply = function (mode) {
+    var perSeg = mode === 'segment';
+    sel.style.display = perSeg ? '' : 'none';
+    lab.style.display = perSeg ? '' : 'none';
+    renderKpi(perSeg ? (KPI.per_segment[sel.value] || KPI.global) : KPI.global);
+  };
+  scope.querySelectorAll('button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      scope.querySelectorAll('button').forEach(function (x) {
+        x.classList.remove('active');
+        x.setAttribute('aria-pressed', 'false');
+      });
+      b.classList.add('active');
+      b.setAttribute('aria-pressed', 'true');
+      apply(b.getAttribute('data-scope'));
+    });
+  });
+  sel.addEventListener('change', function () { renderKpi(KPI.per_segment[sel.value] || KPI.global); });
+}
+
+/* ---- run-parameters slide-over drawer ---- */
+var _paramsPrevFocus = null;
+// Make the rest of the page non-interactive while the modal drawer is open, so
+// Tab/AT focus can't wander behind the overlay (aria-modal alone doesn't do this).
+function _setBackgroundInert(on) {
+  ['header', 'main'].forEach(function (sel) {
+    var el = document.querySelector(sel);
+    if (!el) return;
+    if (on) { el.setAttribute('inert', ''); el.setAttribute('aria-hidden', 'true'); }
+    else { el.removeAttribute('inert'); el.removeAttribute('aria-hidden'); }
+  });
+}
+function _drawerFocusables(d) {
+  return Array.from(d.querySelectorAll('a[href], button, select, textarea, input, [tabindex]:not([tabindex="-1"])'))
+    .filter(function (el) { return !el.disabled && el.offsetParent !== null; });
+}
+function openParams() {
+  var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
+  if (!d) return;
+  _paramsPrevFocus = document.activeElement;
+  o.hidden = false; d.hidden = false;
+  _setBackgroundInert(true);
+  var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'true');
+  var close = document.getElementById('params-close'); if (close) close.focus();
+}
+function closeParams() {
+  var d = document.getElementById('params-drawer'), o = document.getElementById('params-overlay');
+  if (!d || d.hidden) return;
+  d.hidden = true; o.hidden = true;
+  _setBackgroundInert(false);
+  var btn = document.getElementById('params-btn'); if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (_paramsPrevFocus && _paramsPrevFocus.focus) _paramsPrevFocus.focus();
+}
+document.addEventListener('keydown', function (e) {
+  var d = document.getElementById('params-drawer');
+  var open = d && !d.hidden;
+  if (e.key === 'Escape') { closeParams(); return; }
+  // Focus trap: keep Tab cycling inside the open drawer.
+  if (open && e.key === 'Tab') {
+    var f = _drawerFocusables(d);
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+});
+
+/* ---- init ---- */
+// Wire the by-sample panel: list clicks/keyboard, type-ahead filter, the
+// segmented view selector, the Linear/Log10 scale toggle, the Genes/Primers
+// chips, and an initial selection of the worst sample (top of the list).
+function initBySample() {
+  var list = document.getElementById('sampleList');
+  if (!list) return;
+  var visibleRows = function () {
+    return Array.from(list.querySelectorAll('.sample-row')).filter(function (r) {
+      return !r.classList.contains('row-hidden');
+    });
+  };
+  list.querySelectorAll('.sample-row').forEach(function (row) {
+    row.setAttribute('tabindex', '-1');  // roving; selectSample promotes one to 0
+    row.addEventListener('click', function () { selectSample(row.getAttribute('data-sample')); });
+    // Arrow keys move selection+focus between visible options (listbox pattern);
+    // Enter/Space re-select (focus already moved on arrow).
+    row.addEventListener('keydown', function (ev) {
+      var rows = visibleRows(), idx = rows.indexOf(row), to = null;
+      if (ev.key === 'ArrowDown') to = rows[Math.min(rows.length - 1, idx + 1)];
+      else if (ev.key === 'ArrowUp') to = rows[Math.max(0, idx - 1)];
+      else if (ev.key === 'Home') to = rows[0];
+      else if (ev.key === 'End') to = rows[rows.length - 1];
+      else if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectSample(row.getAttribute('data-sample')); return; }
+      else return;
+      ev.preventDefault();
+      if (to) { selectSample(to.getAttribute('data-sample')); to.focus(); }
+    });
+  });
+  var search = document.getElementById('sampleSearch');
+  if (search) search.addEventListener('input', function () {
+    var q = search.value.trim().toLowerCase();
+    list.querySelectorAll('.sample-row').forEach(function (row) {
+      var name = (row.getAttribute('data-sample') || '').toLowerCase();
+      row.classList.toggle('row-hidden', !!q && name.indexOf(q) === -1);
+    });
+  });
+  var segSel = document.getElementById('bysampleSegSelect');
+  if (segSel) segSel.addEventListener('change', function () {
+    bysampleSeg = segSel.value; renderBySample();
+  });
+  var controls = document.getElementById('bysample-controls');
+  injectScaleToggle(controls, function (s) { bysampleScale = s; renderBySample(); });
+  var chips = buildTrackToggles(bysampleTracks, function () { renderBySample(); });
+  if (chips && controls) controls.appendChild(chips);
+  // Auto-select the worst sample (first row) so the panel is never empty.
+  var first = list.querySelector('.sample-row');
+  if (first) selectSample(first.getAttribute('data-sample'));
+}
+window.addEventListener('load', function () {
+  [themeCharts, initKpiControls, enhanceSortHeaders, initStatsControls,
+   enhanceThroughputToggle, initHeatmap, initBySample].forEach(function (fn) {
+    try { fn(); } catch (e) { /* progressive enhancement: never fatal */ }
+  });
+});
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 import unittest
 
 from viralunity.exceptions import (
+    GeneAnnotationNotFoundError,
     SampleSheetError,
     ValidationError,
     ViralUnityError,
@@ -18,6 +19,7 @@ class Test_StructuredErrors(unittest.TestCase):
         self.assertEqual(ValidationError("x").code, "validation_error")
         self.assertEqual(ViralUnityFileNotFoundError("x").code, "file_not_found")
         self.assertEqual(SampleSheetError("x").code, "sample_sheet_error")
+        self.assertEqual(GeneAnnotationNotFoundError("x").code, "gene_annotation_not_found")
 
     def test_message_preserved(self):
         err = ValidationError("bad thing")

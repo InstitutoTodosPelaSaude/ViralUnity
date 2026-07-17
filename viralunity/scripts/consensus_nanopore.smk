@@ -33,6 +33,7 @@ REFERENCE = rules.sanitize_reference.output.fasta
 rule all:
     input:
         config['output'] + "assembly/consensus/final_consensus/samples_alignment.fasta",
+        config['output'] + "report.html" if config.get("generate_html_report", True) else [],
         config['output'] + "benchmark.tsv"
 
 def get_map_input_fastqs(wildcards):
@@ -64,6 +65,64 @@ rule unify_assembly_statistics_reports:
         echo \"sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,average_depth,percentage_above_10x,percentage_above_100x,percentage_above_1000x,horizontal_coverage\" > {output.unified_stats_summary} ;
         cat {input.reports} >> {output.unified_stats_summary}
         """
+
+
+def annotation_track_inputs():
+    """Staged annotation files to draw as report tracks (empty when none)."""
+    tracks = []
+    if str(config.get("scheme", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/primer_scheme.bed")
+    if str(config.get("gene_annotation", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/gene_annotation.gff3")
+    return tracks
+
+# Nanopore sanitizes reference FASTA headers (see sanitize_reference), so the
+# coverage tables key on the sanitized contig name. Sanitize column 1 of the
+# staged BED/GFF3 with the same character class so the report can match them
+# exactly. GFF comment/directive lines (##...) are preserved verbatim.
+rule stage_primer_scheme:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["scheme"]
+    output:
+        config['output'] + "annotation/primer_scheme.bed"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        awk 'BEGIN{{OFS=FS="\t"}} /^#/{{print;next}} {{gsub(/[\/\\|,~ ]/,"_",$1)}} 1' {input} > {output}
+        """
+
+rule stage_gene_annotation:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["gene_annotation"]
+    output:
+        config['output'] + "annotation/gene_annotation.gff3"
+    shell:
+        r"""
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        awk 'BEGIN{{OFS=FS="\t"}} /^#/{{print;next}} {{gsub(/[\/\\|,~ ]/,"_",$1)}} 1' {input} > {output}
+        """
+
+rule generate_html_report:
+    conda:
+        "envs/report.yaml"
+    input:
+        stats_summary = rules.unify_assembly_statistics_reports.output.unified_stats_summary,
+        basewise = expand(rules.calculate_coverage_basewise.output.table_cov, sample=config["samples"]),
+        annotation_tracks = annotation_track_inputs()
+    output:
+        report = config['output'] + "report.html"
+    params:
+        output_dir = config['output']
+    log:
+        config['output'] + "logs/consensus_nanopore/generate_html_report/generate_html_report.log"
+    script:
+        "python/generate_consensus_report.py"
 
 
 rule organize_files:

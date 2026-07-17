@@ -20,6 +20,7 @@ rule all:
     input:
         config['output'] + "assembly/consensus/final_consensus/samples_alignment.fasta",
         config['output'] + "isnvs/isnvs_summary.tsv" if config.get("run_isnv", False) else [],
+        config['output'] + "report.html" if config.get("generate_html_report", True) else [],
         config['output'] + "benchmark.tsv"
 
 def get_map_input_fastqs(wildcards):
@@ -51,6 +52,59 @@ rule unify_assembly_statistics_reports:
         echo \"sample_name,number_of_reads,number_of_trim_paired_reads,number_of_mapped_reads,average_depth,percentage_above_10x,percentage_above_100x,percentage_above_1000x,horizontal_coverage\" > {output.unified_stats_summary} ;
         cat {input.reports} >> {output.unified_stats_summary}
         """
+
+def annotation_track_inputs():
+    """Staged annotation files to draw as report tracks (empty when none)."""
+    tracks = []
+    if str(config.get("scheme", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/primer_scheme.bed")
+    if str(config.get("gene_annotation", "NA")).strip().upper() != "NA":
+        tracks.append(config['output'] + "annotation/gene_annotation.gff3")
+    return tracks
+
+rule stage_primer_scheme:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["scheme"]
+    output:
+        config['output'] + "annotation/primer_scheme.bed"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
+rule stage_gene_annotation:
+    conda:
+        "envs/utils.yaml"
+    input:
+        config["gene_annotation"]
+    output:
+        config['output'] + "annotation/gene_annotation.gff3"
+    shell:
+        """
+        set -euo pipefail
+        mkdir -p $(dirname {output})
+        cp {input} {output}
+        """
+
+rule generate_html_report:
+    conda:
+        "envs/report.yaml"
+    input:
+        stats_summary = rules.unify_assembly_statistics_reports.output.unified_stats_summary,
+        basewise = expand(rules.calculate_coverage_basewise.output.table_cov, sample=config["samples"]),
+        annotation_tracks = annotation_track_inputs()
+    output:
+        report = config['output'] + "report.html"
+    params:
+        output_dir = config['output']
+    log:
+        config['output'] + "logs/consensus_illumina/generate_html_report/generate_html_report.log"
+    script:
+        "python/generate_consensus_report.py"
 
 rule summarize_isnvs:
     conda:
