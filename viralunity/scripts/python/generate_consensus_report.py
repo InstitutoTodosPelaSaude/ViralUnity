@@ -1263,7 +1263,10 @@ def build_reads_histogram(
     work = throughput_series(df, paired)
     samples = work["sample_name"].tolist()
     n = len(samples)
-    height = max(200, 46 + n * (18 if segmented else 14))
+    # ~20px per row (matching the coverage heatmap) so every sample gets a tick
+    # label: at a tighter row height Plotly thins the category labels (drops every
+    # other one), leaving the visible labels no longer aligned 1:1 with the bars.
+    height = max(220, 96 + n * 20)
     fig = go.Figure()
     fig.add_bar(
         y=samples,
@@ -1305,6 +1308,11 @@ def build_reads_histogram(
         xaxis=dict(title_text="Reads", gridcolor=GRID_COLOR, zeroline=False, rangemode="tozero"),
         yaxis=dict(
             type="category",
+            # One tick per bar; without this Plotly thins the labels when rows are
+            # dense, desyncing the visible labels from the bars.
+            tickmode="linear",
+            tick0=0,
+            dtick=1,
             gridcolor="rgba(0,0,0,0)",
             zeroline=False,
             automargin=True,

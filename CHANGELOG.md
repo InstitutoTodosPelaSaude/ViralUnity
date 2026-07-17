@@ -71,6 +71,12 @@ stay legible from 1 to ~96 samples (≈96×8 for segmented viruses).
 
 ### Fixed
 
+- The sequencing-throughput chart now shows a y-axis label for every sample,
+  aligned with its bar. Previously, on runs with many samples the rows were too
+  short for the tick font, so Plotly thinned the category labels (dropping every
+  other one) and the remaining labels no longer lined up with the bars. The chart
+  now allocates ~20px per row (matching the coverage heatmap) and forces one tick
+  per bar.
 - A near-empty (all-`N`) consensus no longer aborts an entire Illumina consensus
   run. The `generate_vcf_consensus` emptiness guard matched `N` (via `[A-Za-z]`),
   so a zero-coverage sample against a divergent reference was sent to GSAlign,
