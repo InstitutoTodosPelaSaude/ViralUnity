@@ -133,7 +133,33 @@ The consensus pipeline takes raw reads to processed consensus genome sequences w
 | `--threads` | `1` | Threads per individual task. |
 | `--threads-total` | `1` | Total threads for the workflow. |
 | `--create-config-only` | off | Only generate the config file; do not run the workflow. |
+| `--skip-input-validation` | off | Skip content-level integrity checks of the input files (FASTQ/FASTA/BED/GFF3). Existence checks still run. |
 | `--conda-prefix` | `~/.cache/viralunity/conda-envs` | Cache directory for per-rule conda envs. Picked up from `$VIRALUNITY_CONDA_PREFIX` if set. Pre-warm with `viralunity setup`. |
+
+### Input integrity validation
+
+Before writing the config, the consensus pipeline validates the *content* (not
+just the existence) of its critical inputs and refuses to start on a file that
+would break the run or silently produce wrong results:
+
+- **FASTQ** (sample reads) — streamed end to end: 4-line record structure, the
+  `@`/`+` marker lines, matching sequence/quality lengths, valid sequence and
+  quality characters, and gzip integrity. Catches truncated uploads and corrupt
+  archives.
+- **Reference FASTA** — at least one record, unique contig ids, non-empty
+  sequences, and a nucleotide-only (IUPAC) alphabet — so a protein FASTA or a
+  mislabeled file is rejected up front.
+- **Primer BED** (when provided) — ≥3 columns, valid integer intervals, and
+  chrom names that match the reference contigs. A mismatch is a hard error
+  because `samtools ampliconclip` would otherwise silently trim nothing. On
+  Nanopore the reference headers are sanitized before mapping, so a BED chrom
+  that matches only the bare accession is reported with a fix-it hint.
+- **GFF3 annotation** (when provided) — checked for structure and seqid matching,
+  but problems are **warnings only** and never block a run (the annotation track
+  is cosmetic).
+
+All problems in a file are reported together. Pass `--skip-input-validation` to
+bypass these checks (existence checks still run).
 
 ### Options — Illumina only
 

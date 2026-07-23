@@ -46,11 +46,12 @@ class Test_ValidateArgs(unittest.TestCase):
             "threads_total": 1,
         }
 
+    @patch("viralunity.viralunity_consensus.validate_consensus_input_integrity")
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_success(
-        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina, mock_integrity
     ):
         """Test successful validation with all validators passing."""
         mock_get_samples.return_value = {"sample1": ["file1_R1.fastq", "file1_R2.fastq"]}
@@ -72,11 +73,12 @@ class Test_ValidateArgs(unittest.TestCase):
 
         mock_get_samples.assert_called_once_with(self.args)
 
+    @patch("viralunity.viralunity_consensus.validate_consensus_input_integrity")
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_config_file_exists(
-        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina, mock_integrity
     ):
         """Test validation succeeds even if config file already exists."""
         mock_get_samples.return_value = {"sample1": ["file1_R1.fastq", "file1_R2.fastq"]}
@@ -85,11 +87,12 @@ class Test_ValidateArgs(unittest.TestCase):
 
         self.assertIn("sample1", samples)
 
+    @patch("viralunity.viralunity_consensus.validate_consensus_input_integrity")
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_output_dir_exists(
-        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina, mock_integrity
     ):
         """Test validation succeeds even if output directory already exists."""
         mock_get_samples.return_value = {"sample1": ["file1_R1.fastq", "file1_R2.fastq"]}
@@ -143,11 +146,12 @@ class Test_ValidateArgs(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_args(self.args)
 
+    @patch("viralunity.viralunity_consensus.validate_consensus_input_integrity")
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_primer_scheme_not_set(
-        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina, mock_integrity
     ):
         """Test validation succeeds when primer scheme is not provided."""
         mock_get_samples.return_value = {"sample1": ["file1.fastq"]}
@@ -158,11 +162,12 @@ class Test_ValidateArgs(unittest.TestCase):
         self.assertEqual(self.args["primer_scheme"], "NA")
         self.assertIn("sample1", samples)
 
+    @patch("viralunity.viralunity_consensus.validate_consensus_input_integrity")
     @patch("viralunity.viralunity_consensus.validate_illumina_requirements")
     @patch("viralunity.viralunity_consensus.validate_consensus_requirements")
     @patch("viralunity.viralunity_consensus.get_samples_from_args")
     def test_validate_args_gene_annotation_not_set(
-        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina
+        self, mock_get_samples, mock_validate_consensus, mock_validate_illumina, mock_integrity
     ):
         """gene_annotation is normalized to 'NA' when not provided."""
         mock_get_samples.return_value = {"sample1": ["file1.fastq"]}

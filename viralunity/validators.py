@@ -6,11 +6,13 @@ import os
 import re
 from typing import Any, Dict, List, Optional, cast
 
+from viralunity import integrity
 from viralunity.constants import DataType
 from viralunity.exceptions import (
     AdaptersNotFoundError,
     DiamondDatabaseNotFoundError,
     GeneAnnotationNotFoundError,
+    InputIntegrityError,
     Kraken2DatabaseNotFoundError,
     KronaDatabaseNotFoundError,
     PrimerSchemeNotFoundError,
@@ -493,6 +495,126 @@ def _validate_gene_annotation(args: Dict[str, Any]) -> None:
             validate_file_exists(cast(str, gene_annotation), "Gene annotation file")
         except ViralUnityFileNotFoundError as e:
             raise GeneAnnotationNotFoundError(f"Gene annotation file does not exist: {e}") from e
+
+
+# ---------------------------------------------------------------------------
+# Content-level input integrity (consensus)
+# ---------------------------------------------------------------------------
+
+
+def _is_real_path(value: Any) -> bool:
+    """True if *value* is a usable path string (not None/empty/the ``NA`` sentinel)."""
+    return isinstance(value, str) and value.strip() not in ("", "NA")
+
+
+def _reference_paths(reference: Any) -> List[str]:
+    """Return the reference FASTA path(s), whether single or per-segment dict."""
+    if isinstance(reference, dict):
+        return [p for p in reference.values() if _is_real_path(p)]
+    if _is_real_path(reference):
+        return [reference]
+    return []
+
+
+def _annotation_paths(gene_annotation: Any) -> List[str]:
+    """Return gene-annotation path(s), whether single, per-segment dict, or unset."""
+    if isinstance(gene_annotation, dict):
+        return [p for p in gene_annotation.values() if _is_real_path(p)]
+    if _is_real_path(gene_annotation):
+        return [gene_annotation]
+    return []
+
+
+def validate_consensus_input_integrity(args: Dict[str, Any], samples: Dict[str, List[str]]) -> None:
+    """Run content-level integrity checks on the consensus pipeline's inputs.
+
+    Streams every sample FASTQ, the reference FASTA(s), the primer BED (if any)
+    and the gene-annotation GFF3 (if any), aggregating problems across all files.
+    Blocking (``error``) issues are raised together as a single
+    :class:`InputIntegrityError`; ``warning`` issues (all GFF3 problems, an odd
+    BED strand column) are logged. Cross-file BED/GFF3 chrom matching is
+    data-type aware: the nanopore pipeline sanitizes reference headers before
+    mapping, so the expected BAM contig names differ from Illumina's raw ids.
+
+    Skipped entirely when ``args['skip_input_validation']`` is set. Assumes file
+    existence has already been checked (so failures here are about *content*).
+
+    Raises:
+        InputIntegrityError: If any blocking issue is found.
+    """
+    if args.get("skip_input_validation"):
+        logger.info("Input integrity validation skipped (--skip-input-validation).")
+        return
+
+    logger.info("Running input integrity checks")
+    reports: List[integrity.IntegrityReport] = []
+
+    # FASTQ: every read file of every sample.
+    for file_paths in samples.values():
+        for file_path in file_paths:
+            reports.append(integrity.validate_fastq(file_path))
+
+    # Reference FASTA(s): collect the headers so we can derive the exact contig
+    # names the pipeline will map against.
+    all_headers: List[str] = []
+    for ref_path in _reference_paths(args.get("reference")):
+        report = integrity.validate_fasta(ref_path)
+        reports.append(report)
+        all_headers.extend(report.headers)
+
+    data_type = args.get("data_type")
+    if data_type == DataType.NANOPORE:
+        expected_contigs = {integrity.sanitize_nanopore_contig(h) for h in all_headers}
+        accession_map = {
+            integrity.header_token(h): integrity.sanitize_nanopore_contig(h) for h in all_headers
+        }
+    else:
+        expected_contigs = {integrity.header_token(h) for h in all_headers}
+        accession_map = None
+    # Raw first-token ids are what the header-based annotation matching uses.
+    expected_seqids = {integrity.header_token(h) for h in all_headers}
+
+    # Primer BED (critical when provided): chrom names must match the reference.
+    primer_scheme = args.get("primer_scheme")
+    if isinstance(primer_scheme, str) and primer_scheme.strip() not in ("", "NA"):
+        reports.append(
+            integrity.validate_bed(
+                primer_scheme,
+                expected_contigs=expected_contigs or None,
+                accession_map=accession_map or None,
+            )
+        )
+
+    # Gene annotation GFF3 (cosmetic: warn-only, never blocks).
+    for gff_path in _annotation_paths(args.get("gene_annotation")):
+        reports.append(integrity.validate_gff3(gff_path, expected_seqids=expected_seqids or None))
+
+    errors = [(report.path, issue) for report in reports for issue in report.errors]
+    warnings = [(report.path, issue) for report in reports for issue in report.warnings]
+
+    for path, issue in warnings:
+        loc = f" (line {issue.line})" if issue.line else ""
+        logger.warning(
+            "Input integrity warning in %s [%s]%s: %s",
+            os.path.basename(path),
+            issue.code,
+            loc,
+            issue.message,
+        )
+
+    if errors:
+        grouped: Dict[str, List[integrity.IntegrityIssue]] = {}
+        for path, issue in errors:
+            grouped.setdefault(path, []).append(issue)
+        lines = [f"Input integrity check failed with {len(errors)} problem(s):"]
+        for path, issues in grouped.items():
+            lines.append(f"  {path}:")
+            for issue in issues:
+                loc = f" (line {issue.line})" if issue.line else ""
+                lines.append(f"    - [{issue.code}]{loc} {issue.message}")
+        raise InputIntegrityError("\n".join(lines), issues=[issue for _, issue in errors])
+
+    logger.info("Input integrity checks passed")
 
 
 def validate_metagenomics_requirements(args: Dict[str, Any]) -> None:

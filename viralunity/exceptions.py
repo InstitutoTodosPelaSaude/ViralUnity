@@ -36,6 +36,30 @@ class ValidationError(ViralUnityError):
     code = "validation_error"
 
 
+class InputIntegrityError(ValidationError):
+    """Raised when a content-level input-integrity check fails.
+
+    Carries the list of blocking :class:`~viralunity.integrity.IntegrityIssue`
+    objects that caused the failure so an embedding service can surface a
+    structured, per-file payload rather than only the aggregated message. It
+    subclasses :class:`ValidationError` so existing ``except ViralUnityError``
+    handling (clean exit, no traceback) applies unchanged.
+    """
+
+    code = "input_integrity_error"
+
+    def __init__(self, message: str = "", *, issues=None, code: Optional[str] = None):
+        super().__init__(message, code=code)
+        self.issues = list(issues) if issues else []
+
+    def to_dict(self) -> dict:
+        payload = super().to_dict()
+        payload["issues"] = [
+            issue.as_dict() if hasattr(issue, "as_dict") else issue for issue in self.issues
+        ]
+        return payload
+
+
 class ViralUnityFileNotFoundError(ViralUnityError):
     """Raised when a required file or directory is not found."""
 
