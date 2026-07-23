@@ -22,7 +22,7 @@ import gzip
 import re
 import zlib
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 # Cap the number of issues recorded per file. A file with more than this many
 # problems is clearly broken; reporting the first N keeps error payloads bounded
@@ -69,7 +69,11 @@ class IntegrityIssue:
 
     def as_dict(self) -> dict:
         """JSON-serializable representation for structured error payloads."""
-        payload = {"severity": self.severity, "code": self.code, "message": self.message}
+        payload: Dict[str, Any] = {
+            "severity": self.severity,
+            "code": self.code,
+            "message": self.message,
+        }
         if self.line is not None:
             payload["line"] = self.line
         if self.path is not None:
