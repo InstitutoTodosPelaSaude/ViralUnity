@@ -84,6 +84,26 @@ class Test_ConsensusIlluminaCommand(unittest.TestCase):
             },
         )
 
+    def test_single_reference_defaults_to_false(self):
+        """--single-reference is off unless explicitly passed."""
+        with patch(
+            "viralunity.viralunity_consensus_cli.consensus_main", return_value=0
+        ) as mock_main:
+            result = self.runner.invoke(consensus, self._required, catch_exceptions=False)
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(mock_main.call_args[0][0]["single_reference"])
+
+    def test_single_reference_flag_threads_into_args(self):
+        """--single-reference sets args["single_reference"] to True."""
+        with patch(
+            "viralunity.viralunity_consensus_cli.consensus_main", return_value=0
+        ) as mock_main:
+            result = self.runner.invoke(
+                consensus, self._required + ["--single-reference"], catch_exceptions=False
+            )
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(mock_main.call_args[0][0]["single_reference"])
+
     def test_gene_annotation_threads_into_args(self):
         """--gene-annotation lands in args as a plain path."""
         with patch(

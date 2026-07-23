@@ -87,7 +87,17 @@ _COMMON_OPTIONS = [
     click.option(
         "--reference",
         default=None,
-        help="Path to reference genome FASTA (mutually exclusive with --segmented-reference).",
+        help="Path to reference genome FASTA (mutually exclusive with "
+        "--segmented-reference). A multi-record FASTA is treated as a segmented "
+        "virus and split per record (segment names taken from the headers); pass "
+        "--single-reference to align all records together as one reference.",
+    ),
+    click.option(
+        "--single-reference",
+        is_flag=True,
+        default=False,
+        help="Treat a multi-record --reference as a single reference (align all "
+        "records together) instead of auto-splitting it into segments.",
     ),
     click.option(
         "--segmented-reference",
@@ -323,8 +333,9 @@ def consensus_illumina(
     optional primer trimming (ivar), variant calling (LoFreq), and consensus
     generation. Enable intra-host SNV analysis with ``--run-isnv``.
 
-    For segmented references (e.g. influenza), pass each segment as
-    ``--segmented-reference SEGMENT=PATH``; otherwise use ``--reference``.
+    For segmented references (e.g. influenza), pass a single multi-record
+    FASTA to ``--reference`` (segments are named from the headers), or one
+    ``--segmented-reference SEGMENT=PATH`` per segment.
     """
     args = dict(
         data_type="illumina",
@@ -434,8 +445,9 @@ def consensus_nanopore(
     user-selectable model via ``--clair3-model``), and consensus generation.
     Reads shorter than ``--minimum-read-length`` are filtered upstream.
 
-    For segmented references (e.g. influenza), pass each segment as
-    ``--segmented-reference SEGMENT=PATH``; otherwise use ``--reference``.
+    For segmented references (e.g. influenza), pass a single multi-record
+    FASTA to ``--reference`` (segments are named from the headers), or one
+    ``--segmented-reference SEGMENT=PATH`` per segment.
     """
     args = dict(
         data_type="nanopore",

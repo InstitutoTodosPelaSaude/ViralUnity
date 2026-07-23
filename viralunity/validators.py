@@ -1,6 +1,7 @@
 """Validation functions for ViralUnity pipeline arguments and data."""
 
 import csv
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, cast
@@ -20,6 +21,13 @@ from viralunity.exceptions import (
     ValidationError,
     ViralUnityFileNotFoundError,
 )
+from viralunity.reference_splitter import (
+    count_records,
+    split_annotation_by_segment,
+    split_multifasta,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def validate_file_exists(file_path: str, description: str = "File") -> None:
@@ -271,6 +279,79 @@ def validate_nanopore_requirements(args: Dict[str, Any]) -> None:
     # For now no strict validation; extend as needed.
 
 
+def _segment_input_dir(args: Dict[str, Any]) -> str:
+    """Directory where auto-split per-segment inputs are written.
+
+    Mirrors ``ConfigGenerator.add_output``'s ``output/run_name/`` layout so the
+    generated per-segment references live inside the run's directory.
+    """
+    return os.path.join(args["output"], args.get("run_name") or "", "input_references")
+
+
+def _maybe_split_multifasta_reference(args: Dict[str, Any]) -> bool:
+    """Auto-split a single multi-record ``--reference`` into per-segment files.
+
+    A ``--reference`` FASTA with more than one record is treated as a segmented
+    virus: it is split into one file per record and ``args["reference"]`` is
+    replaced with the ``{segment: path}`` mapping the segmented workflows
+    consume. ``--single-reference`` forces the historical single-reference
+    behaviour (all records aligned together in one pass).
+
+    Returns:
+        True if the reference was split (segmented mode engaged), else False.
+    """
+    reference = args.get("reference")
+    if args.get("single_reference"):
+        return False
+    if not isinstance(reference, str):
+        return False
+    if count_records(reference) <= 1:
+        return False
+
+    segment_map = split_multifasta(reference, _segment_input_dir(args))
+    logger.info(
+        "Reference '%s' contains %d records; running in segmented mode with " "segments: %s",
+        reference,
+        len(segment_map),
+        ", ".join(segment_map),
+    )
+    args["reference"] = segment_map
+    return True
+
+
+def _maybe_split_multifasta_annotation(args: Dict[str, Any]) -> None:
+    """Split a single combined gene annotation to match an auto-split reference.
+
+    Only called when the reference was auto-split from a multi-FASTA, so the
+    segment keys are sanitised header tokens that annotation seqids can match.
+    A ``--segmented-gene-annotation`` (already per-segment) is left untouched.
+    """
+    gene_annotation = args.get("gene_annotation")
+    if not gene_annotation or isinstance(gene_annotation, dict):
+        return
+    if args.get("segmented_gene_annotation"):
+        return
+
+    try:
+        validate_file_exists(cast(str, gene_annotation), "Gene annotation file")
+    except ViralUnityFileNotFoundError as e:
+        raise GeneAnnotationNotFoundError(f"Gene annotation file does not exist: {e}") from e
+
+    out_dir = os.path.join(_segment_input_dir(args), "annotation")
+    try:
+        annotation_map = split_annotation_by_segment(
+            cast(str, gene_annotation), out_dir, list(args["reference"].keys())
+        )
+    except ValueError as e:
+        raise ValidationError(str(e)) from e
+    logger.info(
+        "Gene annotation '%s' split into %d per-segment files.",
+        gene_annotation,
+        len(annotation_map),
+    )
+    args["gene_annotation"] = annotation_map
+
+
 def validate_consensus_requirements(args: Dict[str, Any]) -> None:
     """Validate consensus pipeline requirements.
 
@@ -324,6 +405,7 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
         args["segmented_reference"] = None
         reference = parsed_segments
 
+    autosplit = False
     if isinstance(reference, dict):
         for segment_name, segment_path in reference.items():
             try:
@@ -335,6 +417,7 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
             validate_file_exists(cast(str, reference), "Reference sequence file")
         except ViralUnityFileNotFoundError as e:
             raise ReferenceNotFoundError(f"Reference sequence file does not exist: {e}") from e
+        autosplit = _maybe_split_multifasta_reference(args)
 
     primer_scheme = args.get("primer_scheme")
     if primer_scheme:
@@ -342,6 +425,13 @@ def validate_consensus_requirements(args: Dict[str, Any]) -> None:
             validate_file_exists(primer_scheme, "Primer scheme file")
         except ViralUnityFileNotFoundError as e:
             raise PrimerSchemeNotFoundError(f"Primer scheme file does not exist: {e}") from e
+
+    # When the reference was auto-split from a multi-FASTA, its segment keys are
+    # the sanitised header tokens, so a single combined gene annotation can be
+    # split by seqid to match. (Explicit --segmented-reference keys are user
+    # chosen and may not match annotation seqids, so we don't auto-split there.)
+    if autosplit:
+        _maybe_split_multifasta_annotation(args)
 
     _validate_gene_annotation(args)
 

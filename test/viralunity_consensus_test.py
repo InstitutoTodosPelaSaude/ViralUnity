@@ -275,6 +275,84 @@ class Test_ValidateConsensusGeneAnnotation(unittest.TestCase):
             self._validate(args)
 
 
+class Test_ValidateConsensusMultiFastaReference(unittest.TestCase):
+    """Auto-splitting a single multi-record --reference into segments."""
+
+    def setUp(self):
+        from viralunity.validators import validate_consensus_requirements
+
+        self._validate = validate_consensus_requirements
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = self._tmp.name
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, name, text):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as fh:
+            fh.write(text)
+        return path
+
+    def _base_args(self, **overrides):
+        args = {
+            "reference": None,
+            "segmented_reference": None,
+            "primer_scheme": None,
+            "gene_annotation": None,
+            "segmented_gene_annotation": None,
+            "single_reference": False,
+            "output": os.path.join(self.tmp, "out"),
+            "run_name": "run",
+        }
+        args.update(overrides)
+        return args
+
+    def test_multi_record_reference_autosplits_to_dict(self):
+        ref = self._write(
+            "flu.fasta",
+            ">NC_007373.1|Influenza_A|segment_1\nACGT\n"
+            ">NC_007372.1|Influenza_A|segment_2\nTTTT\n",
+        )
+        args = self._base_args(reference=ref)
+        self._validate(args)
+        self.assertIsInstance(args["reference"], dict)
+        self.assertEqual(set(args["reference"].keys()), {"NC_007373.1", "NC_007372.1"})
+
+    def test_single_reference_flag_keeps_string(self):
+        ref = self._write("flu.fasta", ">a\nAC\n>b\nGT\n")
+        args = self._base_args(reference=ref, single_reference=True)
+        self._validate(args)
+        self.assertEqual(args["reference"], ref)
+
+    def test_single_record_reference_is_not_split(self):
+        ref = self._write("one.fasta", ">only\nACGT\n")
+        args = self._base_args(reference=ref)
+        self._validate(args)
+        self.assertEqual(args["reference"], ref)
+
+    def test_single_annotation_splits_to_match_segments(self):
+        ref = self._write("flu.fasta", ">NC_007373.1|x\nAC\n>NC_007372.1|y\nGT\n")
+        gff = self._write(
+            "genes.gff3",
+            "##gff-version 3\n"
+            "NC_007373.1\tRefSeq\tgene\t1\t2\t.\t+\t.\tID=g1\n"
+            "NC_007372.1\tRefSeq\tgene\t1\t2\t.\t+\t.\tID=g2\n",
+        )
+        args = self._base_args(reference=ref, gene_annotation=gff)
+        self._validate(args)
+        self.assertIsInstance(args["gene_annotation"], dict)
+        self.assertEqual(set(args["gene_annotation"].keys()), {"NC_007373.1", "NC_007372.1"})
+
+    def test_reference_and_segmented_reference_mutually_exclusive(self):
+        from viralunity.exceptions import ValidationError
+
+        ref = self._write("flu.fasta", ">a\nAC\n")
+        args = self._base_args(reference=ref, segmented_reference={"S": ref})
+        with self.assertRaises(ValidationError):
+            self._validate(args)
+
+
 class Test_ValidateSampleSheet(unittest.TestCase):
     """Tests for validate_sample_sheet function.
 
