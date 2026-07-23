@@ -205,6 +205,37 @@ viralunity consensus illumina \
     --threads-total 4
 ```
 
+**Illumina — single reference with multiple contigs (fragmented genome)**: when a
+genome is only available as several contigs/scaffolds but should be treated as **one**
+reference (all contigs aligned together in a single pass, e.g. to report one
+whole-assembly horizontal coverage), pass the multi-record FASTA with
+`--single-reference` so it is *not* auto-split into segments:
+
+```bash
+viralunity consensus illumina \
+    --sample-sheet /path/to/example.csv \
+    --config-file /path/to/example.yml \
+    --run-name example_run \
+    --output /path/to/example_output \
+    --reference /path/to/fragmented_assembly.fasta \
+    --single-reference \
+    --threads 2 \
+    --threads-total 4
+```
+
+Behavior notes for a multi-contig single reference:
+
+- **Coverage/depth statistics** (`assembly_stats_summary.csv`) are aggregated across
+  all contigs: `horizontal_coverage` is the fraction of *all* reference positions at
+  or above the threshold, and `average_depth` is the whole-assembly mean.
+- **Consensus** keeps one record per contig (contigs are never fused).
+- In the **HTML report**, the coverage track lays the contigs end-to-end along one
+  genome axis (in FASTA order).
+- **Known limitation:** a `--gene-annotation` track on a multi-contig single
+  reference only renders features for the *first* contig. For per-contig annotation,
+  run in segmented mode instead (omit `--single-reference` and provide a matching
+  per-segment `--gene-annotation`/`--segmented-gene-annotation`).
+
 **Nanopore:**
 
 ```bash

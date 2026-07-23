@@ -57,6 +57,25 @@ rule align_consensus_to_reference_genome:
         exec > {log} 2>&1
         cat {params.reference} {input.consensus_files} > {output.combined}
         minimap2 {params.minimap2_flags} {params.reference} {output.combined} -o {output.sam}
-        gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
+        # gofasta sam toMultiAlign builds an MSA against a single reference and
+        # aborts on a multi-contig reference (e.g. a fragmented genome supplied
+        # with --single-reference). Align one reference contig at a time and
+        # concatenate; a single-contig reference (the common case, and every
+        # segmented per-segment run) takes the same one-pass path as before.
+        grep '^>' {params.reference} | sed 's/^>//' | cut -d' ' -f1 > {output.sam}.contigs
+        if [ "$(wc -l < {output.sam}.contigs)" -le 1 ]; then
+            gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
+        else
+            : > {output.aln_consensus}
+            while read -r contig; do
+                grep -P "^@(HD|PG)\t" {output.sam} > {output.sam}.one || true
+                grep -P "^@SQ\tSN:$contig(\t|$)" {output.sam} >> {output.sam}.one || true
+                awk -v c="$contig" '$0 !~ /^@/ && $3 == c' {output.sam} >> {output.sam}.one
+                gofasta sam toMultiAlign --pad -s {output.sam}.one -o {output.sam}.aln
+                cat {output.sam}.aln >> {output.aln_consensus}
+            done < {output.sam}.contigs
+            rm -f {output.sam}.one {output.sam}.aln
+        fi
+        rm -f {output.sam}.contigs
         sed '/^>/ ! s/-/N/g' {output.aln_consensus} > {output.masked}
         """

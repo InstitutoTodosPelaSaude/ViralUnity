@@ -268,6 +268,33 @@ def load_basewise_table(path: str) -> pd.DataFrame:
     return pd.read_csv(path, sep=r"\s+", header=None, names=cols, engine="python")
 
 
+def _to_genome_coordinates(table: pd.DataFrame) -> np.ndarray:
+    """Map per-contig positions to cumulative whole-genome coordinates.
+
+    A single (non-segmented) reference FASTA with multiple contigs — e.g. a
+    fragmented assembly passed with ``--single-reference`` — yields a basewise
+    table whose ``position`` restarts at 1 for each contig. Laying the contigs
+    end-to-end in first-appearance order (offsetting each by the summed length of
+    the preceding contigs) gives a monotonic ``1..genome_len`` coordinate, so the
+    coverage track spans the whole assembly instead of stacking every contig into
+    the first region and leaving the rest of the axis blank.
+
+    Single-contig tables (the usual case, and every segmented per-segment table)
+    are returned unchanged.
+    """
+    ref_ids = table["reference_id"].to_numpy()
+    positions = table["position"].to_numpy().astype(np.int64, copy=True)
+    order = pd.unique(ref_ids)
+    if len(order) <= 1:
+        return positions
+    offset, offsets = 0, {}
+    for ref in order:
+        offsets[ref] = offset
+        offset += int(np.count_nonzero(ref_ids == ref))
+    shift = np.array([offsets[r] for r in ref_ids], dtype=np.int64)
+    return positions + shift
+
+
 # --------------------------------------------------------------------------- #
 # Annotation tracks (gene GFF3 + primer BED)
 # --------------------------------------------------------------------------- #
@@ -1598,7 +1625,7 @@ def _load_coverage_cache(output_dir: str, df: pd.DataFrame, segmented: bool) -> 
             continue
         if segment not in contig_by_segment:
             contig_by_segment[segment] = str(table["reference_id"].iloc[0])
-        pos, depth = downsample_min_pool(table["position"].to_numpy(), table["depth"].to_numpy())
+        pos, depth = downsample_min_pool(_to_genome_coordinates(table), table["depth"].to_numpy())
         cache[(sample, segment)] = (pos, depth)
     return cache, lengths, contig_by_segment
 
