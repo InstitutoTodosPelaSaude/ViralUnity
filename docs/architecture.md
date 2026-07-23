@@ -33,7 +33,9 @@ per-rule conda envs               viralunity/scripts/envs/*.yaml  (--use-conda)
 | `<sub>_cli.py` | Per-subcommand click options → plain `args` dict. |
 | `viralunity_consensus.py`, `viralunity_meta.py` | Own `validate_args`, `generate_config_file`, `run_snakemake_workflow`; call the orchestrator. |
 | `_orchestrator.py` | Shared `run_pipeline` skeleton (resolve → validate → config → manifest → run) with structured error handling. |
-| `validators.py` | File/dir existence, sample-sheet parsing, cross-dependency checks, input sanitization. |
+| `validators.py` | File/dir existence, sample-sheet parsing, cross-dependency checks, input sanitization, and content-level input-integrity orchestration (`validate_consensus_input_integrity`). |
+| `integrity.py` | Streaming, pure-stdlib content validators for consensus inputs (FASTQ/FASTA/BED/GFF3); collect `IntegrityIssue`s rather than raising. |
+| `reference_splitter.py` | Splits a multi-record `--reference` FASTA (and a combined annotation) into the per-segment `{segment: path}` dict the segmented workflows consume. |
 | `config_generator.py` | Writes the YAML config (the contract with the `.smk` files). |
 | `constants.py` | `ConfigKeys`, `DataType`, `ResourceDefaults` (per-pipeline rule lists). |
 | `exceptions.py` | Typed error hierarchy with machine-readable `code`s. |
@@ -56,5 +58,7 @@ of FASTQ paths (readers tolerate the legacy space-joined string form too).
 
 `run_snakemake_workflow` formats a path:
 `scripts/{consensus,metagenomics}_{illumina,nanopore}[_segmented].smk`.
-Segmentation is chosen when `args["reference"]` is a dict (from repeatable
-`--segmented-reference SEGMENT=PATH`). There is no segmented metagenomics variant.
+Segmentation is chosen when `args["reference"]` is a dict — built either from
+repeatable `--segmented-reference SEGMENT=PATH`, or by `reference_splitter.py`
+auto-splitting a single multi-record `--reference` FASTA during validation
+(unless `--single-reference`). There is no segmented metagenomics variant.

@@ -150,10 +150,13 @@ would break the run or silently produce wrong results:
   sequences, and a nucleotide-only (IUPAC) alphabet — so a protein FASTA or a
   mislabeled file is rejected up front.
 - **Primer BED** (when provided) — ≥3 columns, valid integer intervals, and
-  chrom names that match the reference contigs. A mismatch is a hard error
-  because `samtools ampliconclip` would otherwise silently trim nothing. On
-  Nanopore the reference headers are sanitized before mapping, so a BED chrom
-  that matches only the bare accession is reported with a fix-it hint.
+  chrom names that match the reference contigs. If *no* chrom matches any
+  reference contig it is a hard error (the whole scheme is wrong for this
+  reference, and `samtools ampliconclip` would silently trim nothing); if some
+  chroms match, the unmatched rows are downgraded to warnings (e.g. a
+  whole-scheme BED reused on a subset of segments). On Nanopore the reference
+  headers are sanitized before mapping, so a BED chrom that matches only the bare
+  accession is reported with a fix-it hint.
 - **GFF3 annotation** (when provided) — checked for structure and seqid matching,
   but problems are **warnings only** and never block a run (the annotation track
   is cosmetic).

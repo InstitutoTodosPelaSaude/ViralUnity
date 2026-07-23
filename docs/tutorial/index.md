@@ -14,7 +14,7 @@ ViralUnity orchestrates a Snakemake workflow that turns raw viral sequencing rea
 | Reads from a known virus and a reference genome; want a per-sample consensus  | `viralunity consensus`                            |
 | Reads from a clinical/environmental sample; want to know what viruses are in it | `viralunity meta` (defaults)                      |
 | Same as above, but also want consensus genomes for any virus that turns up    | `viralunity meta --run-reference-assembly`        |
-| Multi-segment virus (influenza, bunyaviruses, …)                              | `viralunity consensus --segmented-reference …`    |
+| Multi-segment virus (influenza, bunyaviruses, …)                              | `viralunity consensus --reference multi.fasta` (auto-split) |
 
 ## How to read this tutorial
 

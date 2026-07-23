@@ -46,6 +46,17 @@ safe to run concurrently from the same cwd.
   `validators.ensure_within_base(path, base)` to block path traversal.
 - Sample sheets are validated up-front: duplicate ids, ragged rows, wrong column
   counts, and missing files all raise `SampleSheetError` / `ViralUnityFileNotFoundError`.
+- **Consensus inputs are content-validated, not just existence-checked**, in
+  `validate_args` before any workflow runs (and under `create_config_only`, so a
+  bad upload is caught in a config-only preflight). Every sample FASTQ is streamed
+  (record structure, seq/quality lengths, gzip integrity, truncation); the
+  reference FASTA must be nucleotide-only with unique contig ids; a primer BED's
+  chrom names must match the reference contigs. Blocking problems raise
+  `InputIntegrityError`; GFF3 annotation issues are warnings only. Pass
+  `skip_input_validation=True` in `args` to bypass.
+- **Not yet covered:** metagenomics inputs and databases are *not* content-validated
+  (only consensus is), and the FASTQ scan streams each file fully with no size or
+  time budget — enforce your own upload-size limit upstream before validation.
 
 ## Observability
 
@@ -68,6 +79,11 @@ except ViralUnityError as e:
 
 `run_pipeline` already logs these as `[<code>] <message>` and returns `1`;
 catch them earlier if you need the structured payload.
+
+`InputIntegrityError` (code `input_integrity_error`) additionally carries an
+`issues` list in its `to_dict()`; each issue has `path`, `kind`
+(`fastq`/`fasta`/`bed`/`gff3`), `code`, `severity`, `message`, and an optional
+`line` — surface these to tell the user exactly which file (and line) failed.
 
 ## Provenance
 

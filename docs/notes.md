@@ -33,7 +33,15 @@ viralunity consensus illumina \
     --segmented-reference L=/path/to/l_segment.fasta
 ```
 
-When this argument is detected, the pipeline dispatches a specialised modular workflow that processes each segment independently in parallel. Results are organised under `samples/{sample_name}/{segment_name}/`.
+Alternatively, pass a single multi-record FASTA to `--reference`: when it holds
+more than one sequence ViralUnity treats it as segmented and splits it into one
+reference per record automatically, deriving segment names from the FASTA headers
+(first `|`/whitespace token, sanitised). A single combined `--gene-annotation` is
+split by seqid to match. Use `--single-reference` to opt out and align all records
+together as one reference. The split per-segment references are written under
+`<output>/<run_name>/input_references/`.
+
+When either form is detected, the pipeline dispatches a specialised modular workflow that processes each segment independently in parallel. Results are organised under `samples/{sample_name}/{segment_name}/`.
 
 ## Nanopore data
 
