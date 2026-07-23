@@ -67,6 +67,7 @@ rule align_consensus_to_reference_genome:
             gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
         else
             : > {output.aln_consensus}
+            aln_dir=$(dirname {output.aln_consensus})
             while read -r contig; do
                 awk '$1 == "@HD"' {output.sam} > {output.sam}.one
                 awk -F'\t' -v c="$contig" '$1 == "@SQ" && $2 == "SN:"c' {output.sam} >> {output.sam}.one
@@ -76,11 +77,16 @@ rule align_consensus_to_reference_genome:
                 # still emits their @SQ line, and gofasta aborts on a header-only
                 # SAM (e.g. an all-N consensus for an uncovered contig).
                 if grep -qv '^@' {output.sam}.one; then
-                    gofasta sam toMultiAlign --pad -s {output.sam}.one -o {output.sam}.aln
-                    cat {output.sam}.aln >> {output.aln_consensus}
+                    # Write each contig's alignment as its own MSA file (a
+                    # multi-contig reference is really one alignment per contig),
+                    # then concatenate into the declared {output.aln_consensus} so
+                    # the Snakemake DAG output is unchanged.
+                    safe=$(printf '%s' "$contig" | sed 's/[^A-Za-z0-9._-]/_/g')
+                    gofasta sam toMultiAlign --pad -s {output.sam}.one -o "$aln_dir/samples_alignment.$safe.fasta"
+                    cat "$aln_dir/samples_alignment.$safe.fasta" >> {output.aln_consensus}
                 fi
             done < {output.sam}.contigs
-            rm -f {output.sam}.one {output.sam}.aln
+            rm -f {output.sam}.one
         fi
         rm -f {output.sam}.contigs
         sed '/^>/ ! s/-/N/g' {output.aln_consensus} > {output.masked}

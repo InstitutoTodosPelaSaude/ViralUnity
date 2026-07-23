@@ -35,9 +35,11 @@ bunyaviruses, …): a single multi-FASTA reference can be used instead of one
   now completes. Two latent bugs on that previously-unexercised path were fixed:
   - `align_consensus_to_reference_genome` aligned the consensus to the reference
     with `gofasta sam toMultiAlign`, which aborts on a multi-contig reference;
-    the alignment is now built one reference contig at a time and concatenated.
-    A single-contig reference (the common case, and every segmented per-segment
-    run) takes the same one-pass path as before.
+    the alignment is now built one reference contig at a time. Each contig's MSA
+    is written as its own `samples_alignment.<contig>.fasta`, with a concatenation
+    kept as `samples_alignment.fasta` for backward compatibility. A single-contig
+    reference (the common case, and every segmented per-segment run) takes the
+    same one-pass path as before.
   - The HTML report's coverage track binned per-contig positions (which restart
     at 1 for each contig) onto a single genome axis, stacking every contig into
     the first region. Contigs are now laid end-to-end into genome coordinates.
