@@ -7,6 +7,38 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.5.0] - 2026-07-23
+
+Simplifies running the consensus pipeline on segmented viruses (influenza,
+bunyaviruses, …): a single multi-FASTA reference can be used instead of one
+`--segmented-reference` flag per segment.
+
+### Added
+
+- **Single multi-FASTA reference for segmented viruses.** A `--reference` FASTA
+  with more than one record is now automatically treated as a segmented virus:
+  it is split into one reference per record during validation, with segment
+  names taken from the FASTA headers (first `|`/whitespace token, sanitized to
+  the same character class the nanopore workflow and consensus report use).
+  Duplicate-derived names are de-duplicated. Works for both Illumina and
+  Nanopore.
+- A single combined `--gene-annotation` (GFF3/BED) is split by seqid to match
+  the auto-detected segments.
+- `--single-reference` flag to opt out of auto-splitting and align all records
+  of a multi-record reference together as one reference (the historical
+  behavior).
+
+### Notes for review
+
+- **Behavior change (for PI sign-off):** a multi-record file passed to
+  `--reference` was previously aligned as a single reference; it is now split
+  into segments unless `--single-reference` is given. Auto-detection logs the
+  record count and resulting segment names. Split per-segment inputs are written
+  under `<output>/<run_name>/input_references/`.
+- Splitting happens entirely in the Python layer (`reference_splitter.py`); the
+  Snakemake workflows are unchanged and continue to receive the per-segment
+  `{segment: path}` mapping that `--segmented-reference` already produced.
+
 ## [1.4.0] - 2026-07-16
 
 Adds an interactive, self-contained HTML report for consensus runs, designed to

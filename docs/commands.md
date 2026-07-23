@@ -122,7 +122,8 @@ The consensus pipeline takes raw reads to processed consensus genome sequences w
 | `--sample-sheet` | *(required)* | CSV file with sample IDs and file paths. |
 | `--config-file` | *(required)* | Path for the YAML config file to be created. |
 | `--output` | *(required)* | Base output directory. |
-| `--reference` | — | Reference genome FASTA (mutually exclusive with `--segmented-reference`). |
+| `--reference` | — | Reference genome FASTA (mutually exclusive with `--segmented-reference`). A multi-record FASTA is treated as a segmented virus and split into one reference per record, with segment names taken from the headers (first `\|`/whitespace token, sanitized). |
+| `--single-reference` | off | Treat a multi-record `--reference` as a single reference (align all records together in one pass) instead of auto-splitting it into segments. |
 | `--segmented-reference` | — | Per-segment reference: `SEGMENT=PATH` (repeatable). |
 | `--primer-scheme` | — | Primer scheme BED file (amplicon sequencing only). |
 | `--minimum-coverage` | `20` | Minimum depth for consensus base inclusion. |
@@ -175,7 +176,22 @@ viralunity consensus illumina \
     --threads-total 4
 ```
 
-**Illumina — segmented genome** (replace `--reference` with `--segmented-reference`):
+**Illumina — segmented genome, single multi-FASTA** (simplest; one file with all
+segments, segment names taken from the FASTA headers):
+
+```bash
+viralunity consensus illumina \
+    --sample-sheet /path/to/example.csv \
+    --config-file /path/to/example_segmented.yml \
+    --run-name example_run \
+    --output /path/to/example_output \
+    --reference /path/to/references/all_segments.fasta \
+    --threads 2 \
+    --threads-total 4
+```
+
+**Illumina — segmented genome, one file per segment** (explicit segment names via
+repeatable `--segmented-reference`):
 
 ```bash
 viralunity consensus illumina \
