@@ -55,6 +55,10 @@ bunyaviruses, …): a single multi-FASTA reference can be used instead of one
   - The HTML report's coverage track binned per-contig positions (which restart
     at 1 for each contig) onto a single genome axis, stacking every contig into
     the first region. Contigs are now laid end-to-end into genome coordinates.
+- HTML report, segmented assembly-statistics table: in segment-focus mode the
+  "Sample" column showed the segment name on every row (correct only in the
+  indented roll-up view). It now shows the sample name, and sorting that column
+  in segment-focus mode sorts by sample. The "All" roll-up view is unchanged.
 
 ### Notes for review
 

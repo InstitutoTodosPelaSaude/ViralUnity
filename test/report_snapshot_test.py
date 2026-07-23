@@ -168,6 +168,27 @@ class TestReportSnapshot(unittest.TestCase):
         # a single-genome run has nothing to split by, so no Global/Per-segment toggle.
         self.assertNotIn('id="kpi-scope"', _render("unsegmented"))
 
+    def test_segment_focus_row_shows_sample_not_segment_name(self):
+        # In segment-focus mode the stats table shows only per-segment subrows,
+        # flat, so the first ("Sample") column must show the SAMPLE name -- not
+        # the segment name (which is right only in the indented roll-up view).
+        html = _render("segmented")
+        m = re.search(r'<tr class="seg-subrow[^>]*>(.*?)</tr>', html, re.S)
+        self.assertIsNotNone(m, "expected a per-segment subrow")
+        cell_m = re.search(r"(<td[^>]*cell-subrow[^>]*>)(.*?)</td>", m.group(1), re.S)
+        first_cell_td, first_cell = cell_m.group(1), cell_m.group(2)
+        # Both identities are present in the cell so the view can pick per mode:
+        # the segment label (roll-up) and the sample label (segment focus).
+        self.assertRegex(first_cell, r'class="[^"]*subrow-seg[^"]*"[^>]*>\s*S1\b')
+        self.assertRegex(first_cell, r'class="[^"]*subrow-sample[^"]*"[^>]*>\s*sample-A\b')
+        # The app JS puts the table into a segment-focus display mode so CSS can
+        # swap which label shows.
+        self.assertIn("seg-focus", _app_js(html))
+        # In focus mode the Sample column must sort by sample, so the subrow's
+        # first cell carries a sample sort key and the sorter reads it.
+        self.assertRegex(first_cell_td, r'data-sort-sample="sample-A"')
+        self.assertIn("data-sort-sample", _app_js(html))
+
     def _annotation_json(self, html):
         m = re.search(r'id="annotationData"[^>]*>(.*?)</script>', html, re.S)
         self.assertIsNotNone(m, "annotationData block missing")

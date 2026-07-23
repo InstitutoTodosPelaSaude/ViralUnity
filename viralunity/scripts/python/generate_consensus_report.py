@@ -1102,8 +1102,17 @@ def _segmented_stats_table_html(df: pd.DataFrame, paired: bool, params: ReportPa
             body_rows.append(
                 f'<tr class="seg-subrow row-hidden" data-role="subrow" data-parent="{sid}" '
                 f'data-sample="{s_esc}" data-segment="{seg}" data-coverage="{seg_cov:.6f}">'
-                f'<td class="col-freeze cell-sample cell-subrow" data-sort="{seg}">'
-                f'<span class="cov-dot cov-dot-{seg_tier}" aria-hidden="true"></span>{seg}</td>'
+                # data-sort orders subrows by segment within the roll-up group;
+                # data-sort-sample is used instead when the Sample column is
+                # sorted in segment-focus (flat) mode.
+                f'<td class="col-freeze cell-sample cell-subrow" data-sort="{seg}" '
+                f'data-sort-sample="{s_esc}">'
+                f'<span class="cov-dot cov-dot-{seg_tier}" aria-hidden="true"></span>'
+                # Both identities are rendered; CSS shows the segment name in the
+                # indented roll-up and the sample name in segment-focus mode (where
+                # subrows are shown flat, one per sample).
+                f'<span class="subrow-seg">{seg}</span>'
+                f'<span class="subrow-sample">{s_esc}</span></td>'
                 f'<td class="num cell-muted">—</td>'
                 f'<td class="num cell-muted">—</td>'
                 f'<td class="num" data-sort="{html.escape(str(seg_rate if seg_rate is not None else -1))}" '
