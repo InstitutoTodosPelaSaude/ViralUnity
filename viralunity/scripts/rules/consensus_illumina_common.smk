@@ -101,11 +101,17 @@ rule align_consensus_to_reference_genome:
         else
             : > {output.aln_consensus}
             while read -r contig; do
-                grep -P "^@(HD|PG)\t" {output.sam} > {output.sam}.one || true
-                grep -P "^@SQ\tSN:$contig(\t|$)" {output.sam} >> {output.sam}.one || true
-                awk -v c="$contig" '$0 !~ /^@/ && $3 == c' {output.sam} >> {output.sam}.one
-                gofasta sam toMultiAlign --pad -s {output.sam}.one -o {output.sam}.aln
-                cat {output.sam}.aln >> {output.aln_consensus}
+                awk '$1 == "@HD"' {output.sam} > {output.sam}.one
+                awk -F'\t' -v c="$contig" '$1 == "@SQ" && $2 == "SN:"c' {output.sam} >> {output.sam}.one
+                awk '$1 == "@PG"' {output.sam} >> {output.sam}.one
+                awk -F'\t' -v c="$contig" '$0 !~ /^@/ && $3 == c' {output.sam} >> {output.sam}.one
+                # Skip contigs with no mapped records: minimap2 --sam-hit-only
+                # still emits their @SQ line, and gofasta aborts on a header-only
+                # SAM (e.g. an all-N consensus for an uncovered contig).
+                if grep -qv '^@' {output.sam}.one; then
+                    gofasta sam toMultiAlign --pad -s {output.sam}.one -o {output.sam}.aln
+                    cat {output.sam}.aln >> {output.aln_consensus}
+                fi
             done < {output.sam}.contigs
             rm -f {output.sam}.one {output.sam}.aln
         fi

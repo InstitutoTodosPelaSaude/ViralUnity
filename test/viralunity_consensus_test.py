@@ -352,6 +352,25 @@ class Test_ValidateConsensusMultiFastaReference(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self._validate(args)
 
+    def test_unusable_reference_header_raises_validation_error(self):
+        from viralunity.exceptions import ValidationError
+
+        # A record whose header yields no usable segment name must surface as a
+        # ValidationError (clean [code] message), not a raw ValueError traceback.
+        ref = self._write("flu.fasta", ">\nAC\n>seg2\nGT\n")
+        args = self._base_args(reference=ref)
+        with self.assertRaises(ValidationError):
+            self._validate(args)
+
+    def test_annotation_matching_no_segment_raises_validation_error(self):
+        from viralunity.exceptions import ValidationError
+
+        ref = self._write("flu.fasta", ">NC_007373.1|x\nAC\n>NC_007372.1|y\nGT\n")
+        gff = self._write("genes.gff3", "OTHER.1\tRefSeq\tgene\t1\t2\t.\t+\t.\tID=g1\n")
+        args = self._base_args(reference=ref, gene_annotation=gff)
+        with self.assertRaises(ValidationError):
+            self._validate(args)
+
 
 class Test_ValidateSampleSheet(unittest.TestCase):
     """Tests for validate_sample_sheet function.

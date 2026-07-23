@@ -308,7 +308,10 @@ def _maybe_split_multifasta_reference(args: Dict[str, Any]) -> bool:
     if count_records(reference) <= 1:
         return False
 
-    segment_map = split_multifasta(reference, _segment_input_dir(args))
+    try:
+        segment_map = split_multifasta(reference, _segment_input_dir(args))
+    except ValueError as e:
+        raise ValidationError(str(e)) from e
     logger.info(
         "Reference '%s' contains %d records; running in segmented mode with " "segments: %s",
         reference,

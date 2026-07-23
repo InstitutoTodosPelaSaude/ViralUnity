@@ -231,10 +231,13 @@ Behavior notes for a multi-contig single reference:
 - **Consensus** keeps one record per contig (contigs are never fused).
 - In the **HTML report**, the coverage track lays the contigs end-to-end along one
   genome axis (in FASTA order).
+- The cross-sample alignment `samples_alignment.fasta` is written as one aligned
+  block per contig (each block padded to that contig's length), not a single
+  rectangular alignment.
 - **Known limitation:** a `--gene-annotation` track on a multi-contig single
-  reference only renders features for the *first* contig. For per-contig annotation,
-  run in segmented mode instead (omit `--single-reference` and provide a matching
-  per-segment `--gene-annotation`/`--segmented-gene-annotation`).
+  reference only renders features for the *first* contig. For per-contig
+  annotation, run in segmented mode instead (omit `--single-reference`; a single
+  combined `--gene-annotation` is then split per segment automatically).
 
 **Nanopore:**
 

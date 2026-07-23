@@ -49,9 +49,12 @@ bunyaviruses, …): a single multi-FASTA reference can be used instead of one
   into segments unless `--single-reference` is given. Auto-detection logs the
   record count and resulting segment names. Split per-segment inputs are written
   under `<output>/<run_name>/input_references/`.
-- Splitting happens entirely in the Python layer (`reference_splitter.py`); the
-  Snakemake workflows are unchanged and continue to receive the per-segment
-  `{segment: path}` mapping that `--segmented-reference` already produced.
+- Reference/annotation splitting happens in the Python layer
+  (`reference_splitter.py`) and is covered by the automated suite. The
+  multi-contig alignment path (`align_consensus_to_reference_genome`'s per-contig
+  `gofasta` loop) is a Snakemake shell rule that the unit and dry-run suites
+  cannot execute, so it is validated by real-data runs only — it was checked on a
+  SARS-CoV-2 reference split into 3 contigs (Illumina and Nanopore).
 
 ## [1.4.0] - 2026-07-16
 

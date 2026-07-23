@@ -8,22 +8,25 @@ the exact ``{segment: path}`` mapping the segmented workflows already consume,
 so nothing under ``viralunity/scripts/`` has to change.
 
 Segment names are derived from the FASTA headers: the first whitespace/pipe
-token (usually the accession) with ``/ \\ | , ~`` and spaces mapped to ``_``.
-This mirrors the sanitisation in
-``viralunity/scripts/python/generate_consensus_report.py`` so segment keys,
-report contig ids, and nanopore-sanitised headers all agree.
+token (usually the accession), reduced to a filesystem/shell-safe allowlist
+(``[A-Za-z0-9._-]``; anything else becomes ``_``). Each split file keeps its
+record's original header verbatim, so the coverage-table contig id (and the
+report's annotation matching, which is header-based) is unaffected.
 """
 
 import gzip
 import logging
 import os
 import re
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Same character class the nanopore workflow and consensus report use.
-_SANITIZE_RE = re.compile(r"[/\\|,~ ]")
+# Segment keys become directory names and Snakemake wildcard values, so keep
+# them to a conservative filesystem/shell-safe allowlist. This is a superset of
+# the nanopore/report sanitisation (which maps / \ | , ~ and space to _): any
+# character outside the allowlist is collapsed to _.
+_SEGMENT_NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
 def _open_text(path: str):
@@ -37,16 +40,18 @@ def sanitize_segment_name(header: str) -> str:
     """Derive a filesystem-safe segment key from a FASTA header.
 
     Strips a leading ``>``, takes the first whitespace/pipe-delimited token,
-    then replaces ``/ \\ | , ~`` and spaces with ``_``.
+    then maps any character outside ``[A-Za-z0-9._-]`` to ``_`` so the key is a
+    safe directory name and Snakemake wildcard value.
 
     Raises:
-        ValueError: if the header yields an empty token.
+        ValueError: if the header yields an empty or unusable token
+            (empty, ``.`` or ``..``).
     """
     token = header.lstrip(">").strip()
     token = re.split(r"[\s|]", token)[0] if token else ""
-    key = _SANITIZE_RE.sub("_", token)
-    if not key:
-        raise ValueError(f"Could not derive a segment name from header: {header!r}")
+    key = _SEGMENT_NAME_RE.sub("_", token)
+    if not key or key in (".", ".."):
+        raise ValueError(f"Could not derive a valid segment name from header: {header!r}")
     return key
 
 
@@ -84,13 +89,22 @@ def count_records(path: str) -> int:
     return count
 
 
-def _dedup_key(key: str, seen: Dict[str, int]) -> str:
-    """Return ``key`` (or ``key_2``, ``key_3`` ...) so every key is unique."""
+def _dedup_key(key: str, seen: Set[str]) -> str:
+    """Return ``key`` (or ``key_2``, ``key_3`` ...) so every key is unique.
+
+    Both the original and any generated suffix key are registered in ``seen``,
+    so a header that already sanitises to ``foo_2`` cannot silently collide with
+    the de-duplicated form of a duplicate ``foo``.
+    """
     if key not in seen:
-        seen[key] = 1
+        seen.add(key)
         return key
-    seen[key] += 1
-    new_key = f"{key}_{seen[key]}"
+    i = 2
+    new_key = f"{key}_{i}"
+    while new_key in seen:
+        i += 1
+        new_key = f"{key}_{i}"
+    seen.add(new_key)
     logger.warning(
         "Duplicate segment name %r derived from reference headers; using %r instead.",
         key,
@@ -116,8 +130,13 @@ def split_multifasta(path: str, out_dir: str) -> Dict[str, str]:
 
     os.makedirs(out_dir, exist_ok=True)
     mapping: Dict[str, str] = {}
-    seen: Dict[str, int] = {}
+    seen: Set[str] = set()
     for header, body in records:
+        if not "".join(body).strip():
+            raise ValueError(
+                f"Reference record {header!r} in {path} has no sequence; "
+                "cannot use it as a segment."
+            )
         key = _dedup_key(sanitize_segment_name(header), seen)
         seg_path = os.path.abspath(os.path.join(out_dir, f"{key}.fasta"))
         text = ">" + header + "\n" + "".join(body)
@@ -179,7 +198,10 @@ def split_annotation_by_segment(
             f"({', '.join(key_by_sanitized.values())})."
         )
 
-    ext = os.path.splitext(path)[1] or ".gff3"
+    # Take the real extension, ignoring a trailing .gz (so ``ann.gff3.gz`` keeps
+    # ``.gff3`` rather than being written as a plain file named ``key.gz``).
+    base = path[:-3] if path.endswith(".gz") else path
+    ext = os.path.splitext(base)[1] or ".gff3"
     os.makedirs(out_dir, exist_ok=True)
     mapping: Dict[str, str] = {}
     for key, lines in grouped.items():
