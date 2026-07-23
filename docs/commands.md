@@ -122,7 +122,8 @@ The consensus pipeline takes raw reads to processed consensus genome sequences w
 | `--sample-sheet` | *(required)* | CSV file with sample IDs and file paths. |
 | `--config-file` | *(required)* | Path for the YAML config file to be created. |
 | `--output` | *(required)* | Base output directory. |
-| `--reference` | — | Reference genome FASTA (mutually exclusive with `--segmented-reference`). |
+| `--reference` | — | Reference genome FASTA (mutually exclusive with `--segmented-reference`). A multi-record FASTA is treated as a segmented virus and split into one reference per record, with segment names taken from the headers (first `\|`/whitespace token, sanitized). |
+| `--single-reference` | off | Treat a multi-record `--reference` as a single reference (align all records together in one pass) instead of auto-splitting it into segments. |
 | `--segmented-reference` | — | Per-segment reference: `SEGMENT=PATH` (repeatable). |
 | `--primer-scheme` | — | Primer scheme BED file (amplicon sequencing only). |
 | `--minimum-coverage` | `20` | Minimum depth for consensus base inclusion. |
@@ -132,7 +133,36 @@ The consensus pipeline takes raw reads to processed consensus genome sequences w
 | `--threads` | `1` | Threads per individual task. |
 | `--threads-total` | `1` | Total threads for the workflow. |
 | `--create-config-only` | off | Only generate the config file; do not run the workflow. |
+| `--skip-input-validation` | off | Skip content-level integrity checks of the input files (FASTQ/FASTA/BED/GFF3). Existence checks still run. |
 | `--conda-prefix` | `~/.cache/viralunity/conda-envs` | Cache directory for per-rule conda envs. Picked up from `$VIRALUNITY_CONDA_PREFIX` if set. Pre-warm with `viralunity setup`. |
+
+### Input integrity validation
+
+Before writing the config, the consensus pipeline validates the *content* (not
+just the existence) of its critical inputs and refuses to start on a file that
+would break the run or silently produce wrong results:
+
+- **FASTQ** (sample reads) — streamed end to end: 4-line record structure, the
+  `@`/`+` marker lines, matching sequence/quality lengths, valid sequence and
+  quality characters, and gzip integrity. Catches truncated uploads and corrupt
+  archives.
+- **Reference FASTA** — at least one record, unique contig ids, non-empty
+  sequences, and a nucleotide-only (IUPAC) alphabet — so a protein FASTA or a
+  mislabeled file is rejected up front.
+- **Primer BED** (when provided) — ≥3 columns, valid integer intervals, and
+  chrom names that match the reference contigs. If *no* chrom matches any
+  reference contig it is a hard error (the whole scheme is wrong for this
+  reference, and `samtools ampliconclip` would silently trim nothing); if some
+  chroms match, the unmatched rows are downgraded to warnings (e.g. a
+  whole-scheme BED reused on a subset of segments). On Nanopore the reference
+  headers are sanitized before mapping, so a BED chrom that matches only the bare
+  accession is reported with a fix-it hint.
+- **GFF3 annotation** (when provided) — checked for structure and seqid matching,
+  but problems are **warnings only** and never block a run (the annotation track
+  is cosmetic).
+
+All problems in a file are reported together. Pass `--skip-input-validation` to
+bypass these checks (existence checks still run).
 
 ### Options — Illumina only
 
@@ -175,7 +205,22 @@ viralunity consensus illumina \
     --threads-total 4
 ```
 
-**Illumina — segmented genome** (replace `--reference` with `--segmented-reference`):
+**Illumina — segmented genome, single multi-FASTA** (simplest; one file with all
+segments, segment names taken from the FASTA headers):
+
+```bash
+viralunity consensus illumina \
+    --sample-sheet /path/to/example.csv \
+    --config-file /path/to/example_segmented.yml \
+    --run-name example_run \
+    --output /path/to/example_output \
+    --reference /path/to/references/all_segments.fasta \
+    --threads 2 \
+    --threads-total 4
+```
+
+**Illumina — segmented genome, one file per segment** (explicit segment names via
+repeatable `--segmented-reference`):
 
 ```bash
 viralunity consensus illumina \
@@ -188,6 +233,42 @@ viralunity consensus illumina \
     --threads 2 \
     --threads-total 4
 ```
+
+**Illumina — single reference with multiple contigs (fragmented genome)**: when a
+genome is only available as several contigs/scaffolds but should be treated as **one**
+reference (all contigs aligned together in a single pass, e.g. to report one
+whole-assembly horizontal coverage), pass the multi-record FASTA with
+`--single-reference` so it is *not* auto-split into segments:
+
+```bash
+viralunity consensus illumina \
+    --sample-sheet /path/to/example.csv \
+    --config-file /path/to/example.yml \
+    --run-name example_run \
+    --output /path/to/example_output \
+    --reference /path/to/fragmented_assembly.fasta \
+    --single-reference \
+    --threads 2 \
+    --threads-total 4
+```
+
+Behavior notes for a multi-contig single reference:
+
+- **Coverage/depth statistics** (`assembly_stats_summary.csv`) are aggregated across
+  all contigs: `horizontal_coverage` is the fraction of *all* reference positions at
+  or above the threshold, and `average_depth` is the whole-assembly mean.
+- **Consensus** keeps one record per contig (contigs are never fused).
+- In the **HTML report**, the coverage track lays the contigs end-to-end along one
+  genome axis (in FASTA order).
+- The cross-sample alignment is written **per contig** under
+  `consensus/final_consensus/per_contig_alignments/<contig>.fasta` (one MSA each).
+  A concatenation of all of them is also kept as `samples_alignment.fasta` (one
+  padded block per contig, not a single rectangular alignment) for backward
+  compatibility.
+- **Known limitation:** a `--gene-annotation` track on a multi-contig single
+  reference only renders features for the *first* contig. For per-contig
+  annotation, run in segmented mode instead (omit `--single-reference`; a single
+  combined `--gene-annotation` is then split per segment automatically).
 
 **Nanopore:**
 

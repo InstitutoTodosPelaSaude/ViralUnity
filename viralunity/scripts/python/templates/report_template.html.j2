@@ -142,6 +142,12 @@ tr.row-hidden { display: none; }
 .seg-tag { margin-left: 10px; font-size: 0.72rem; font-weight: 400; color: var(--text-muted); background: var(--chip, var(--subrow)); border-radius: 10px; padding: 1px 8px; }
 .seg-subrow > td { background: var(--subrow); }
 .cell-subrow { padding-left: 34px; color: var(--text-secondary); }
+/* A subrow carries both its segment and sample labels; the roll-up shows the
+   segment (indented under its sample summary), while segment-focus mode shows
+   the sample (subrows are flat, one per sample). */
+.subrow-sample { display: none; }
+.stats-table.seg-focus .subrow-seg { display: none; }
+.stats-table.seg-focus .subrow-sample { display: inline; }
 .cell-muted { color: var(--text-muted); }
 @media (prefers-reduced-motion: reduce) { .seg-caret::before { transition: none; } }
 /* Segment selector chips (focus the table on All or one segment). */
@@ -518,10 +524,17 @@ function sortTable(th) {
   const idx = parseInt(th.getAttribute('data-col'), 10);
   const asc = th.getAttribute('data-asc') !== 'true';
   const tbody = table.tBodies[0];
+  // In segment-focus mode the first ("Sample") column reads as the sample name,
+  // so sort it by the sample key (data-sort-sample) rather than the segment
+  // label. Every other column, and the roll-up view, uses data-sort as before.
+  const focusSample = idx === 0 && typeof statsSegMode !== 'undefined' && statsSegMode !== '';
+  const sortKey = function (cell) {
+    if (!cell) return null;
+    return (focusSample && cell.getAttribute('data-sort-sample')) || cell.getAttribute('data-sort');
+  };
   const cmp = function (a, b) {
-    const ac = a.cells[idx], bc = b.cells[idx];
-    const av = ac ? ac.getAttribute('data-sort') : null;
-    const bv = bc ? bc.getAttribute('data-sort') : null;
+    const av = sortKey(a.cells[idx]);
+    const bv = sortKey(b.cells[idx]);
     const an = parseFloat(av), bn = parseFloat(bv);
     let c;
     if (!isNaN(an) && !isNaN(bn)) c = an - bn;
@@ -597,6 +610,10 @@ function applyStatsView() {
   var q = _statsQuery(), lowOnly = _statsLowOnly(), warn = _statsWarn();
   var segmented = !!document.getElementById('statsSegChips');
   var shown = 0, total = 0, unit = 'samples';
+
+  // Segment-focus flat view shows subrows one-per-sample, so the first column
+  // must read as the sample name; CSS swaps the subrow label on this class.
+  table.classList.toggle('seg-focus', statsSegMode !== '');
 
   var rowMatches = function (r) {
     var name = (r.getAttribute('data-sample') || '').toLowerCase();

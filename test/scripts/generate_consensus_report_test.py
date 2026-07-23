@@ -655,6 +655,37 @@ class TestCoverageCacheContigCapture(unittest.TestCase):
         self.assertEqual(contigs[None], "chrTEST")
 
 
+class TestMultiContigCoverageCoordinates(unittest.TestCase):
+    """A single (non-segmented) reference with multiple contigs lays them
+    end-to-end so the coverage track spans the whole assembly."""
+
+    def _cache_for(self, basewise_text):
+        with tempfile.TemporaryDirectory() as d:
+            cov_dir = os.path.join(d, "assembly", "coverage_stats")
+            os.makedirs(cov_dir)
+            with open(os.path.join(cov_dir, "sample-A.table_cov_basewise.txt"), "w") as fh:
+                fh.write(basewise_text)
+            df = pd.DataFrame({"sample_name": ["sample-A"]})
+            cache, lengths, _contigs = _load_coverage_cache(d, df, segmented=False)
+        return cache, lengths
+
+    def test_multi_contig_positions_are_cumulative(self):
+        # frag1 positions 1..3, frag2 positions 1..3 (position resets per contig).
+        text = "frag1\t1\t5\nfrag1\t2\t5\nfrag1\t3\t5\n" "frag2\t1\t7\nfrag2\t2\t7\nfrag2\t3\t7\n"
+        cache, lengths = self._cache_for(text)
+        pos, depth = cache[("sample-A", None)]
+        # Genome length is the full row count; positions now span 1..6, not 1..3.
+        self.assertEqual(lengths[("sample-A", None)], 6)
+        self.assertEqual(list(pos), [1, 2, 3, 4, 5, 6])
+        self.assertEqual(list(depth), [5, 5, 5, 7, 7, 7])
+
+    def test_single_contig_positions_unchanged(self):
+        text = "chrTEST\t1\t10\nchrTEST\t2\t20\nchrTEST\t3\t30\n"
+        cache, _lengths = self._cache_for(text)
+        pos, _depth = cache[("sample-A", None)]
+        self.assertEqual(list(pos), [1, 2, 3])
+
+
 class TestBuildAnnotationModel(unittest.TestCase):
     def _dir_with_annotation(self):
         d = tempfile.mkdtemp()

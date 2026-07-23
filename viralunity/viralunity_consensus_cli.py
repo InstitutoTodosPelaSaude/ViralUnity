@@ -87,7 +87,17 @@ _COMMON_OPTIONS = [
     click.option(
         "--reference",
         default=None,
-        help="Path to reference genome FASTA (mutually exclusive with --segmented-reference).",
+        help="Path to reference genome FASTA (mutually exclusive with "
+        "--segmented-reference). A multi-record FASTA is treated as a segmented "
+        "virus and split per record (segment names taken from the headers); pass "
+        "--single-reference to align all records together as one reference.",
+    ),
+    click.option(
+        "--single-reference",
+        is_flag=True,
+        default=False,
+        help="Treat a multi-record --reference as a single reference (align all "
+        "records together) instead of auto-splitting it into segments.",
     ),
     click.option(
         "--segmented-reference",
@@ -148,6 +158,13 @@ _COMMON_OPTIONS = [
         is_flag=True,
         default=False,
         help="Only create the config file; do not run the workflow.",
+    ),
+    click.option(
+        "--skip-input-validation",
+        is_flag=True,
+        default=False,
+        help="Skip content-level integrity checks of the input files "
+        "(FASTQ/FASTA/BED/GFF3). Existence checks still run.",
     ),
     click.option(
         "--generate-html-report/--no-generate-html-report",
@@ -303,6 +320,7 @@ def consensus_illumina(
     threads: int,
     threads_total: int,
     create_config_only: bool,
+    skip_input_validation: bool,
     generate_html_report: bool,
     conda_prefix: str,
     adapters: Optional[str],
@@ -323,8 +341,9 @@ def consensus_illumina(
     optional primer trimming (ivar), variant calling (LoFreq), and consensus
     generation. Enable intra-host SNV analysis with ``--run-isnv``.
 
-    For segmented references (e.g. influenza), pass each segment as
-    ``--segmented-reference SEGMENT=PATH``; otherwise use ``--reference``.
+    For segmented references (e.g. influenza), pass a single multi-record
+    FASTA to ``--reference`` (segments are named from the headers), or one
+    ``--segmented-reference SEGMENT=PATH`` per segment.
     """
     args = dict(
         data_type="illumina",
@@ -342,6 +361,7 @@ def consensus_illumina(
         threads=threads,
         threads_total=threads_total,
         create_config_only=create_config_only,
+        skip_input_validation=skip_input_validation,
         generate_html_report=generate_html_report,
         conda_prefix=conda_prefix,
         adapters=adapters,
@@ -418,6 +438,7 @@ def consensus_nanopore(
     threads: int,
     threads_total: int,
     create_config_only: bool,
+    skip_input_validation: bool,
     generate_html_report: bool,
     conda_prefix: str,
     af_threshold: float,
@@ -434,8 +455,9 @@ def consensus_nanopore(
     user-selectable model via ``--clair3-model``), and consensus generation.
     Reads shorter than ``--minimum-read-length`` are filtered upstream.
 
-    For segmented references (e.g. influenza), pass each segment as
-    ``--segmented-reference SEGMENT=PATH``; otherwise use ``--reference``.
+    For segmented references (e.g. influenza), pass a single multi-record
+    FASTA to ``--reference`` (segments are named from the headers), or one
+    ``--segmented-reference SEGMENT=PATH`` per segment.
     """
     args = dict(
         data_type="nanopore",
@@ -453,6 +475,7 @@ def consensus_nanopore(
         threads=threads,
         threads_total=threads_total,
         create_config_only=create_config_only,
+        skip_input_validation=skip_input_validation,
         generate_html_report=generate_html_report,
         conda_prefix=conda_prefix,
         af_threshold=af_threshold,

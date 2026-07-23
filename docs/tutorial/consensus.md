@@ -28,7 +28,7 @@ Nanopore:
 
 You do not pick these tools — they are wired in. You pick:
 
-- the **reference** (`--reference`, or `--segmented-reference SEG=PATH` repeated per segment for influenza-style genomes),
+- the **reference** (`--reference` — a multi-record FASTA is auto-split per segment for influenza-style genomes — or `--segmented-reference SEG=PATH` once per segment to name them yourself),
 - whether the data is **amplicon** (`--primer-scheme primers.bed` clips amplicon primers) or shotgun,
 - the **coverage and allele-frequency thresholds** that decide which bases become `N` (`--minimum-coverage`, `--af-threshold`).
 
@@ -66,7 +66,7 @@ What each flag does:
 - `--config-file` — where to write the generated Snakemake YAML config (handy to diff against `my_results/config_consensus_illumina.yml`).
 - `--output` — base directory for all results.
 - `--run-name` — appended to `--output`; everything lands under `results/consensus_illumina/sarscov2/`.
-- `--reference` — single-segment reference FASTA. For segmented genomes, use `--segmented-reference` instead (see below).
+- `--reference` — the reference FASTA. A single-record FASTA is used as-is; a multi-record FASTA is auto-split into one reference per segment (unless `--single-reference`). See [Segmented viruses](#segmented-viruses) below.
 - `--primer-scheme` — BED file of primer coordinates. Omit it for shotgun data; the primer-clipping step then becomes a pass-through.
 - `--minimum-coverage 20` — positions with fewer than 20 reads after primer clipping become `N` in the consensus.
 - `--threads 2 --threads-total 4` — 2 threads per task, 4 cores total across the workflow.
@@ -193,7 +193,25 @@ The default `--af-threshold` for Nanopore is intentionally lower-leaning than wh
 
 ## Segmented viruses
 
-For multi-segment genomes (influenza, the bunyaviruses, etc.) repeat `--segmented-reference SEG=PATH` once per segment instead of using `--reference`:
+For multi-segment genomes (influenza, the bunyaviruses, etc.) the simplest way is
+to pass a single multi-record FASTA to `--reference`: ViralUnity treats a
+reference with more than one record as segmented and splits it into one reference
+per record, taking segment names from the FASTA headers. Pass `--single-reference`
+to opt out (align all records together as one reference — e.g. a fragmented genome
+that should be treated as a single reference).
+
+```bash
+viralunity consensus illumina \
+    --sample-sheet samples_flu.csv \
+    --config-file  results/flu/config.yml \
+    --output       results/flu/ \
+    --reference    refs/flu/influenza_all_segments.fasta \
+    --threads 4 --threads-total 8
+```
+
+To name segments yourself, or supply each from a separate file, repeat
+`--segmented-reference SEG=PATH` once per segment instead (mutually exclusive with
+`--reference`):
 
 ```bash
 viralunity consensus illumina \
@@ -231,7 +249,8 @@ The full set is in the [Commands reference](../commands.md#viralunity-consensus)
 
 - **Sample sheet column count is the only check.** A Nanopore CSV that accidentally has three columns is silently parsed as Illumina (and vice versa). Always confirm the row count and column count before running.
 - **Reference header sanitization is silent.** On Nanopore, if your downstream tooling expects the original reference contig names, read them from `reference/reference.sanitized.fasta`, not your input FASTA.
-- **Primer scheme contig names must match the reference.** The BED file must use the same chromosome/contig names as the reference FASTA. If `samtools ampliconclip` reports zero primers clipped, you have a name mismatch.
+- **Primer scheme contig names must match the reference.** The BED file must use the same chromosome/contig names as the reference FASTA. ViralUnity now checks this before running and aborts with an `InputIntegrityError` if the primer BED chrom matches no reference contig (so `samtools ampliconclip` would clip nothing) — no more silently un-clipped runs.
+- **Inputs are content-validated before the run.** FASTQ, reference FASTA, and primer BED are streamed and checked (record structure, gzip integrity, nucleotide alphabet, chrom matching); a broken, truncated, or mismatched file stops the run up front rather than failing deep inside Snakemake. GFF3 annotation is checked but only warns. Pass `--skip-input-validation` to bypass.
 - **`--reference` and `--segmented-reference` are mutually exclusive.** Pass one or the other.
 
 ## Reference

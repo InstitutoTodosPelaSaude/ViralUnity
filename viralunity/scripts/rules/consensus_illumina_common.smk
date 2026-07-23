@@ -90,6 +90,38 @@ rule align_consensus_to_reference_genome:
         exec > {log} 2>&1
         cat {params.reference} {input.consensus_files} > {output.combined}
         minimap2 {params.minimap2_flags} {params.reference} {output.combined} -o {output.sam}
-        gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
+        # gofasta sam toMultiAlign builds an MSA against a single reference and
+        # aborts on a multi-contig reference (e.g. a fragmented genome supplied
+        # with --single-reference). Align one reference contig at a time and
+        # concatenate; a single-contig reference (the common case, and every
+        # segmented per-segment run) takes the same one-pass path as before.
+        grep '^>' {params.reference} | sed 's/^>//' | cut -d' ' -f1 > {output.sam}.contigs
+        if [ "$(wc -l < {output.sam}.contigs)" -le 1 ]; then
+            gofasta sam toMultiAlign --pad -s {output.sam} -o {output.aln_consensus}
+        else
+            : > {output.aln_consensus}
+            per_contig_dir=$(dirname {output.aln_consensus})/per_contig_alignments
+            mkdir -p "$per_contig_dir"
+            while read -r contig; do
+                awk '$1 == "@HD"' {output.sam} > {output.sam}.one
+                awk -F'\t' -v c="$contig" '$1 == "@SQ" && $2 == "SN:"c' {output.sam} >> {output.sam}.one
+                awk '$1 == "@PG"' {output.sam} >> {output.sam}.one
+                awk -F'\t' -v c="$contig" '$0 !~ /^@/ && $3 == c' {output.sam} >> {output.sam}.one
+                # Skip contigs with no mapped records: minimap2 --sam-hit-only
+                # still emits their @SQ line, and gofasta aborts on a header-only
+                # SAM (e.g. an all-N consensus for an uncovered contig).
+                if grep -qv '^@' {output.sam}.one; then
+                    # Write each contig's alignment as its own MSA under
+                    # per_contig_alignments/ (a multi-contig reference is really
+                    # one alignment per contig), then concatenate into the declared
+                    # {output.aln_consensus} so the Snakemake DAG output is unchanged.
+                    safe=$(printf '%s' "$contig" | sed 's/[^A-Za-z0-9._-]/_/g')
+                    gofasta sam toMultiAlign --pad -s {output.sam}.one -o "$per_contig_dir/$safe.fasta"
+                    cat "$per_contig_dir/$safe.fasta" >> {output.aln_consensus}
+                fi
+            done < {output.sam}.contigs
+            rm -f {output.sam}.one
+        fi
+        rm -f {output.sam}.contigs
         sed '/^>/ ! s/-/N/g' {output.aln_consensus} > {output.masked}
         """

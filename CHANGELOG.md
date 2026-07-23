@@ -7,6 +7,84 @@ and this project aspires to follow [Semantic Versioning](https://semver.org/spec
 
 The release process is documented in [RELEASING.md](RELEASING.md).
 
+## [1.5.0] - 2026-07-23
+
+Simplifies running the consensus pipeline on segmented viruses (influenza,
+bunyaviruses, …): a single multi-FASTA reference can be used instead of one
+`--segmented-reference` flag per segment.
+
+### Added
+
+- **Single multi-FASTA reference for segmented viruses.** A `--reference` FASTA
+  with more than one record is now automatically treated as a segmented virus:
+  it is split into one reference per record during validation, with segment
+  names taken from the FASTA headers (first `|`/whitespace token, sanitized to
+  the same character class the nanopore workflow and consensus report use).
+  Duplicate-derived names are de-duplicated. Works for both Illumina and
+  Nanopore.
+- A single combined `--gene-annotation` (GFF3/BED) is split by seqid to match
+  the auto-detected segments.
+- **Content-level input integrity validation (consensus).** Before writing the
+  config, the consensus pipeline now validates the *content* of its critical
+  inputs and refuses to start on a file that would break the run or silently
+  produce wrong results: FASTQ (full streaming scan — record structure, matching
+  seq/quality lengths, valid characters, gzip integrity, truncation), reference
+  FASTA (≥1 record, unique contig ids, non-empty sequences, IUPAC-nucleotide
+  alphabet), and primer BED (columns, integer intervals, and chrom names matching
+  the reference contigs). GFF3 annotation is checked too but only ever warns. All
+  problems in a file are reported together with a stable machine-readable code
+  (`InputIntegrityError.to_dict()` gives an embedding service a structured
+  payload). `--skip-input-validation` bypasses the checks (existence checks still
+  run). New module `viralunity/integrity.py`; pure stdlib, no new dependencies.
+- `--single-reference` flag to opt out of auto-splitting and align all records
+  of a multi-record reference together as one reference — for a fragmented
+  genome (multiple contigs) that should be treated as one reference, e.g. to
+  report one whole-assembly horizontal coverage.
+
+### Fixed
+
+- Multi-contig single reference (`--single-reference` on a multi-record FASTA)
+  now completes. Two latent bugs on that previously-unexercised path were fixed:
+  - `align_consensus_to_reference_genome` aligned the consensus to the reference
+    with `gofasta sam toMultiAlign`, which aborts on a multi-contig reference;
+    the alignment is now built one reference contig at a time. Each contig's MSA
+    is written under `consensus/final_consensus/per_contig_alignments/<contig>.fasta`,
+    with a concatenation kept as `samples_alignment.fasta` for backward
+    compatibility. A single-contig reference (the common case, and every segmented
+    per-segment run) takes the same one-pass path as before.
+  - The HTML report's coverage track binned per-contig positions (which restart
+    at 1 for each contig) onto a single genome axis, stacking every contig into
+    the first region. Contigs are now laid end-to-end into genome coordinates.
+- HTML report, segmented assembly-statistics table: in segment-focus mode the
+  "Sample" column showed the segment name on every row (correct only in the
+  indented roll-up view). It now shows the sample name, and sorting that column
+  in segment-focus mode sorts by sample. The "All" roll-up view is unchanged.
+
+### Notes for review
+
+- **Behavior change (for PI sign-off):** a multi-record file passed to
+  `--reference` was previously aligned as a single reference; it is now split
+  into segments unless `--single-reference` is given. Auto-detection logs the
+  record count and resulting segment names. Split per-segment inputs are written
+  under `<output>/<run_name>/input_references/`.
+- **Behavior change (for PI sign-off):** consensus input validation now inspects
+  file *content*, not just existence, and is on by default. Two consequences of
+  the primer-BED chrom check are worth noting: (1) an amplicon run whose primer
+  BED chrom names match *no* reference contig is now rejected up front
+  (previously it ran, but `samtools ampliconclip` silently trimmed nothing); if
+  *some* chroms match (e.g. a whole-scheme BED reused on a subset of segments)
+  the unmatched rows are downgraded to warnings; (2) on Nanopore the reference
+  headers are sanitized before mapping, so a run with a descriptive reference
+  header and an accession-only BED — which previously completed with no primer
+  trimming — is now blocked with a fix-it message. `--skip-input-validation`
+  restores the previous no-content-check behavior.
+- Reference/annotation splitting happens in the Python layer
+  (`reference_splitter.py`) and is covered by the automated suite. The
+  multi-contig alignment path (`align_consensus_to_reference_genome`'s per-contig
+  `gofasta` loop) is a Snakemake shell rule that the unit and dry-run suites
+  cannot execute, so it is validated by real-data runs only — it was checked on a
+  SARS-CoV-2 reference split into 3 contigs (Illumina and Nanopore).
+
 ## [1.4.0] - 2026-07-16
 
 Adds an interactive, self-contained HTML report for consensus runs, designed to

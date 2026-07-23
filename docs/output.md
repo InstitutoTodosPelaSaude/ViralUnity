@@ -15,6 +15,9 @@ After a successful run, the output directory is organised as follows:
 │       └── consensus/
 │           └── final_consensus/
 │               └── samples_alignment.fasta
+├── input_references/                 # segmented: per-segment reference FASTAs split
+│   │                                 #   from a multi-record --reference (+ aligner index)
+│   └── annotation/                   # split per-segment GFF3/BED (auto-split annotation)
 ├── reference/
 │   └── reference.sanitized.fasta    # reference with sanitised headers (nanopore)
 ├── samples/

@@ -17,6 +17,7 @@ from viralunity.validators import (
     get_samples_from_args,
     resolve_path_args,
     sanitize_identifier,
+    validate_consensus_input_integrity,
     validate_consensus_requirements,
     validate_illumina_requirements,
     validate_numeric_parameters,
@@ -79,6 +80,12 @@ def validate_args(args: Dict[str, Any]) -> Dict[str, list]:
         resolve_path_args(args, ("reference",))
     if isinstance(args.get("gene_annotation"), dict):
         resolve_path_args(args, ("gene_annotation",))
+
+    # Content-level integrity of the actual input files (FASTQ/FASTA/BED/GFF3),
+    # now that references are split and all paths are absolute. Gated by
+    # --skip-input-validation. Kept as a module-level name so it can be patched
+    # in tests alongside validate_consensus_requirements.
+    validate_consensus_input_integrity(args, samples)
 
     logger.info("All arguments validated successfully")
     return samples
